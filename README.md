@@ -1,4 +1,6 @@
-# DS Forever on Linux: stream WoW Forever to your AYN Thor
+# dsf-linux-helper: DS Forever on Linux
+
+**Unofficial.** Stream WoW Forever from a Linux PC to your AYN Thor with [DS Forever](https://github.com/Jreese702/DS-Forever).
 
 Play **World of Warcraft: Forever** on your **Linux PC** and stream it to an **AYN Thor**: the game on the top screen,
 DS Forever's touch companion (map, bags, quests, chat, party) on the bottom screen.
@@ -27,8 +29,8 @@ DS Forever Desktop, which only exists for Windows.
 ## Install (about a minute)
 
 ```sh
-git clone <this repository> ds-forever
-cd ds-forever/linux-bridge
+git clone https://github.com/mummigast/dsf-linux-helper.git
+cd dsf-linux-helper
 ./install.sh
 ```
 
@@ -100,11 +102,17 @@ DS Forever: one button press is one game action, nothing is automated.
 
 ## Licence
 
-GPL-3.0-or-later, as DS Forever (`../LICENSE`). Dependency: [websockets](https://github.com/python-websockets/websockets)
+GPL-3.0-or-later (`LICENSE`), as DS Forever. Dependency: [websockets](https://github.com/python-websockets/websockets)
 (BSD-3-Clause), installed by `install.sh`. Unofficial: not affiliated with Blizzard Entertainment or the DS Forever
 project. World of Warcraft and Battle.net are trademarks of Blizzard Entertainment.
 
 ## For developers
 
-Protocol: `../desktop/docs/STREAM_BRIDGE_PROTOCOL.md`. Files: `dsf_bridge.py` (server, pairing, CLI), `wow_linux.py`
+Protocol: `docs/STREAM_BRIDGE_PROTOCOL.md` (copied from DS Forever, GPL-3.0). Files: `dsf_bridge.py` (server, pairing, CLI), `wow_linux.py`
 (finding/starting WoW, screen detection), `addons.py` (add-on installs). Tests: `.venv/bin/python -m unittest discover -s tests`.
+
+## Credits
+
+[DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702 and contributors (GPL-3.0): the Thor app, its add-ons
+and the bridge protocol this helper implements. This project is a Linux stand-in for its Windows-only DS Forever Desktop
+and is not affiliated with it.

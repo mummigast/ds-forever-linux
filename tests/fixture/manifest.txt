@@ -1,0 +1,3 @@
+set 1
+73126375fc4dbe592d2d914fdb38a5f1  WowCompanion/WowCompanion.toc
+423021761a16b3e49ddcb4b0a317565d  WowCompanion/Core.lua

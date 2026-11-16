@@ -51,7 +51,8 @@ class EndToEnd(unittest.TestCase):
         self.log = t / "wow/Logs/General.log"
         self.log.write_text("")
         env = dict(os.environ, DSF_PORT=str(PORT), DSF_WOW_DIR=str(t / "wow"), DSF_STATE=str(t / "state.json"),
-                   DSF_START_CMD="true", DSF_NO_MDNS="1")
+                   DSF_START_CMD="true", DSF_NO_MDNS="1",
+                   DSF_ADDONS_SRC=str(HERE / "tests/fixture"))   # no network in tests
         self.proc = subprocess.Popen([sys.executable, str(HERE / "dsf_bridge.py")], env=env,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.code_file = t / "pairing-code.txt"

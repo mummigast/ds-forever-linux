@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Part of a personal fork of DS Forever (GPL-3.0). See FORK.md.
+# dsf-linux-helper: unofficial Linux helper for DS Forever (GPL-3.0). See README.md.
 """DS Forever's add-on set on a Linux PC: same rules as Desktop's AddonInstaller.
-- source: a local folder (manifest.txt + addons/), or upstream's latest release source zip, checked against SHA256SUMS;
+- source: upstream DS Forever's latest release source zip (checked against SHA256SUMS), or a local folder (DSF_ADDONS_SRC);
 - install when missing (only when asked), update when the game's set stamp is older;
 - backup first, every copied file checked against manifest.txt's md5, old set restored on any failure;
 - leave no trace: only Interface/AddOns/<the set's own folders> is ever written."""

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Part of a personal fork of DS Forever (GPL-3.0). See FORK.md.
+# dsf-linux-helper: unofficial Linux helper for DS Forever (GPL-3.0). See README.md.
 """WoW Forever on Linux: find the install, tell where the game is (login / character select / world),
 and start it through Battle.net. Ports of DS Forever Desktop's WowLocator, LoginLog and WowFlow.Classify.
 Nothing here reads, stores or types credentials."""

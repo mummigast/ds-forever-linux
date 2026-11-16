@@ -45,13 +45,13 @@ DS Forever's own add-on folders.
 
 | Part | Licence | Notes |
 |---|---|---|
-| This helper (`linux-bridge/`) | GPL-3.0-or-later | |
-| DS Forever (this repository's upstream) | GPL-3.0 | `../LICENSE`, `../THIRD_PARTY_NOTICES`, `../licenses/` |
-| DS Forever's add-ons (installed into the game) | GPL-3.0 | copied unchanged from upstream's release or this repository, notices kept |
+| This helper | GPL-3.0-or-later | `LICENSE` |
+| DS Forever's bridge protocol (`docs/STREAM_BRIDGE_PROTOCOL.md`) | GPL-3.0 | copied unchanged, credited |
+| DS Forever's add-ons (installed into the game) | GPL-3.0 | downloaded from upstream's release and installed unchanged, notices kept |
 | [websockets](https://github.com/python-websockets/websockets) | BSD-3-Clause | installed by pip, not bundled |
 | DS Forever APK on the Thor | upstream's | get it from upstream's releases; **this project does not build or ship an APK** |
 
-Upstream's `RELEASE_NOTICES.md` lists prebuilt parts of the APK whose redistribution rights are not cleared. That is
+DS Forever's `RELEASE_NOTICES.md` lists prebuilt parts of the APK whose redistribution rights are not cleared. That is
 why this project never redistributes the APK: you install upstream's official release yourself.
 
 Trademarks: World of Warcraft and Battle.net are trademarks of Blizzard Entertainment. Unofficial; not affiliated with

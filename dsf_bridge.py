@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Part of a personal fork of DS Forever (GPL-3.0). See FORK.md.
+# dsf-linux-helper: unofficial Linux helper for DS Forever (GPL-3.0). See README.md.
 """DS Forever bridge for Linux: lets the DS Forever app on an AYN Thor use a Linux PC that already
 streams WoW Forever with Sunshine. Replaces the bridge part of DS Forever Desktop (Windows only).
 
-Speaks desktop/docs/STREAM_BRIDGE_PROTOCOL.md v1:
+Speaks docs/STREAM_BRIDGE_PROTOCOL.md v1 (DS Forever's bridge protocol):
   - follows WoW's General.log, reassembles the add-on's WCB1 documents (port of WcbAssembler.cs)
   - WebSocket server ws://<pc>:48210/v1/ws (plain ws; the Thor uses ws when tls is not advertised)
   - pairing: 6-digit code shown here, HMAC proof from the Thor, token stored in the state file
@@ -209,15 +209,12 @@ PROTON = Path(os.environ["DSF_PROTON"]) if os.environ.get("DSF_PROTON") else (
     wow_linux.proton_for(*STEAM_PREFIX) if STEAM_PREFIX else None)
 wow = wow_linux.WowState()
 ADDONS_DIR = GAME_DIR / "Interface" / "AddOns"
-_fork_src = Path(__file__).resolve().parent.parent / "companion/app/src/main/assets/companion"
 addon_lock = asyncio.Lock()
 
 def addon_source():
-    """DSF_ADDONS_SRC, else this fork's own copy, else upstream's latest release (verified)."""
+    """DSF_ADDONS_SRC (a folder with manifest.txt + addons/), else upstream DS Forever's latest release (verified)."""
     if os.environ.get("DSF_ADDONS_SRC"):
         return Path(os.environ["DSF_ADDONS_SRC"])
-    if (_fork_src / "manifest.txt").exists():
-        return _fork_src
     return addons.fetch_upstream(log)
 
 async def addon_pass(force=False, allow_new=False, thor_set=0):
