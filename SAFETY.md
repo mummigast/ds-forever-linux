@@ -35,7 +35,7 @@ DS Forever's own add-on folders.
 - Pairing: a 6-digit code shown on the PC; the code never crosses the network (HMAC proof). Five wrong codes pause pairing
   for 5 minutes.
 - After pairing the Thor uses an encrypted connection (wss, self-signed certificate pinned at pairing). Web pages
-  (anything sending an `Origin` header) are refused.
+  from other sites (an `Origin` header other than localhost) are refused.
 - If you give it your Sunshine login (optional), it is used only for Sunshine's local API on 127.0.0.1 to enter the
   Moonlight PIN, and is kept in `~/.config/dsf-bridge/env` (mode 600).
 - Outgoing: only GitHub (upstream DS Forever's latest release, at most every 3 hours, verified with its SHA256SUMS) when

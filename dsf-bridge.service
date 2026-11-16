@@ -1,5 +1,6 @@
 [Unit]
 Description=DS Forever helper for Linux (AYN Thor companion over Sunshine)
+Wants=network-online.target
 After=network-online.target
 
 [Service]

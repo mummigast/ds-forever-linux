@@ -222,6 +222,7 @@ def focus_window():
         if r.returncode != 0 or not m or int(m.group(1)) < 0:
             return False
         call(f"/Scripting/Script{m.group(1)}", "org.kde.kwin.Script.run")
+        time.sleep(1)                     # KWin reads and runs the script asynchronously: don't pull it away first
         return True
     except (OSError, subprocess.SubprocessError):
         return False

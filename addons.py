@@ -18,7 +18,8 @@ def parse_manifest(text):
     set_no, files = 0, {}
     for line in text.splitlines():
         if line.startswith("set "):
-            set_no = int(line[4:].strip() or 0)
+            m = re.match(r"set\s+(\d+)", line)
+            set_no = int(m.group(1)) if m else 0
         elif len(line) > 34 and re.match(r"^[0-9a-f]{32}  ", line):
             files[line[34:].strip()] = line[:32]
     return set_no, files
@@ -71,7 +72,8 @@ def fetch_upstream(log=print):
     if (out / "manifest.txt").exists():
         return out
     sums = _get(assets["SHA256SUMS"], 20).decode()
-    want = next((l.split()[0].lower() for l in sums.splitlines() if l.strip().endswith(name)), None)
+    want = next((l.split()[0].lower() for l in sums.splitlines()
+                 if len(l.split()) == 2 and l.split()[1].lstrip("*") == name), None)
     if not want:
         raise RuntimeError(f"{name} is not in SHA256SUMS")
     log(f"Downloading {name} from {UPSTREAM} …")
@@ -85,7 +87,8 @@ def fetch_upstream(log=print):
         root = names[0][:names[0].index(ASSET_PREFIX) + len(ASSET_PREFIX)]
         CACHE.mkdir(parents=True, exist_ok=True)
         tmp = Path(tempfile.mkdtemp(dir=CACHE))        # same filesystem as `out`, so the rename below works
-        for n in names:
+        try:
+          for n in names:
             if not n.startswith(root):
                 continue
             rel_path = n[len(root):]
@@ -94,6 +97,8 @@ def fetch_upstream(log=print):
             dst = tmp / rel_path
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(z.read(n))
+        except BaseException:
+            shutil.rmtree(tmp, ignore_errors=True); raise
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(out, ignore_errors=True)
     tmp.rename(out)
@@ -117,6 +122,14 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
     if bad:                                   # we promise to write only Interface/AddOns/WowCompanion*
         return f"add-on source refused: unexpected path {bad[0]!r}"
     folders = sorted({rel.split("/", 1)[0] for rel in files})
+    backup = CACHE / "addons-backup"                  # outside the game: only our own add-on folders are written there
+    if (backup / ".complete").exists():               # an earlier install was killed midway: put its good copy back first
+        log("restoring add-ons from an interrupted install")
+        for f in folders:
+            if (backup / f).is_dir():
+                shutil.rmtree(addons_dir / f, ignore_errors=True)
+                shutil.copytree(backup / f, addons_dir / f)
+        shutil.rmtree(backup, ignore_errors=True)
     have = installed_set(addons_dir)
     missing = [f for f in folders if not (addons_dir / f).is_dir()]
     differs = [rel for rel, md5 in files.items()
@@ -128,12 +141,12 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
             return f"add-ons not installed (set {set_no} available)"
         if have and have >= set_no and not missing:
             return f"installed set {have} differs from {set_no}; left alone (install with force)"
-    backup = CACHE / "addons-backup"                  # outside the game: only our own add-on folders are written there
     shutil.rmtree(backup, ignore_errors=True)
     backup.mkdir(parents=True)
     for f in folders:
         if (addons_dir / f).is_dir():
             shutil.copytree(addons_dir / f, backup / f)
+    (backup / ".complete").touch()                    # the backup is whole: from here on it is the good copy
     try:
         for rel, md5 in files.items():
             s, d = src / "addons" / rel, addons_dir / rel
@@ -146,10 +159,13 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
                 if p.is_file() and str(p.relative_to(addons_dir)) not in files:
                     p.unlink()
     except Exception as e:
-        for f in folders:
-            shutil.rmtree(addons_dir / f, ignore_errors=True)
-            if (backup / f).is_dir():
-                shutil.copytree(backup / f, addons_dir / f)
+        try:
+            for f in folders:
+                shutil.rmtree(addons_dir / f, ignore_errors=True)
+                if (backup / f).is_dir():
+                    shutil.copytree(backup / f, addons_dir / f)
+        except Exception as e2:
+            return f"add-on install failed ({e}) and so did the restore ({e2}); the old set is kept in {backup}"
         return f"add-on install failed, old set restored: {e}"
     shutil.rmtree(backup, ignore_errors=True)
     msg = f"add-ons {'updated' if have else 'installed'}: set {have or '-'} → {set_no} (/reload in game)"

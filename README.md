@@ -26,7 +26,8 @@ DS Forever Desktop, which only exists for Windows.
 - **WoW Forever via Battle.net, added to Steam as a non-Steam game, running with Proton.** Start it once and log in
   (other launchers work too, see *Other launchers*).
 - **Sunshine** ([Flatpak](https://flathub.org/apps/dev.lizardbyte.app.Sunshine) or your distro's package), set up and running.
-- **Python 3.10+** and **avahi** (most desktop distros have both).
+- **Python 3.10+** with venv, and **avahi** with its tools. Most desktops have them; otherwise install
+  `python3-venv avahi-utils` (Debian/Ubuntu) or `avahi-tools` (Fedora).
 - PC and Thor on the **same home network**.
 - **DS Forever** installed on the Thor: the APK from [its releases](https://github.com/Jreese702/DS-Forever/releases/latest).
 
@@ -38,7 +39,7 @@ cd dsf-linux-helper
 ./install.sh
 ```
 
-The installer sets everything up as your user (no root), starts the helper as a background service, checks your setup
+Run it in a terminal on the PC's desktop (not over SSH). The installer sets everything up as your user (no root), starts the helper as a background service, checks your setup
 and shows a **pairing code**. Anything marked **FIX** comes with the exact command to run.
 
 ## Connect the Thor (once)

@@ -132,7 +132,7 @@ class Assembler:
         if not (DIGITS.match(a) and DIGITS.match(b)):
             return
         idx, total = int(a), int(b)
-        if total < 1 or idx < 1 or idx > total:
+        if total < 1 or total > 4096 or idx < 1 or idx > total:   # cap: a bad line must not allocate gigabytes
             return
         gt = game_time(raw, i)
         if total == 1:
@@ -327,8 +327,19 @@ def info():
             "wow": w,
             "lan": lan_addresses(), "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {})}
 
+_tasks = set()
+def spawn(coro):
+    """create_task that keeps a reference (asyncio only holds weak ones) and logs failures."""
+    t = asyncio.create_task(coro); _tasks.add(t)
+    def done(t):
+        _tasks.discard(t)
+        if not t.cancelled() and t.exception() and not isinstance(t.exception(), websockets.ConnectionClosed):
+            log("task failed:", t.exception())
+    t.add_done_callback(done)
+    return t
+
 def token_sha(tok):
-    return hashlib.sha256(tok.encode()).hexdigest()
+    return hashlib.sha256(tok.encode("utf-8", "replace")).hexdigest()
 
 async def send(ws, msg):
     await ws.send(json.dumps(msg, separators=(",", ":")))
@@ -337,7 +348,7 @@ async def broadcast(msgs):
     for ws in list(sessions.values()):
         try:
             for m in msgs:
-                await send(ws, m)
+                await asyncio.wait_for(send(ws, m), 10)   # a stalled Thor must not hold up the others
         except Exception:
             pass
 
@@ -393,9 +404,15 @@ async def hand_pin(ws, pin, name):
                 except Exception:
                     pass
                 log("Sunshine paired the Thor"); return
+        try:
+            await send(ws, {"t": "pair_stream", "ok": False, "error": "no PIN entered in Sunshine within 3 minutes"})
+        except Exception:
+            pass
         return
     for _ in range(45):
         await asyncio.sleep(2)
+        if ws.state.name != "OPEN":
+            return                                # the Thor went away
         if await asyncio.to_thread(sunshine_pin, pin, name):
             await send(ws, {"t": "pair_stream", "ok": True}); log("Sunshine took the PIN"); return
     await send(ws, {"t": "pair_stream", "ok": False, "error": "the stream pairing timed out"})
@@ -409,13 +426,22 @@ async def handle(ws):
         await ws.close(4403, "native clients only"); return      # no web pages (as Desktop)
     device = None
     nonce = None
+    async def idle_guard():                      # sockets that never pair or say hello don't stay open
+        await asyncio.sleep(60)
+        if not (device and sessions.get(device) is ws):
+            await ws.close(4401, "unauthorized")
+    guard = asyncio.create_task(idle_guard())
     try:
         async for raw in ws:
             try:
                 m = json.loads(raw)
             except ValueError:
                 continue
+            if not isinstance(m, dict):
+                continue
             t = m.get("t")
+            if t in ("pair_hello", "hello") and device and sessions.get(device) is ws:
+                del sessions[device]                     # this socket re-identifies: forget its old session
             if t == "pair_hello":
                 device = str(m.get("device_id", ""))[:64]
                 if not pairing["code"] or (pairing["locked_at"] and time.time() - pairing["locked_at"] > LOCK_S):
@@ -428,7 +454,7 @@ async def handle(ws):
                     await send(ws, {"t": "pair_error", "error": "locked", "attempts_left": 0}); continue
                 want = hmac.new(pairing["code"].encode(), f"dsf-pair-v1|{nonce}|{device}".encode(),
                                 hashlib.sha256).hexdigest()
-                if not hmac.compare_digest(want, str(m.get("proof", "")).lower()):
+                if not hmac.compare_digest(want.encode(), str(m.get("proof", "")).lower().encode("utf-8", "replace")):
                     pairing["attempts"] -= 1
                     if pairing["attempts"] <= 0:
                         pairing["locked_at"] = time.time()
@@ -449,9 +475,9 @@ async def handle(ws):
                 await send(ws, {"t": "pair_ok", "device_id": device, "token": token, "host_id": state["host_id"],
                                 "pc_name": PC_NAME, "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS}, "moonlight_pin": pin,
                                 **({"fp": FINGERPRINT} if FINGERPRINT else {})})
-                asyncio.create_task(hand_pin(ws, pin, "AYN Thor"))
+                spawn(hand_pin(ws, pin, "AYN Thor"))
                 await start_session(ws, device)
-                asyncio.create_task(thor_addons(ws, m))
+                spawn(thor_addons(ws, m))
             elif t == "hello":
                 device = str(m.get("device_id", ""))[:64]
                 d = state["devices"].get(device)
@@ -459,7 +485,7 @@ async def handle(ws):
                     await send(ws, {"t": "error", "error": "unauthorized", "detail": "pair again"})
                     await ws.close(4401, "unauthorized"); return
                 await start_session(ws, device)
-                asyncio.create_task(thor_addons(ws, m))
+                spawn(thor_addons(ws, m))
             elif not (device and sessions.get(device) is ws):
                 await send(ws, {"t": "error", "error": "unauthorized", "detail": "hello first"})
                 await ws.close(4401, "unauthorized"); return
@@ -470,7 +496,7 @@ async def handle(ws):
                     await send(ws, {"t": "focus_result", "ok": True, "why": "" if raised else "can't raise windows on this desktop"})
                 else:
                     await send(ws, {"t": "focus_result", "ok": False, "state": "starting", "why": "starting WoW"})
-                    asyncio.create_task(start_wow())
+                    spawn(start_wow())
             elif t == "ping":
                 await send(ws, {"t": "pong", "id": m.get("id")})
             elif t == "unpair":
@@ -483,6 +509,7 @@ async def handle(ws):
     except websockets.ConnectionClosed:
         pass
     finally:
+        guard.cancel()
         if device and sessions.get(device) is ws:
             del sessions[device]
             log(f"Device {device[:8]}… disconnected")
@@ -519,8 +546,12 @@ async def tail_loop():
     tail = Tailer(LOG)
     size = 0
     while True:
-        msgs = tail.poll()
+        try:
+            msgs = await asyncio.to_thread(tail.poll)
+        except Exception as e:                  # MemoryError, odd file errors: log and keep following
+            log("log follower:", e); msgs = []; await asyncio.sleep(2)
         if msgs:
+          async with feed_lock:                 # backlog and live feed change together: no doubles for a joining Thor
             for m in msgs:
                 if m["t"] == "log":
                     backlog.clear(); size = 0
@@ -529,8 +560,7 @@ async def tail_loop():
                     backlog.append(m); size += len(m["doc"])
                     while backlog and (size > MAX_BACKLOG_BYTES or len(backlog) > MAX_BACKLOG_DOCS):
                         size -= len(backlog.pop(0).get("doc", ""))
-            async with feed_lock:
-                await broadcast(msgs)
+            await broadcast(msgs)
         await asyncio.sleep(0.05)
 
 async def wow_loop():
@@ -538,7 +568,10 @@ async def wow_loop():
     texts = {"none": "WoW isn't running on your PC", "starting": "Starting WoW on your PC…", "login": "WoW is at its login screen",
              "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
-        w = await asyncio.to_thread(lambda: info()["wow"])
+        try:
+            w = await asyncio.to_thread(lambda: info()["wow"])
+        except Exception as e:
+            log("WoW check:", e); await asyncio.sleep(5); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
         if key != last:
             if sessions and w["running"] and (last is None or last[0] != "running"):
@@ -602,8 +635,11 @@ def advertise():
         txt.append(f"sid={sid}")
     if FINGERPRINT:
         txt += ["tls=1", f"fp={FINGERPRINT}"]
-    return subprocess.Popen(["avahi-publish", "-s", PC_NAME, "_dsforever._tcp", str(PORT), *txt],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        return subprocess.Popen(["avahi-publish", "-s", PC_NAME, "_dsforever._tcp", str(PORT), *txt],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log("mDNS off (avahi-publish missing?):", e); return None
 
 async def http_info(conn, request):
     if request.path == "/v1/info":

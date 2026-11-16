@@ -10,6 +10,8 @@ command -v python3 >/dev/null || { echo "python3 is missing: install it with you
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || { echo "Python 3.10 or newer needed"; exit 1; }
 
 python3 -c 'import venv, ensurepip' 2>/dev/null || { echo "Python's venv module is missing: install python3-venv (Debian/Ubuntu) or python3-virtualenv, then run this again"; exit 1; }
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}${XDG_RUNTIME_DIR:-}" ] || { echo "Run this from your desktop session (a terminal on the PC), not over SSH or with sudo"; exit 1; }
+command -v avahi-publish >/dev/null || echo "note: avahi-publish is missing (package avahi-tools or avahi-utils): the Thor won't find this PC by itself"
 for t in pgrep ss ip; do command -v $t >/dev/null || echo "note: '$t' is missing (procps / iproute2); WoW detection needs it"; done
 echo "-- Python environment"
 python3 -m venv --clear "$HERE/.venv"
@@ -32,6 +34,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now dsf-bridge.service
 systemctl --user restart dsf-bridge.service
 sleep 3
+systemctl --user is-active --quiet dsf-bridge.service || { echo "The helper did not start. Its log:"; journalctl --user -u dsf-bridge -n 30 --no-pager; exit 1; }
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "note: ~/.local/bin is not on your PATH yet (log out and in, or use $HOME/.local/bin/dsf-bridge)";; esac
 
 echo
 "$HOME/.local/bin/dsf-bridge" doctor || true
