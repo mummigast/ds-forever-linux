@@ -15,3 +15,7 @@ Untested until the owner has the Thor:
 
 Before going public: Thor test, final privacy/history check, first release (tag + notes). Never ship an APK.
 Commit as mummigast noreply only; nothing personal in files.
+
+Checked 2026-11-16: no other Linux helper exists (upstream issues, the 5 GitHub forks: none ahead of upstream, web search).
+Thor compatibility read from upstream's app code: the app picks Sunshine's ports from our welcome ("Desktop" path), has no
+version gate, and falls back to plain Sunshine without a bridge. So the official APK + this helper should be a drop-in.
