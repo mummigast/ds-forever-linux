@@ -1,25 +1,110 @@
-# DS Forever bridge for Linux
+# DS Forever on Linux: stream WoW Forever to your AYN Thor
 
-Use the DS Forever app on an AYN Thor with a **Linux** PC that streams WoW Forever through Sunshine.
-It replaces the bridge part of DS Forever Desktop (Windows only). Protocol: `../desktop/docs/STREAM_BRIDGE_PROTOCOL.md`.
+Play **World of Warcraft: Forever** on your **Linux PC** and stream it to an **AYN Thor**: the game on the top screen,
+DS Forever's touch companion (map, bags, quests, chat, party) on the bottom screen.
 
-What it does: follows WoW's `General.log`, reassembles the DS add-ons' documents and serves them to the Thor over
-`ws://<pc>:48210/v1/ws`, advertised by mDNS (`_dsforever._tcp`, via avahi). Video, audio and the controller stay
-Moonlight ↔ your own Sunshine. It never reads, stores or types credentials: sign in on the PC as usual.
+**What you run:** the official **DS Forever app** on the Thor, plus this small **helper** on the PC. The helper replaces
+DS Forever Desktop, which only exists for Windows.
 
-## Setup
-1. `uv venv .venv && uv pip install -p .venv websockets`
-2. `./install-addons.sh` (copies the WowCompanion add-ons into the game; `/reload` in game)
-3. Run `./.venv/bin/python dsf_bridge.py`, or install `dsf-bridge.service` as a user unit.
-   When the Thor connects and WoW is not running, the bridge starts the Battle.net Steam shortcut and asks it to
-   launch WoW Forever (`launch_uid wowf`, Proton Hotfix). Override with `DSF_START_CMD`. Untested on the real PC yet.
-4. On the Thor: DS Forever → Streaming → enter the 6-digit code the bridge prints.
-5. Moonlight PIN: the bridge prints a 4-digit PIN; type it in Sunshine's web UI (PIN page), or give the bridge
-   `SUNSHINE_USER` / `SUNSHINE_PASS` so it does it itself.
+```
+ Linux PC                                          AYN Thor
+ ┌──────────────────────────┐   video, sound,     ┌───────────────────────────┐
+ │ WoW Forever (Steam/Proton)│◄─ controller ─────►│ top: the game (Moonlight) │
+ │ Sunshine                  │   (Moonlight)      │                           │
+ │ dsf-bridge (this helper)  │◄── game data ─────►│ bottom: DS Forever        │
+ └──────────────────────────┘   (port 48210)      └───────────────────────────┘
+```
 
-## Not done (vs Desktop)
-TLS (wss), bringing the WoW window to the front, Sunshine app "WoW Forever" (the Thor
-falls back to "Desktop"), sign-in screen detection (`screen` is reported as `world` while WoW runs).
+## You need
+
+- **WoW Forever via Battle.net, added to Steam as a non-Steam game, running with Proton.** Start it once and log in
+  (other launchers work too, see *Other launchers*).
+- **Sunshine** ([Flatpak](https://flathub.org/apps/dev.lizardbyte.app.Sunshine) or your distro's package), set up and running.
+- **Python 3.10+** and **avahi** (most desktop distros have both).
+- PC and Thor on the **same home network**.
+- **DS Forever** installed on the Thor: the APK from [its releases](https://github.com/Jreese702/DS-Forever/releases/latest).
+
+## Install (about a minute)
+
+```sh
+git clone <this repository> ds-forever
+cd ds-forever/linux-bridge
+./install.sh
+```
+
+The installer sets everything up as your user (no root), starts the helper as a background service, checks your setup
+and shows a **pairing code**. Anything marked **FIX** comes with the exact command to run.
+
+## Connect the Thor (once)
+
+1. On the Thor open **DS Forever → Streaming**. It finds your PC by itself.
+2. Type the **6-digit code**. To see it again: `dsf-bridge code`.
+3. The Thor then pairs its Moonlight with Sunshine using a **4-digit PIN**:
+   open Sunshine's web page on the PC (`https://localhost:47990`), go to **PIN**, and type the PIN that
+   `journalctl --user -u dsf-bridge -n 20` shows.
+   *Skip this step every time:* put your Sunshine login in `~/.config/dsf-bridge/env` (`SUNSHINE_USER=` / `SUNSHINE_PASS=`).
+4. Done. From now on: open DS Forever on the Thor and pick Streaming.
+
+## What happens when you play
+
+- If WoW isn't running, the helper starts Battle.net and launches WoW Forever for you. If Battle.net wants you to sign in,
+  do that once on the PC (your login is never seen or stored by the helper).
+- The first time the Thor connects, the helper installs DS Forever's add-ons into the game and keeps them up to date. They
+  only go in `Interface/AddOns/WowCompanion*`; nothing else in the game is changed. Type `/reload` in the game after an install.
+- On KDE Plasma the helper brings the WoW window to the front for the stream. Other desktops: keep WoW in front yourself.
+
+## Commands
+
+| | |
+|---|---|
+| `dsf-bridge doctor` | check the setup, with fixes |
+| `dsf-bridge code` | show the pairing code |
+| `dsf-bridge addons [--force]` | install/update DS Forever's add-ons now |
+| `dsf-bridge forget` | forget all paired Thors |
+| `journalctl --user -u dsf-bridge -f` | watch the helper's log |
+| `systemctl --user restart dsf-bridge` | restart it |
+| `./uninstall.sh [--purge]` | remove it (`--purge` also forgets pairings) |
+
+## Troubleshooting
+
+| The Thor says | Try |
+|---|---|
+| "The PC isn't answering" / "Desktop isn't running" | `dsf-bridge doctor`: helper running? firewall open for 48210/tcp and mDNS? same network? |
+| "The stream works, but Desktop's bridge isn't answering" | the helper is down or blocked: `systemctl --user restart dsf-bridge`, check the firewall |
+| "Pair again" | `dsf-bridge code`, enter it on the Thor; Sunshine's PIN step again if asked |
+| Stuck on "Starting WoW on your PC" | Battle.net may want a sign-in or an update on the PC; or start WoW yourself once |
+| Bottom screen empty | add-ons missing: `dsf-bridge addons`, then `/reload` in the game |
+| Taps land in the wrong place | stream the monitor WoW is on, with WoW full screen |
+
+## Other launchers (Lutris, Heroic, Bottles, plain Wine)
+
+The helper finds WoW Forever in those prefixes too. It can only *start* WoW by itself under Steam/Proton; otherwise put a
+start command in `~/.config/dsf-bridge/env`, for example `DSF_START_CMD=lutris lutris:rungame/battlenet`, or start WoW
+yourself before you connect.
+
+## Settings (`~/.config/dsf-bridge/env`)
+
+See `env.example`: Sunshine login (automatic PIN), the PC's name on the Thor, an unusual WoW folder, a custom start command.
+
+## Not done yet (compared with DS Forever Desktop)
+
+Encrypted connection (wss): the Thor and the helper talk in plain WebSocket on your home network; the pairing code never
+crosses the network, but the session token does. Battle.net sign-in window detection. Closing WoW after the stream ends.
+
+## Privacy and rules
+
+The helper reads only WoW's own log file (where DS Forever's add-ons write their data) and the game's process and
+connections, to tell the Thor where the game is. It never reads, stores or types your Battle.net login, never sends
+key presses, and never writes anything in the game except DS Forever's own add-on folders. It follows the same rules as
+DS Forever: one button press is one game action, nothing is automated.
 
 ## Licence
-GPL-3.0-or-later, as DS Forever (`../LICENSE`). Dependency: websockets (BSD-3-Clause), installed with pip.
+
+GPL-3.0-or-later, as DS Forever (`../LICENSE`). Dependency: [websockets](https://github.com/python-websockets/websockets)
+(BSD-3-Clause), installed by `install.sh`. Unofficial: not affiliated with Blizzard Entertainment or the DS Forever
+project. World of Warcraft and Battle.net are trademarks of Blizzard Entertainment.
+
+## For developers
+
+Protocol: `../desktop/docs/STREAM_BRIDGE_PROTOCOL.md`. Files: `dsf_bridge.py` (server, pairing, CLI), `wow_linux.py`
+(finding/starting WoW, screen detection), `addons.py` (add-on installs). Tests: `.venv/bin/python -m unittest discover -s tests`.

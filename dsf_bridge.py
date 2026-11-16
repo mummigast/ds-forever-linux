@@ -14,8 +14,15 @@ Speaks desktop/docs/STREAM_BRIDGE_PROTOCOL.md v1:
 
 Never touches credentials, bindings, macros or CVars. Video/audio/controller stay Moonlight <-> Sunshine.
 """
-import asyncio, base64, hashlib, hmac, json, os, secrets, socket, ssl, subprocess, sys, time, urllib.request
+import argparse, asyncio, base64, re, shutil, hashlib, hmac, json, os, secrets, socket, ssl, subprocess, sys, time, urllib.request
 from pathlib import Path
+
+ENV_FILE = Path.home() / ".config/dsf-bridge/env"
+if ENV_FILE.exists():
+    for _l in ENV_FILE.read_text().splitlines():
+        _k, _sep, _v = _l.strip().partition("=")
+        if _sep and not _k.startswith("#"):
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
 
 import websockets
 import wow_linux
@@ -33,8 +40,19 @@ def _game_dir():
 GAME_DIR = _game_dir()
 LOG = GAME_DIR / "Logs" / "General.log"
 STATE = Path(os.environ.get("DSF_STATE", Path.home() / ".config/dsf-bridge/state.json"))
-SUNSHINE_HTTP, SUNSHINE_HTTPS, SUNSHINE_WEB = 47989, 47984, 47990
-SUNSHINE_STATE = Path.home() / ".var/app/dev.lizardbyte.app.Sunshine/config/sunshine/sunshine_state.json"
+SUNSHINE_DIRS = [Path.home() / ".var/app/dev.lizardbyte.app.Sunshine/config/sunshine",   # Flatpak
+                 Path.home() / ".config/sunshine"]                                        # native / AppImage
+SUNSHINE_DIR = next((d for d in SUNSHINE_DIRS if (d / "sunshine.conf").exists()), SUNSHINE_DIRS[1])
+
+def _sunshine_port():
+    try:
+        m = re.search(r"^\s*port\s*=\s*(\d+)", (SUNSHINE_DIR / "sunshine.conf").read_text(), re.M)
+        return int(m.group(1)) if m else 47989
+    except OSError:
+        return 47989
+_base = _sunshine_port()
+SUNSHINE_HTTP, SUNSHINE_HTTPS, SUNSHINE_WEB = _base, _base - 5, _base + 1   # Sunshine's own port layout
+SUNSHINE_STATE = SUNSHINE_DIR / "sunshine_state.json"
 MAX_BACKLOG_BYTES = 8 * 1024 * 1024
 MAX_BACKLOG_DOCS = 50_000
 
@@ -467,10 +485,9 @@ async def http_info(conn, request):
     return None
 
 async def main():
-    if not state["devices"]:
-        new_code()
-    else:
-        log(f"{len(state['devices'])} paired device(s). New Thor? Start pairing on it and a code shows here.")
+    new_code()   # always ready, so `dsf-bridge code` works before the Thor asks
+    if state["devices"]:
+        log(f"{len(state['devices'])} paired device(s)")
     if addons.installed_set(ADDONS_DIR):
         log(await addon_pass())          # update an existing install at start (never a fresh one)
     mdns = None if os.environ.get("DSF_NO_MDNS") else advertise()
@@ -484,8 +501,85 @@ async def main():
         if mdns:
             mdns.terminate()
 
+# ---------------------------------------------------------------- command line
+def doctor():
+    """Check everything the Thor needs, in plain words. Returns the number of problems."""
+    probs = 0
+    def line(ok, text, fix=""):
+        nonlocal probs
+        print(("  OK   " if ok else "  FIX  ") + text + ("" if ok or not fix else f"\n         → {fix}"))
+        probs += 0 if ok else 1
+    print("DS Forever Linux helper: checks")
+    line(GAME_DIR.exists(), f"WoW Forever found: {GAME_DIR}" if GAME_DIR.exists() else "WoW Forever not found",
+         "install WoW Forever with Battle.net (Steam: add Battle.net as a non-Steam game, Proton), start it once, "
+         "or set DSF_WOW_DIR in ~/.config/dsf-bridge/env")
+    line(LOG.exists(), "WoW's log exists (start WoW once if this fails)", "start WoW Forever once and log in")
+    can_start = bool(START_CMD or (STEAM_PREFIX and PROTON))
+    line(can_start, "WoW can be started for you: " + ("DSF_START_CMD" if START_CMD else f"Steam app {STEAM_PREFIX[1]}, {PROTON.parent.name}" if can_start else "no"),
+         "WoW is not in a Steam/Proton prefix: set DSF_START_CMD in ~/.config/dsf-bridge/env to a command that starts it")
+    bnet = GAME_DIR.parent.parent / "Battle.net/Battle.net.exe"
+    line(START_CMD or bnet.exists(), "Battle.net installed in the same prefix", "install Battle.net in WoW's prefix")
+    sun_up = subprocess.run(["pgrep", "-i", "sunshine"], capture_output=True).returncode == 0
+    line((SUNSHINE_DIR / "sunshine.conf").exists() and sun_up, f"Sunshine installed and running ({SUNSHINE_DIR})",
+         "install Sunshine (Flatpak dev.lizardbyte.app.Sunshine or your distro's package) and start it")
+    auto_pin = bool(os.environ.get("SUNSHINE_USER") and os.environ.get("SUNSHINE_PASS"))
+    print(("  OK   " if auto_pin else "  NOTE ") + ("Moonlight PIN goes to Sunshine automatically" if auto_pin else
+          f"Moonlight PIN: you type it in Sunshine's web UI once (https://localhost:{SUNSHINE_WEB} → PIN).\n"
+          "         Optional: SUNSHINE_USER=… / SUNSHINE_PASS=… in ~/.config/dsf-bridge/env makes it automatic"))
+    avahi = subprocess.run(["systemctl", "is-active", "avahi-daemon"], capture_output=True, text=True).stdout.strip() == "active"
+    line(avahi and shutil.which("avahi-publish"), "avahi (mDNS) running, so the Thor finds this PC",
+         "install avahi (avahi-tools / avahi-utils) and: sudo systemctl enable --now avahi-daemon")
+    fw = subprocess.run(["firewall-cmd", "--state"], capture_output=True, text=True) if shutil.which("firewall-cmd") else None
+    if fw and fw.returncode == 0:
+        q = subprocess.run(["firewall-cmd", "--query-port", f"{PORT}/tcp"], capture_output=True, text=True)
+        rng = subprocess.run(["firewall-cmd", "--list-ports"], capture_output=True, text=True).stdout
+        ok = q.stdout.strip() == "yes" or any(_in_range(PORT, r) for r in rng.split() if r.endswith("/tcp"))
+        line(ok, f"firewall lets the Thor reach port {PORT}",
+             f"sudo firewall-cmd --permanent --add-port={PORT}/tcp --add-service=mdns && sudo firewall-cmd --reload")
+    elif shutil.which("ufw"):
+        print(f"  NOTE ufw: if it is on, allow the Thor in: sudo ufw allow {PORT}/tcp && sudo ufw allow mdns")
+    svc = subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True, text=True).stdout.strip()
+    line(svc == "active", "helper service running (dsf-bridge)", "run ./install.sh, or: systemctl --user enable --now dsf-bridge")
+    have = addons.installed_set(ADDONS_DIR)
+    print(f"  {'OK  ' if have else 'NOTE'} DS Forever add-ons in the game: " + (f"set {have}" if have else
+          "not yet (installed when the Thor first connects, or run: dsf-bridge addons)"))
+    print(f"  INFO paired Thors: {len(state['devices'])}")
+    print("All good." if not probs else f"{probs} thing(s) to fix.")
+    return probs
+
+def _in_range(port, spec):
+    a = spec.split("/")[0]
+    lo, _, hi = a.partition("-")
+    return lo.isdigit() and int(lo) <= port <= int(hi or lo)
+
+def cli():
+    ap = argparse.ArgumentParser(prog="dsf-bridge", description="DS Forever helper for Linux (AYN Thor streaming).")
+    sub = ap.add_subparsers(dest="cmd")
+    sub.add_parser("run", help="run the helper (what the service does)")
+    sub.add_parser("doctor", help="check the setup")
+    sub.add_parser("code", help="show the pairing code to type on the Thor")
+    sub.add_parser("forget", help="forget all paired Thors")
+    a = sub.add_parser("addons", help="install/update DS Forever's add-ons in the game")
+    a.add_argument("--force", action="store_true", help="replace a differing set")
+    args = ap.parse_args()
+    if args.cmd in (None, "run"):
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            pass
+    elif args.cmd == "doctor":
+        sys.exit(1 if doctor() else 0)
+    elif args.cmd == "code":
+        f = STATE.parent / "pairing-code.txt"
+        if f.exists() and subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True).returncode == 0:
+            c = f.read_text().strip(); print(f"Pairing code: {c[:3]} {c[3:]}")
+        else:
+            print("The helper isn't running: systemctl --user start dsf-bridge"); sys.exit(1)
+    elif args.cmd == "forget":
+        state["devices"] = {}; save_state(state)
+        print("Forgotten. Restart the helper: systemctl --user restart dsf-bridge")
+    elif args.cmd == "addons":
+        print(asyncio.run(addon_pass(force=args.force, allow_new=True)))
+
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    cli()
