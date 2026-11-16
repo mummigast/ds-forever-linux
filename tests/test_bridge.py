@@ -55,6 +55,14 @@ class Units(unittest.TestCase):
                 for p in procs:
                     p.kill(); p.wait()
 
+    def test_addons_only_own_folders(self):
+        import addons
+        d = Path(tempfile.mkdtemp()); (d / "src").mkdir(); (d / "AddOns").mkdir()
+        for bad in ("Blizzard_X/x.lua", "WowCompanion/../../x.lua", "WowCompanion.lua"):
+            (d / "src/manifest.txt").write_text("set 1\n" + "0" * 32 + "  " + bad + "\n")
+            self.assertIn("refused", addons.install(d / "src", d / "AddOns", allow_new=True))
+        self.assertEqual(list((d / "AddOns").iterdir()), [])
+
     def test_short_error(self):
         self.assertEqual(wow_linux.short_error("Status has no name. (14400)"), "Status has no name (14400)")
 

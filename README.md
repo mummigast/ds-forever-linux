@@ -2,6 +2,10 @@
 
 **Unofficial.** Stream WoW Forever from a Linux PC to your AYN Thor with [DS Forever](https://github.com/Jreese702/DS-Forever).
 
+> **Status: early.** Works end to end against a simulated Thor; real-device testing is ongoing. Please
+> [open an issue](https://github.com/mummigast/dsf-linux-helper/issues) with the output of `dsf-bridge doctor` if
+> something doesn't work.
+
 Play **World of Warcraft: Forever** on your **Linux PC** and stream it to an **AYN Thor**: the game on the top screen,
 DS Forever's touch companion (map, bags, quests, chat, party) on the bottom screen.
 
@@ -43,7 +47,7 @@ and shows a **pairing code**. Anything marked **FIX** comes with the exact comma
 2. Type the **6-digit code**. To see it again: `dsf-bridge code`.
 3. The Thor then pairs its Moonlight with Sunshine using a **4-digit PIN**:
    open Sunshine's web page on the PC (`https://localhost:47990`), go to **PIN**, and type the PIN that
-   `journalctl --user -u dsf-bridge -n 20` shows.
+   `dsf-bridge code` shows (or the one on the Thor's screen).
    *Skip this step every time:* put your Sunshine login in `~/.config/dsf-bridge/env` (`SUNSHINE_USER=` / `SUNSHINE_PASS=`).
 4. Done. From now on: open DS Forever on the Thor and pick Streaming.
 
@@ -90,8 +94,8 @@ See `env.example`: Sunshine login (automatic PIN), the PC's name on the Thor, an
 
 ## Not done yet (compared with DS Forever Desktop)
 
-Encrypted connection (wss): the Thor and the helper talk in plain WebSocket on your home network; the pairing code never
-crosses the network, but the session token does. Battle.net sign-in window detection. Closing WoW after the stream ends.
+- Spotting Battle.net's sign-in window (the Thor just waits on "Starting WoW" until you sign in on the PC).
+- Closing WoW when the stream ends.
 
 ## Privacy and rules (details: [SAFETY.md](SAFETY.md))
 

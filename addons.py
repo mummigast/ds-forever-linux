@@ -65,6 +65,8 @@ def fetch_upstream(log=print):
     name = next((n for n in assets if n.endswith("-source.zip") and n.startswith("DS-Forever-")), None)
     if not name or "SHA256SUMS" not in assets:
         raise RuntimeError("upstream release has no source zip / SHA256SUMS")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rel["tag_name"]) or rel["tag_name"] in (".", ".."):
+        raise RuntimeError("odd upstream tag name")
     out = CACHE / rel["tag_name"]
     if (out / "manifest.txt").exists():
         return out
@@ -110,6 +112,10 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
     set_no, files = parse_manifest((src / "manifest.txt").read_text())
     if not files:
         return "the add-on source has an empty manifest"
+    bad = [rel for rel in files if rel.startswith("/") or "\\" in rel or ".." in rel.split("/")
+           or not rel.split("/", 1)[0].startswith("WowCompanion") or "/" not in rel]
+    if bad:                                   # we promise to write only Interface/AddOns/WowCompanion*
+        return f"add-on source refused: unexpected path {bad[0]!r}"
     folders = sorted({rel.split("/", 1)[0] for rel in files})
     have = installed_set(addons_dir)
     missing = [f for f in folders if not (addons_dir / f).is_dir()]

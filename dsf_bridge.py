@@ -6,7 +6,7 @@ streams WoW Forever with Sunshine. Replaces the bridge part of DS Forever Deskto
 
 Speaks docs/STREAM_BRIDGE_PROTOCOL.md v1 (DS Forever's bridge protocol):
   - follows WoW's General.log, reassembles the add-on's WCB1 documents (port of WcbAssembler.cs)
-  - WebSocket server ws://<pc>:48210/v1/ws (plain ws; the Thor uses ws when tls is not advertised)
+  - WebSocket server on <pc>:48210/v1/ws: ws and wss on the same port (self-signed cert, fingerprint in mDNS/welcome)
   - pairing: 6-digit code shown here, HMAC proof from the Thor, token stored in the state file
   - mDNS advert _dsforever._tcp via avahi-publish
   - Moonlight PIN to Sunshine: automatic via Sunshine's API when SUNSHINE_USER/SUNSHINE_PASS are set,
@@ -171,6 +171,7 @@ class Tailer:
                 if restart:
                     out.append({"t": "log", "event": "restart", "path": str(self.path), "flavor": "forever"})
                     log("WoW restarted, resyncing")
+                    wow.restart()             # before the new log's lines are read, so their screen state counts
                 self.asm.reset(); self.carry = b""
                 self.offset = 0 if restart else max(0, st.st_size - MAX_BACKLOG_BYTES)
                 self.ino = st.st_ino
@@ -446,7 +447,7 @@ async def handle(ws):
                 pin_file.write_text(pin + "\n"); os.chmod(pin_file, 0o600)
                 log(f"Paired device {device[:8]}…")
                 await send(ws, {"t": "pair_ok", "device_id": device, "token": token, "host_id": state["host_id"],
-                                "pc_name": PC_NAME, "sunshine": info()["sunshine"], "moonlight_pin": pin,
+                                "pc_name": PC_NAME, "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS}, "moonlight_pin": pin,
                                 **({"fp": FINGERPRINT} if FINGERPRINT else {})})
                 asyncio.create_task(hand_pin(ws, pin, "AYN Thor"))
                 await start_session(ws, device)
@@ -522,7 +523,7 @@ async def tail_loop():
         if msgs:
             for m in msgs:
                 if m["t"] == "log":
-                    backlog.clear(); size = 0; wow.restart()
+                    backlog.clear(); size = 0
                 elif m["t"] == "doc":
                     wow.doc_seen()
                     backlog.append(m); size += len(m["doc"])
