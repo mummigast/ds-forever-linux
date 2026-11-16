@@ -58,7 +58,8 @@ save_state(state)
 
 def sunshine_uniqueid():
     try:
-        return json.loads(SUNSHINE_STATE.read_text()).get("uniqueid")
+        d = json.loads(SUNSHINE_STATE.read_text())
+        return d.get("root", d).get("uniqueid")
     except Exception:
         return None
 
