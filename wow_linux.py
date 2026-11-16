@@ -62,13 +62,25 @@ def proton_for(steam_root, appid):
 WOW_PROC = "wow.exe"            # Wine names its processes after the .exe (comm)
 BNET_PROC = "battle.net.exe"
 
-def pid_of(name):
-    """PID of a process whose name is exactly `name` (case-insensitive), not any command line mentioning it."""
+def _cmdline(pid):
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+def pid_of(name, must_contain=None):
+    """PID of a process named exactly `name` (case-insensitive; Wine names processes after their .exe), else one whose
+    command line runs it (".../Wow.exe" or "C:\\...\\Wow.exe", spaces allowed). must_contain: a text its command line
+    must have, e.g. "_forever_" so retail WoW (also Wow.exe) is not taken for WoW Forever."""
     r = subprocess.run(["pgrep", "-i", "-x", re.escape(name)], capture_output=True, text=True)
     pids = [int(x) for x in r.stdout.split()]
-    if not pids:   # fallback: the .exe as the program path of a command line (".../Wow.exe" or "C:\\...\\Wow.exe")
-        r = subprocess.run(["pgrep", "-i", "-f", r"^[^ ]*[\\/]" + re.escape(name) + r"( |$)"], capture_output=True, text=True)
-        pids = [int(x) for x in r.stdout.split()]
+    if not pids:
+        r = subprocess.run(["pgrep", "-i", "-f", r"(^|[\\/])" + re.escape(name) + r"( |$)"], capture_output=True, text=True)
+        pids = [int(x) for x in r.stdout.split() if int(x) != os.getpid()]
+    if must_contain:
+        hits = [p for p in pids if must_contain.lower() in _cmdline(p).lower()]
+        # a Wine process's command line normally has its full path; if none says, keep the plain match
+        pids = hits or [p for p in pids if "_retail_" not in _cmdline(p).lower() and "_classic" not in _cmdline(p).lower()]
     return pids[0] if pids else None
 
 def uptime_s(pid):
@@ -166,7 +178,7 @@ class WowState:
     def doc_seen(self):
         self.last_doc = time.monotonic()
     def snapshot(self, start_state=None, start_why=""):
-        pid = pid_of(WOW_PROC)
+        pid = pid_of(WOW_PROC, "_forever_")
         up = pid is not None
         game, auth = connections(pid) if up else (0, 0)
         doc_age = time.monotonic() - self.last_doc if self.last_doc else None
@@ -185,7 +197,9 @@ KWIN_JS = """
 const wins = workspace.windowList ? workspace.windowList() : workspace.clientList();
 for (const w of wins) {
     const cls = (w.resourceClass || "").toString().toLowerCase();
-    if (cls.indexOf("wow.exe") >= 0 || w.caption === "World of Warcraft") {
+    const cap = (w.caption || "").toString();
+    // Proton windows are usually class "steam_app_<id>": match the game's own title too
+    if (cls.indexOf("wow.exe") >= 0 || cap.indexOf("World of Warcraft") === 0) {
         if (w.minimized) w.minimized = false;
         workspace.activeWindow = w;
         break;

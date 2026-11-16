@@ -297,7 +297,7 @@ async def start_wow():
     await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
 
 def wow_running():
-    return wow_linux.pid_of(wow_linux.WOW_PROC) is not None
+    return wow_linux.pid_of(wow_linux.WOW_PROC, "_forever_") is not None
 
 def lan_addresses():
     """This PC's IPv4 addresses on its networks (the Thor follows the PC when DHCP moves it)."""

@@ -39,6 +39,22 @@ class Units(unittest.TestCase):
         self.assertEqual(c(True, 60, 2, 0, L, None), "world")
         self.assertEqual(c(True, 60, 0, 0, L, 10.0), "world")
 
+    def test_retail_is_not_forever(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as t:
+            procs = []
+            try:
+                for flav in ("_retail_", "_forever_"):
+                    d = Path(t) / "Program Files (x86)" / flav; d.mkdir(parents=True)
+                    exe = d / "Wow.exe"; shutil.copy("/usr/bin/sleep", exe)
+                    procs.append(subprocess.Popen([str(exe), "30"]))
+                    time.sleep(0.3)
+                    want = None if flav == "_retail_" else procs[-1].pid
+                    self.assertEqual(wow_linux.pid_of("wow.exe", "_forever_"), want)
+            finally:
+                for p in procs:
+                    p.kill(); p.wait()
+
     def test_short_error(self):
         self.assertEqual(wow_linux.short_error("Status has no name. (14400)"), "Status has no name (14400)")
 
