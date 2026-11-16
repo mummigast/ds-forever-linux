@@ -171,3 +171,42 @@ class WowState:
         return {"found": True, "flavor": "forever", "running": up, "state": state,
                 "why": "" if up else start_why, "screen": screen, "focused": up, "bnet": bnet,
                 "needs_you": False, "login_error": (self.log.error or "") if screen == "login" else ""}
+
+
+# ---------------------------------------------------------------- bringing WoW to the front (KDE Plasma 6, best effort)
+KWIN_JS = """
+const wins = workspace.windowList ? workspace.windowList() : workspace.clientList();
+for (const w of wins) {
+    const cls = (w.resourceClass || "").toString().toLowerCase();
+    if (cls.indexOf("wow.exe") >= 0 || w.caption === "World of Warcraft") {
+        if (w.minimized) w.minimized = false;
+        workspace.activeWindow = w;
+        break;
+    }
+}
+"""
+
+def focus_window():
+    """Raise WoW's window via a one-shot KWin script. False when not on KDE (other desktops: no-op)."""
+    import tempfile, uuid
+    name = "dsf_focus_" + uuid.uuid4().hex[:8]
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(KWIN_JS); path = f.name
+    def call(obj, method, *args):
+        return subprocess.run(["gdbus", "call", "--session", "--dest", "org.kde.KWin", "--object-path", obj,
+                               "--method", method, *args], capture_output=True, text=True, timeout=5)
+    try:
+        r = call("/Scripting", "org.kde.kwin.Scripting.loadScript", path, name)
+        m = re.search(r"\((-?\d+),\)", r.stdout)
+        if r.returncode != 0 or not m or int(m.group(1)) < 0:
+            return False
+        call(f"/Scripting/Script{m.group(1)}", "org.kde.kwin.Script.run")
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        try:
+            call("/Scripting", "org.kde.kwin.Scripting.unloadScript", name)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        os.unlink(path)

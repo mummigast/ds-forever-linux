@@ -255,22 +255,35 @@ async def broadcast(msgs):
         except Exception:
             pass
 
+def _sunshine(method, path, body=None, csrf=None):
+    """Sunshine's local web API (127.0.0.1 only), basic auth from SUNSHINE_USER / SUNSHINE_PASS."""
+    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE   # its own self-signed cert, localhost only
+    auth = "Basic " + base64.b64encode(f"{os.environ['SUNSHINE_USER']}:{os.environ['SUNSHINE_PASS']}".encode()).decode()
+    headers = {"Authorization": auth, "Content-Type": "application/json"}
+    if csrf:
+        headers["X-CSRF-Token"] = csrf
+    req = urllib.request.Request(f"https://127.0.0.1:{SUNSHINE_WEB}{path}", method=method, headers=headers,
+                                 data=json.dumps(body).encode() if body is not None else None)
+    with urllib.request.urlopen(req, context=ctx, timeout=5) as r:
+        return json.loads(r.read() or b"{}")
+
 def sunshine_pin(pin, name):
-    """Give the Moonlight PIN to Sunshine. True if sent automatically."""
-    user, pw = os.environ.get("SUNSHINE_USER"), os.environ.get("SUNSHINE_PASS")
-    if not (user and pw):
-        return False
-    ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-    auth = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    req = urllib.request.Request(f"https://localhost:{SUNSHINE_WEB}/api/pin", method="POST",
-                                 data=json.dumps({"pin": pin, "name": name}).encode(),
-                                 headers={"Authorization": auth, "Content-Type": "application/json"})
+    """Give the Moonlight PIN to Sunshine (2026.914+: needs the waiting request's pairing_id). True when taken."""
     try:
-        with urllib.request.urlopen(req, context=ctx, timeout=5) as r:
-            return json.loads(r.read() or b"{}").get("status") in (True, "true")
+        waiting = _sunshine("GET", "/api/pin").get("pairings") or []
+        if not waiting:
+            return False
+        try:
+            csrf = _sunshine("GET", "/api/csrf-token").get("csrf_token")
+        except Exception:
+            csrf = None
+        for p in reversed(waiting):           # newest request first
+            r = _sunshine("POST", "/api/pin", {"pairing_id": p.get("id"), "pin": pin, "name": name}, csrf)
+            if r.get("status") in (True, "true"):
+                return True
     except Exception as e:
         log("Sunshine PIN API:", e)
-        return False
+    return False
 
 async def hand_pin(ws, pin, name):
     # Sunshine accepts the PIN only while the Thor's pairing request is waiting: retry for 90 s.
@@ -333,9 +346,10 @@ async def handle(ws):
                 await send(ws, {"t": "error", "error": "unauthorized", "detail": "hello first"})
                 await ws.close(4401, "unauthorized"); return
             elif t == "focus":
-                ok = wow_running()   # Linux/Wayland: no window raising; Sunshine streams the desktop as is
+                ok = wow_running()
                 if ok:
-                    await send(ws, {"t": "focus_result", "ok": True, "why": ""})
+                    raised = await asyncio.to_thread(wow_linux.focus_window)   # KDE only; elsewhere a no-op
+                    await send(ws, {"t": "focus_result", "ok": True, "why": "" if raised else "can't raise windows on this desktop"})
                 else:
                     await send(ws, {"t": "focus_result", "ok": False, "state": "starting", "why": "starting WoW"})
                     asyncio.create_task(start_wow())
@@ -391,6 +405,8 @@ async def wow_loop():
         w = await asyncio.to_thread(lambda: info()["wow"])
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
         if key != last:
+            if sessions and w["running"] and (last is None or last[0] != "running"):
+                await asyncio.to_thread(wow_linux.focus_window)      # its window just appeared: bring it to the stream
             last = key
             log(f"WoW: {w['state']} / {w['screen']}" + (f" ({w['login_error']})" if w["login_error"] else ""))
             await broadcast([{"t": "wow", **w}, {"t": "status", "text": texts.get(w["screen"], "")}])
