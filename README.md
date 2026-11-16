@@ -91,7 +91,7 @@ See `env.example`: Sunshine login (automatic PIN), the PC's name on the Thor, an
 Encrypted connection (wss): the Thor and the helper talk in plain WebSocket on your home network; the pairing code never
 crosses the network, but the session token does. Battle.net sign-in window detection. Closing WoW after the stream ends.
 
-## Privacy and rules
+## Privacy and rules (details: [SAFETY.md](SAFETY.md))
 
 The helper reads only WoW's own log file (where DS Forever's add-ons write their data) and the game's process and
 connections, to tell the Thor where the game is. It never reads, stores or types your Battle.net login, never sends

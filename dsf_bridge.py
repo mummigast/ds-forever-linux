@@ -302,13 +302,22 @@ async def start_wow():
 def wow_running():
     return wow_linux.pid_of(wow_linux.WOW_PROC) is not None
 
+def lan_addresses():
+    """This PC's IPv4 addresses on its networks (the Thor follows the PC when DHCP moves it)."""
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True, timeout=3).stdout
+        return [m.group(1) for m in re.finditer(r"inet (\d+\.\d+\.\d+\.\d+)/", out)
+                if not m.group(1).startswith(("100.", "172.17.", "10.88."))]   # skip Tailscale/CGNAT and container bridges
+    except (OSError, subprocess.SubprocessError):
+        return []
+
 def info():
     w = wow.snapshot(wow_start["state"], wow_start["why"])
     w["found"] = GAME_DIR.exists()
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
             "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS},
             "wow": w,
-            "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {})}
+            "lan": lan_addresses(), "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {})}
 
 def token_sha(tok):
     return hashlib.sha256(tok.encode()).hexdigest()
