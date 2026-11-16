@@ -19,6 +19,7 @@ from pathlib import Path
 
 import websockets
 import wow_linux
+import addons
 from websockets.asyncio.server import serve
 
 PROTO = 1
@@ -185,6 +186,29 @@ STEAM_PREFIX = wow_linux.steam_prefix_of(GAME_DIR)          # (steam_root, appid
 PROTON = Path(os.environ["DSF_PROTON"]) if os.environ.get("DSF_PROTON") else (
     wow_linux.proton_for(*STEAM_PREFIX) if STEAM_PREFIX else None)
 wow = wow_linux.WowState()
+ADDONS_DIR = GAME_DIR / "Interface" / "AddOns"
+_fork_src = Path(__file__).resolve().parent.parent / "companion/app/src/main/assets/companion"
+addon_lock = asyncio.Lock()
+
+def addon_source():
+    """DSF_ADDONS_SRC, else this fork's own copy, else upstream's latest release (verified)."""
+    if os.environ.get("DSF_ADDONS_SRC"):
+        return Path(os.environ["DSF_ADDONS_SRC"])
+    if (_fork_src / "manifest.txt").exists():
+        return _fork_src
+    return addons.fetch_upstream(log)
+
+async def addon_pass(force=False, allow_new=False, thor_set=0):
+    """Install/update DS Forever's add-ons in the PC game. allow_new only when a Thor is actually using DS Forever."""
+    async with addon_lock:
+        try:
+            src = await asyncio.to_thread(addon_source)
+            msg = await asyncio.to_thread(addons.install, src, ADDONS_DIR, force, allow_new, log)
+        except Exception as e:
+            msg = f"add-on update failed: {e}"
+        if thor_set and addons.installed_set(ADDONS_DIR) < thor_set:
+            msg += f" (the Thor has set {thor_set}; update this bridge's add-on source)"
+        return msg
 START_CMD = os.environ.get("DSF_START_CMD")   # optional: your own shell command that starts WoW Forever
 wow_start = {"state": None, "why": "", "at": 0.0}
 
@@ -335,6 +359,7 @@ async def handle(ws):
                                 "pc_name": PC_NAME, "sunshine": info()["sunshine"], "moonlight_pin": pin})
                 asyncio.create_task(hand_pin(ws, pin, "AYN Thor"))
                 await start_session(ws, device)
+                asyncio.create_task(thor_addons(ws, m))
             elif t == "hello":
                 device = m.get("device_id", "")
                 d = state["devices"].get(device)
@@ -342,6 +367,7 @@ async def handle(ws):
                     await send(ws, {"t": "error", "error": "unauthorized", "detail": "pair again"})
                     await ws.close(4401, "unauthorized"); return
                 await start_session(ws, device)
+                asyncio.create_task(thor_addons(ws, m))
             elif not (device and sessions.get(device) is ws):
                 await send(ws, {"t": "error", "error": "unauthorized", "detail": "hello first"})
                 await ws.close(4401, "unauthorized"); return
@@ -358,14 +384,29 @@ async def handle(ws):
             elif t == "unpair":
                 state["devices"].pop(device, None); save_state(state)
                 await send(ws, {"t": "unpaired"}); await ws.close(); return
-            elif t in ("addons_status", "addons_install"):
-                await send(ws, {"t": "addons", "ok": False, "why": "install add-ons by hand on Linux (see README)"})
+            elif t == "addons_status":
+                await send(ws, {"t": "addons", "result": f"PC set {addons.installed_set(ADDONS_DIR) or 'none'}"})
+            elif t == "addons_install":
+                await send(ws, {"t": "addons", "result": await addon_pass(force=True, allow_new=True)})
     except websockets.ConnectionClosed:
         pass
     finally:
         if device and sessions.get(device) is ws:
             del sessions[device]
             log(f"Device {device[:8]}… disconnected")
+
+async def thor_addons(ws, m):
+    """A connected Thor uses DS Forever: make sure the PC game has its add-ons (new install allowed)."""
+    try:
+        thor_set = int(m.get("addon_set") or 0)
+    except (TypeError, ValueError):
+        thor_set = 0
+    msg = await addon_pass(allow_new=True, thor_set=thor_set)
+    if "up to date" not in msg:
+        try:
+            await send(ws, {"t": "status", "text": msg})
+        except Exception:
+            pass
 
 async def start_session(ws, device):
     old = sessions.get(device)
@@ -430,6 +471,8 @@ async def main():
         new_code()
     else:
         log(f"{len(state['devices'])} paired device(s). New Thor? Start pairing on it and a code shows here.")
+    if addons.installed_set(ADDONS_DIR):
+        log(await addon_pass())          # update an existing install at start (never a fresh one)
     mdns = None if os.environ.get("DSF_NO_MDNS") else advertise()
     log(f"Bridge on ws://0.0.0.0:{PORT}/v1/ws, following {LOG}")
     log("WoW start: " + ("DSF_START_CMD" if START_CMD else f"Steam app {STEAM_PREFIX[1]} via {PROTON}" if STEAM_PREFIX and PROTON
