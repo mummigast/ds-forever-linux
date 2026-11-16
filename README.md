@@ -44,6 +44,9 @@ and shows a **pairing code**. Anything marked **FIX** comes with the exact comma
 
 ## Connect the Thor (once)
 
+0. **First start of DS Forever asks to install the game on the Thor: say yes (Install directly).** DS Forever builds the
+   bottom screen's maps and icons from the game's own files, so it needs a WoW Forever folder on the Thor even for
+   streaming, and offers *Streaming* only after its setup checks pass (about 250 MB to start, Wi-Fi and 60 GB free needed).
 1. On the Thor open **DS Forever → Streaming**. It finds your PC by itself.
 2. Type the **6-digit code**. To see it again: `dsf-bridge code`.
 3. The Thor then pairs its Moonlight with Sunshine using a **4-digit PIN**:
