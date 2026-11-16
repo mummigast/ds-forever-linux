@@ -18,13 +18,18 @@ import asyncio, base64, hashlib, hmac, json, os, secrets, socket, ssl, subproces
 from pathlib import Path
 
 import websockets
+import wow_linux
 from websockets.asyncio.server import serve
 
 PROTO = 1
-VERSION = "linux-0.1"
+VERSION = "linux-0.2"
 PORT = int(os.environ.get("DSF_PORT", "48210"))
-GAME_DIR = Path(os.environ.get("DSF_WOW_DIR", Path.home() /
-    ".local/share/Steam/steamapps/compatdata/3809046808/pfx/drive_c/Program Files (x86)/World of Warcraft/_forever_"))
+def _game_dir():
+    if os.environ.get("DSF_WOW_DIR"):
+        return Path(os.environ["DSF_WOW_DIR"])
+    found = wow_linux.find_installs()
+    return found[0] if found else Path("/nonexistent/World of Warcraft/_forever_")
+GAME_DIR = _game_dir()
 LOG = GAME_DIR / "Logs" / "General.log"
 STATE = Path(os.environ.get("DSF_STATE", Path.home() / ".config/dsf-bridge/state.json"))
 SUNSHINE_HTTP, SUNSHINE_HTTPS, SUNSHINE_WEB = 47989, 47984, 47990
@@ -158,7 +163,9 @@ class Tailer:
         lines = data.split(b"\n")
         self.carry = lines.pop()[-1024 * 1024:]
         for ln in lines:
-            self.asm.line(ln.decode("utf-8", "replace"), out)
+            text = ln.decode("utf-8", "replace")
+            wow.log.line(text)
+            self.asm.line(text, out)
         return out
 
 
@@ -174,9 +181,10 @@ def new_code():
     code_file = STATE.parent / "pairing-code.txt"
     code_file.write_text(pairing["code"] + "\n"); os.chmod(code_file, 0o600)
 
-STEAM = Path.home() / ".local/share/Steam"
-BNET_APPID = int(os.environ.get("DSF_BNET_APPID", "3809046808"))   # the non-Steam Battle.net shortcut
-PROTON = Path(os.environ.get("DSF_PROTON", STEAM / "steamapps/common/Proton Hotfix/proton"))
+STEAM_PREFIX = wow_linux.steam_prefix_of(GAME_DIR)          # (steam_root, appid) of a Steam/Proton install
+PROTON = Path(os.environ["DSF_PROTON"]) if os.environ.get("DSF_PROTON") else (
+    wow_linux.proton_for(*STEAM_PREFIX) if STEAM_PREFIX else None)
+wow = wow_linux.WowState()
 START_CMD = os.environ.get("DSF_START_CMD")   # optional: your own shell command that starts WoW Forever
 wow_start = {"state": None, "why": "", "at": 0.0}
 
@@ -194,9 +202,12 @@ async def start_wow():
     try:
         if START_CMD:
             subprocess.Popen(START_CMD, shell=True, start_new_session=True)
+        elif not (STEAM_PREFIX and PROTON):
+            raise RuntimeError("can't start WoW here: set DSF_START_CMD (WoW is not in a Steam/Proton prefix)")
         else:
+            steam_root, appid = STEAM_PREFIX
             if not bnet_running():
-                gameid = (BNET_APPID << 32) | 0x02000000
+                gameid = (appid << 32) | 0x02000000      # a non-Steam shortcut's game id
                 subprocess.Popen(["steam", f"steam://rungameid/{gameid}"], start_new_session=True,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 for _ in range(60):
@@ -204,8 +215,8 @@ async def start_wow():
                     if bnet_running():
                         break
                 await asyncio.sleep(10)   # let Battle.net sign in / settle
-            env = dict(os.environ, STEAM_COMPAT_DATA_PATH=str(STEAM / f"steamapps/compatdata/{BNET_APPID}"),
-                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(STEAM))
+            env = dict(os.environ, STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
+                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(steam_root))
             subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
                               "--exec=launch_uid wowf"], env=env, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -223,13 +234,11 @@ def wow_running():
     return subprocess.run(["pgrep", "-if", r"wow\.exe"], capture_output=True).returncode == 0
 
 def info():
-    running = wow_running()
-    st = "running" if running else (wow_start["state"] or "stopped")
+    w = wow.snapshot(wow_start["state"], wow_start["why"])
+    w["found"] = GAME_DIR.exists()
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
             "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS},
-            "wow": {"found": GAME_DIR.exists(), "flavor": "forever", "running": running,
-                    "state": st, "why": "" if running else wow_start["why"], "focused": running,
-                    "screen": "world" if running else ("starting" if st == "starting" else "none"), "bnet": "unknown", "needs_you": False},
+            "wow": w,
             "stream": "unknown", "pairing_open": True}
 
 def token_sha(tok):
@@ -365,8 +374,9 @@ async def tail_loop():
         if msgs:
             for m in msgs:
                 if m["t"] == "log":
-                    backlog.clear(); size = 0
+                    backlog.clear(); size = 0; wow.restart()
                 elif m["t"] == "doc":
+                    wow.doc_seen()
                     backlog.append(m); size += len(m["doc"])
                     while backlog and (size > MAX_BACKLOG_BYTES or len(backlog) > MAX_BACKLOG_DOCS):
                         size -= len(backlog.pop(0).get("doc", ""))
@@ -375,13 +385,16 @@ async def tail_loop():
 
 async def wow_loop():
     last = None
+    texts = {"none": "WoW isn't running on your PC", "starting": "Starting WoW on your PC…", "login": "WoW is at its login screen",
+             "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
-        r = wow_running()
-        if r != last:
-            last = r
-            w = info()["wow"]
-            await broadcast([{"t": "wow", **w}, {"t": "status", "text": "WoW is running on your PC" if r else "WoW isn't running on your PC"}])
-        await asyncio.sleep(3)
+        w = await asyncio.to_thread(lambda: info()["wow"])
+        key = (w["state"], w["screen"], w["bnet"], w["login_error"])
+        if key != last:
+            last = key
+            log(f"WoW: {w['state']} / {w['screen']}" + (f" ({w['login_error']})" if w["login_error"] else ""))
+            await broadcast([{"t": "wow", **w}, {"t": "status", "text": texts.get(w["screen"], "")}])
+        await asyncio.sleep(2)
 
 def advertise():
     txt = [f"proto={PROTO}", f"id={state['host_id']}", f"pc={PC_NAME}", f"sunshine={SUNSHINE_HTTP}", f"ver={VERSION}"]
@@ -401,13 +414,16 @@ async def main():
         new_code()
     else:
         log(f"{len(state['devices'])} paired device(s). New Thor? Start pairing on it and a code shows here.")
-    mdns = advertise()
+    mdns = None if os.environ.get("DSF_NO_MDNS") else advertise()
     log(f"Bridge on ws://0.0.0.0:{PORT}/v1/ws, following {LOG}")
+    log("WoW start: " + ("DSF_START_CMD" if START_CMD else f"Steam app {STEAM_PREFIX[1]} via {PROTON}" if STEAM_PREFIX and PROTON
+                         else "not possible (set DSF_START_CMD)"))
     try:
         async with serve(handle, "0.0.0.0", PORT, process_request=http_info, ping_interval=15, ping_timeout=45):
             await asyncio.gather(tail_loop(), wow_loop())
     finally:
-        mdns.terminate()
+        if mdns:
+            mdns.terminate()
 
 if __name__ == "__main__":
     try:
