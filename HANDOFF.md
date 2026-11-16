@@ -1,6 +1,6 @@
-# Handoff (fork)
+# Handoff
 Goal: Linux alternative to DS Forever Desktop: official APK on the Thor + `linux-bridge/` helper on the PC (Steam/Proton WoW).
-Private now, public later. Read README.md and SAFETY.md. Moved here from the private DS Forever fork (~/ds-forever, kept as reference) on 2026-11-16.
+Private now, public later. Read README.md and SAFETY.md. History moved here from a private DS Forever fork on 2026-11-16 (fork since deleted; read upstream Jreese702/DS-Forever for their code).
 
 State 2026-11-16 (helper 0.2): installed here with install.sh (user service `dsf-bridge`, command `dsf-bridge`), ws+wss on
 48210 (LAN only, not forwarded), doctor all green. Tests: `.venv/bin/python -m unittest discover -s tests` (fake Thor).
