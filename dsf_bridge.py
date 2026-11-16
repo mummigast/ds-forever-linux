@@ -192,6 +192,7 @@ class Tailer:
 
 # ---------------------------------------------------------------- sessions
 sessions = {}          # device_id -> websocket
+feed_lock = asyncio.Lock()   # a joining Thor gets welcome + backlog before any live document
 backlog = []           # messages since the current log began
 pairing = {"code": None, "attempts": 5, "locked_at": 0.0, "pin": None}
 LOCK_S = 300   # after 5 wrong codes pairing pauses this long, then a new code comes up
@@ -274,13 +275,22 @@ async def start_wow():
             steam_root, appid = STEAM_PREFIX
             if not bnet_running():
                 gameid = (appid << 32) | 0x02000000      # a non-Steam shortcut's game id
-                subprocess.Popen(["steam", f"steam://rungameid/{gameid}"], start_new_session=True, env=session_env(),
+                url = f"steam://rungameid/{gameid}"
+                if "/.var/app/com.valvesoftware.Steam/" in str(steam_root):
+                    cmd = ["flatpak", "run", "com.valvesoftware.Steam", url]
+                elif shutil.which("steam"):
+                    cmd = ["steam", url]
+                else:
+                    cmd = ["xdg-open", url]
+                subprocess.Popen(cmd, start_new_session=True, env=session_env(),
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 for _ in range(60):
                     await asyncio.sleep(2)
                     if bnet_running():
                         break
                 await asyncio.sleep(10)   # let Battle.net sign in / settle
+            if wow_running():
+                wow_start.update(state=None); return
             env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
                        STEAM_COMPAT_CLIENT_INSTALL_PATH=str(steam_root))
             subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
@@ -360,11 +370,28 @@ def sunshine_pin(pin, name):
         log("Sunshine PIN API:", e)
     return False
 
+def sunshine_paired_count():
+    """How many Moonlight clients Sunshine has paired (its state file), None if unreadable."""
+    try:
+        d = json.loads(SUNSHINE_STATE.read_text())
+        return len(d.get("root", d).get("named_devices") or [])
+    except Exception:
+        return None
+
 async def hand_pin(ws, pin, name):
     # Sunshine accepts the PIN only while the Thor's pairing request is waiting: retry for 90 s.
     if not (os.environ.get("SUNSHINE_USER") and os.environ.get("SUNSHINE_PASS")):
         log(f"*** Enter Moonlight PIN {pin} in Sunshine's web UI (https://localhost:{SUNSHINE_WEB} → PIN); also: dsf-bridge code ***")
         await send(ws, {"t": "status", "text": f"Enter PIN {pin} in Sunshine on the PC"})
+        before = sunshine_paired_count()
+        for _ in range(90):                 # tell the Thor once Sunshine lists a new paired client
+            await asyncio.sleep(2)
+            if before is not None and (sunshine_paired_count() or 0) > before:
+                try:
+                    await send(ws, {"t": "pair_stream", "ok": True})
+                except Exception:
+                    pass
+                log("Sunshine paired the Thor"); return
         return
     for _ in range(45):
         await asyncio.sleep(2)
@@ -476,12 +503,14 @@ async def start_session(ws, device):
     old = sessions.get(device)
     if old and old is not ws:
         await old.close(4409, "replaced")
-    sessions[device] = ws
-    log(f"Session for {device[:8]}…, backlog {len(backlog)}")
-    await send(ws, {"t": "welcome", **info(), "device_id": device, "backlog": len(backlog)})
-    for msg in list(backlog):
-        await send(ws, msg)
-    await send(ws, {"t": "backlog_end", "count": len(backlog)})
+    welcome = await asyncio.to_thread(info)
+    async with feed_lock:
+        sessions[device] = ws
+        log(f"Session for {device[:8]}…, backlog {len(backlog)}")
+        await send(ws, {"t": "welcome", **welcome, "device_id": device, "backlog": len(backlog)})
+        for msg in list(backlog):
+            await send(ws, msg)
+        await send(ws, {"t": "backlog_end", "count": len(backlog)})
 
 
 # ---------------------------------------------------------------- loops
@@ -499,7 +528,8 @@ async def tail_loop():
                     backlog.append(m); size += len(m["doc"])
                     while backlog and (size > MAX_BACKLOG_BYTES or len(backlog) > MAX_BACKLOG_DOCS):
                         size -= len(backlog.pop(0).get("doc", ""))
-            await broadcast(msgs)
+            async with feed_lock:
+                await broadcast(msgs)
         await asyncio.sleep(0.05)
 
 async def wow_loop():
@@ -576,7 +606,7 @@ def advertise():
 
 async def http_info(conn, request):
     if request.path == "/v1/info":
-        return conn.respond(200, json.dumps(info()) + "\n")
+        return conn.respond(200, json.dumps(await asyncio.to_thread(info)) + "\n")
     return None
 
 async def main():

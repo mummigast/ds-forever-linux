@@ -9,6 +9,8 @@ echo "== DS Forever helper for Linux"
 command -v python3 >/dev/null || { echo "python3 is missing: install it with your package manager"; exit 1; }
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || { echo "Python 3.10 or newer needed"; exit 1; }
 
+python3 -c 'import venv, ensurepip' 2>/dev/null || { echo "Python's venv module is missing: install python3-venv (Debian/Ubuntu) or python3-virtualenv, then run this again"; exit 1; }
+for t in pgrep ss ip; do command -v $t >/dev/null || echo "note: '$t' is missing (procps / iproute2); WoW detection needs it"; done
 echo "-- Python environment"
 python3 -m venv --clear "$HERE/.venv"
 "$HERE/.venv/bin/pip" install -q --disable-pip-version-check -r "$HERE/requirements.txt"
