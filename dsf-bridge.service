@@ -1,0 +1,14 @@
+[Unit]
+Description=DS Forever bridge for Linux (AYN Thor companion over Sunshine)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/ds-forever/linux-bridge
+ExecStart=%h/ds-forever/linux-bridge/.venv/bin/python dsf_bridge.py
+Environment=DSF_PC_NAME=Gaming PC
+# Optional, lets the bridge give the Moonlight PIN to Sunshine by itself:
+# EnvironmentFile=%h/.config/dsf-bridge/sunshine.env   (SUNSHINE_USER=... / SUNSHINE_PASS=...)
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
