@@ -97,7 +97,7 @@ def proton_for(steam_root, appid):
 
 
 # ---------------------------------------------------------------- processes and connections
-WOW_PROC = "wow.exe"            # Wine names its processes after the .exe (comm)
+WOW_PROC = os.environ.get("DSF_WOW_PROC", "wow.exe")   # Wine names its processes after the .exe (comm); tests override
 BNET_PROC = "battle.net.exe"
 
 def _cmdline(pid):

@@ -50,7 +50,8 @@ class Units(unittest.TestCase):
                     procs.append(subprocess.Popen([str(exe), "30"]))
                     time.sleep(0.3)
                     want = None if flav == "_retail_" else procs[-1].pid
-                    self.assertEqual(wow_linux.pid_of("wow.exe", "_forever_"), want)
+                    mine = {q.pid for q in procs}       # only our fake processes: a real WoW on this PC must not count
+                    self.assertEqual(wow_linux.pid_of("wow.exe", "_forever_", [x for x in wow_linux._procs() if x[0] in mine]), want)
             finally:
                 for p in procs:
                     p.kill(); p.wait()
@@ -74,7 +75,7 @@ class EndToEnd(unittest.TestCase):
         (t / "wow/Logs").mkdir(parents=True)
         self.log = t / "wow/Logs/General.log"
         self.log.write_text("")
-        env = dict(os.environ, DSF_PORT=str(PORT), DSF_WOW_DIR=str(t / "wow"), DSF_STATE=str(t / "state.json"),
+        env = dict(os.environ, DSF_WOW_PROC="dsf-test-nothing.exe", DSF_PORT=str(PORT), DSF_WOW_DIR=str(t / "wow"), DSF_STATE=str(t / "state.json"),
                    DSF_START_CMD="true", DSF_NO_MDNS="1",
                    DSF_ADDONS_SRC=str(HERE / "tests/fixture"))   # no network in tests
         self.proc = subprocess.Popen([sys.executable, str(HERE / "dsf_bridge.py")], env=env,
