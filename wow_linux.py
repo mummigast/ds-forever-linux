@@ -36,25 +36,63 @@ def steam_prefix_of(game_dir):
     m = re.search(r"^(.*)/steamapps/compatdata/(\d+)/pfx/", str(game_dir))
     return (Path(m.group(1)), int(m.group(2))) if m else None
 
-def proton_for(steam_root, appid):
-    """The Proton build Steam uses for this appid (CompatToolMapping), as a path to its `proton` script."""
-    names = {"proton_hotfix": "Proton Hotfix", "proton_experimental": "Proton - Experimental"}
-    tool = None
+def steam_client_root(lib_root=None):
+    """The Steam client's own folder (has config/config.vdf). A game in a library on another drive still belongs to it."""
+    roots = ([Path(lib_root)] if lib_root else []) + STEAM_ROOTS
+    return next((r for r in roots if (r / "config/config.vdf").exists()), Path(lib_root) if lib_root else None)
+
+def _vdf_block(text, key):
+    """The text inside `"key" { ... }` (first match), braces balanced; None when missing."""
+    m = re.search(r'"%s"\s*\{' % re.escape(key), text, re.I)
+    if not m:
+        return None
+    depth, i = 1, m.end()
+    while i < len(text) and depth:
+        depth += {"{": 1, "}": -1}.get(text[i], 0); i += 1
+    return text[m.end():i - 1]
+
+def compat_tool(client_root, appid):
+    """Steam's Proton choice for appid from CompatToolMapping, else its default ("0"); None when unset."""
     try:
-        t = (steam_root / "config/config.vdf").read_text(errors="replace")
-        m = re.search(r'"%d"\s*\{[^}]*?"name"\s*"([^"]*)"' % appid, t)
-        tool = m.group(1) if m else None
+        mapping = _vdf_block((client_root / "config/config.vdf").read_text(errors="replace"), "CompatToolMapping")
+    except OSError:
+        return None
+    for key in (str(appid), "0"):
+        blk = _vdf_block(mapping or "", key)
+        m = re.search(r'"name"\s*"([^"]+)"', blk or "")
+        if m:
+            return m.group(1)
+    return None
+
+def steam_libraries(client_root):
+    """Every Steam library folder (libraryfolders.vdf), the client's own first."""
+    libs = [client_root]
+    try:
+        t = (client_root / "steamapps/libraryfolders.vdf").read_text(errors="replace")
+        libs += [Path(p.replace("\\\\", "\\")) for p in re.findall(r'"path"\s*"([^"]+)"', t)]
     except OSError:
         pass
+    seen, out = set(), []
+    for l in libs:
+        k = str(l.resolve()) if l.exists() else str(l).rstrip("/")
+        if k not in seen:
+            seen.add(k); out.append(l)
+    return out
+
+def proton_for(steam_root, appid):
+    """The Proton build Steam uses for this appid, as a path to its `proton` script."""
+    client = steam_client_root(steam_root)
+    tool = compat_tool(client, appid) if client else None
+    names = {"proton_hotfix": "Proton Hotfix", "proton_experimental": "Proton - Experimental"}
+    commons = [lib / "steamapps/common" for lib in steam_libraries(client)] if client else [Path(steam_root) / "steamapps/common"]
     cands = []
     if tool:
-        cands += [steam_root / "steamapps/common" / names.get(tool, tool) / "proton",
-                  steam_root / "compatibilitytools.d" / tool / "proton"]
+        cands += [c / names.get(tool, tool) / "proton" for c in commons]
+        cands += [client / "compatibilitytools.d" / tool / "proton"] if client else []
         m = re.match(r"proton_(\d+)$", tool)          # proton_9 -> "Proton 9.0"
         if m:
-            cands += [Path(p) / "proton" for p in glob.glob(str(steam_root / f"steamapps/common/Proton {m.group(1)}*"))]
-    cands += [steam_root / "steamapps/common/Proton Hotfix/proton",
-              steam_root / "steamapps/common/Proton - Experimental/proton"]
+            cands += [Path(p) / "proton" for c in commons for p in sorted(glob.glob(str(c / f"Proton {m.group(1)}*")))]
+    cands += [c / n / "proton" for n in ("Proton Hotfix", "Proton - Experimental") for c in commons]
     return next((c for c in cands if c.exists()), None)
 
 
@@ -194,16 +232,18 @@ class WowState:
 
 # ---------------------------------------------------------------- bringing WoW to the front (KDE Plasma 6, best effort)
 KWIN_JS = """
+let pick = null;
 const wins = workspace.windowList ? workspace.windowList() : workspace.clientList();
 for (const w of wins) {
     const cls = (w.resourceClass || "").toString().toLowerCase();
     const cap = (w.caption || "").toString();
-    // Proton windows are usually class "steam_app_<id>": match the game's own title too
-    if (cls.indexOf("wow.exe") >= 0 || cap.indexOf("World of Warcraft") === 0) {
-        if (w.minimized) w.minimized = false;
-        workspace.activeWindow = w;
-        break;
-    }
+    // WoW Forever's own process first (retail/Classic share the class and title); else class or title
+    if (PID > 0 && w.pid === PID) { pick = w; break; }
+    if (!pick && (cls.indexOf("wow.exe") >= 0 || cap.indexOf("World of Warcraft") === 0)) pick = w;
+}
+if (pick) {
+    if (pick.minimized) pick.minimized = false;
+    workspace.activeWindow = pick;
 }
 """
 
@@ -212,7 +252,7 @@ def focus_window():
     import tempfile, uuid
     name = "dsf_focus_" + uuid.uuid4().hex[:8]
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
-        f.write(KWIN_JS); path = f.name
+        f.write("const PID = %d;\n" % (pid_of(WOW_PROC, "_forever_") or 0) + KWIN_JS); path = f.name
     def call(obj, method, *args):
         return subprocess.run(["gdbus", "call", "--session", "--dest", "org.kde.KWin", "--object-path", obj,
                                "--method", method, *args], capture_output=True, text=True, timeout=5)

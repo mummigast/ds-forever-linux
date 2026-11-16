@@ -68,11 +68,18 @@ def load_state():
     except Exception:
         return {}
 
+def write_private(path, text):
+    """Write a file that is mode 600 from its first byte (no moment where others can read it)."""
+    path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+
 def save_state(s):
     STATE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(s, indent=1))
-    os.chmod(tmp, 0o600)
+    write_private(tmp, json.dumps(s, indent=1))
     tmp.replace(STATE)
 
 state = load_state()
@@ -195,16 +202,27 @@ class Tailer:
 sessions = {}          # device_id -> websocket
 feed_lock = asyncio.Lock()   # a joining Thor gets welcome + backlog before any live document
 backlog = []           # messages since the current log began
-pairing = {"code": None, "attempts": 5, "locked_at": 0.0, "pin": None}
-LOCK_S = 300   # after 5 wrong codes pairing pauses this long, then a new code comes up
+pairing = {"code": None, "wrong": 0, "locked_at": 0.0, "pin": None}
+LOCK_S = 300        # a Thor (IP address) with 5 wrong codes waits this long
+PER_IP, TOTAL = 5, 30   # wrong codes allowed per address / in total per code (then everyone waits and a new code comes up)
+misses = {}         # ip -> [wrong codes, time of the last one]
+PEERS = {}          # front door: local port of the inner connection -> the real client address
+
+def attempts_left(ip):
+    n, at = misses.get(ip, [0, 0.0])
+    if n >= PER_IP and time.time() - at > LOCK_S:
+        misses.pop(ip, None); n = 0
+    if pairing["locked_at"] and time.time() - pairing["locked_at"] > LOCK_S:
+        new_code()
+    return 0 if pairing["locked_at"] else max(0, PER_IP - n)
 
 def new_code():
     pairing["code"] = f"{secrets.randbelow(1_000_000):06d}"
-    pairing["attempts"] = 5
+    pairing["wrong"] = 0
     pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
     code_file = STATE.parent / "pairing-code.txt"
-    code_file.write_text(pairing["code"] + "\n"); os.chmod(code_file, 0o600)
+    write_private(code_file, pairing["code"] + "\n")
 
 STEAM_PREFIX = wow_linux.steam_prefix_of(GAME_DIR)          # (steam_root, appid) of a Steam/Proton install
 PROTON = Path(os.environ["DSF_PROTON"]) if os.environ.get("DSF_PROTON") else (
@@ -265,7 +283,7 @@ async def start_wow():
     if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
         return
     wow_start.update(state="starting", why="", at=time.time())
-    await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "Starting WoW on your PC…"}])
+    await broadcast([{"t": "wow", **_info()["wow"]}, {"t": "status", "text": "Starting WoW on your PC…"}])
     log("Starting WoW Forever")
     try:
         if START_CMD:
@@ -277,7 +295,8 @@ async def start_wow():
             if not bnet_running():
                 gameid = (appid << 32) | 0x02000000      # a non-Steam shortcut's game id
                 url = f"steam://rungameid/{gameid}"
-                if "/.var/app/com.valvesoftware.Steam/" in str(steam_root):
+                client = wow_linux.steam_client_root(steam_root)
+                if "/.var/app/com.valvesoftware.Steam/" in str(client):
                     cmd = ["flatpak", "run", "com.valvesoftware.Steam", url]
                 elif shutil.which("steam"):
                     cmd = ["steam", url]
@@ -293,7 +312,7 @@ async def start_wow():
             if wow_running():
                 wow_start.update(state=None); return
             env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
-                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(steam_root))
+                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(wow_linux.steam_client_root(steam_root)))
             subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
                               "--exec=launch_uid wowf"], env=env, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -305,7 +324,7 @@ async def start_wow():
     except Exception as e:
         wow_start.update(state="start_failed", why=str(e))
     log("WoW start failed:", wow_start["why"])
-    await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
+    await broadcast([{"t": "wow", **_info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
 
 def wow_running():
     return wow_linux.pid_of(wow_linux.WOW_PROC, "_forever_") is not None
@@ -319,7 +338,15 @@ def lan_addresses():
     except (OSError, subprocess.SubprocessError):
         return []
 
+_info_cache = [0.0, None]
 def info():
+    """The bridge's state for welcome / /v1/info; computed at most every 2 s (it runs pgrep, ss and ip)."""
+    if _info_cache[1] is not None and time.monotonic() - _info_cache[0] < 2:
+        return _info_cache[1]
+    _info_cache[1] = _info(); _info_cache[0] = time.monotonic()
+    return _info_cache[1]
+
+def _info():
     w = wow.snapshot(wow_start["state"], wow_start["why"])
     w["found"] = GAME_DIR.exists()
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
@@ -426,6 +453,8 @@ async def handle(ws):
         await ws.close(4403, "native clients only"); return      # no web pages (as Desktop)
     device = None
     nonce = None
+    ra = ws.remote_address or ("?", 0)
+    peer = PEERS.get(ra[1], ra[0])               # through the front door every client looks like 127.0.0.1
     async def idle_guard():                      # sockets that never pair or say hello don't stay open
         await asyncio.sleep(60)
         if not (device and sessions.get(device) is ws):
@@ -444,23 +473,26 @@ async def handle(ws):
                 del sessions[device]                     # this socket re-identifies: forget its old session
             if t == "pair_hello":
                 device = str(m.get("device_id", ""))[:64]
-                if not pairing["code"] or (pairing["locked_at"] and time.time() - pairing["locked_at"] > LOCK_S):
+                if not pairing["code"]:
                     new_code()
                 nonce = secrets.token_hex(16)            # per connection
-                await send(ws, {"t": "pair_challenge", "nonce": nonce,
-                                "attempts_left": pairing["attempts"], "locked": pairing["attempts"] <= 0})
+                left = attempts_left(peer)
+                await send(ws, {"t": "pair_challenge", "nonce": nonce, "attempts_left": left, "locked": left <= 0})
             elif t == "pair_proof" and device and nonce:
-                if pairing["attempts"] <= 0:
+                if attempts_left(peer) <= 0:
                     await send(ws, {"t": "pair_error", "error": "locked", "attempts_left": 0}); continue
                 want = hmac.new(pairing["code"].encode(), f"dsf-pair-v1|{nonce}|{device}".encode(),
                                 hashlib.sha256).hexdigest()
                 if not hmac.compare_digest(want.encode(), str(m.get("proof", "")).lower().encode("utf-8", "replace")):
-                    pairing["attempts"] -= 1
-                    if pairing["attempts"] <= 0:
+                    rec = misses.setdefault(peer, [0, 0.0]); rec[0] += 1; rec[1] = time.time()
+                    pairing["wrong"] += 1
+                    if pairing["wrong"] >= TOTAL:
                         pairing["locked_at"] = time.time()
-                        log(f"Pairing locked for {LOCK_S // 60} min after 5 wrong codes")
-                    await send(ws, {"t": "pair_error", "error": "locked" if pairing["attempts"] <= 0 else "wrong_code",
-                                    "attempts_left": pairing["attempts"]})
+                        log(f"Pairing paused for {LOCK_S // 60} min after {TOTAL} wrong codes in total")
+                    elif rec[0] == PER_IP:
+                        log(f"{peer}: {PER_IP} wrong codes, that address waits {LOCK_S // 60} min")
+                    left = attempts_left(peer)
+                    await send(ws, {"t": "pair_error", "error": "locked" if left <= 0 else "wrong_code", "attempts_left": left})
                     continue
                 token = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
                 state["devices"][device] = {"token_sha": token_sha(token), "paired": int(time.time())}
@@ -470,7 +502,7 @@ async def handle(ws):
                 pin = f"{secrets.randbelow(10000):04d}"
                 pairing["pin"] = pin
                 pin_file = STATE.parent / "moonlight-pin.txt"
-                pin_file.write_text(pin + "\n"); os.chmod(pin_file, 0o600)
+                write_private(pin_file, pin + "\n")
                 log(f"Paired device {device[:8]}…")
                 await send(ws, {"t": "pair_ok", "device_id": device, "token": token, "host_id": state["host_id"],
                                 "pc_name": PC_NAME, "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS}, "moonlight_pin": pin,
@@ -569,7 +601,7 @@ async def wow_loop():
              "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
         try:
-            w = await asyncio.to_thread(lambda: info()["wow"])
+            w = await asyncio.to_thread(lambda: _info()["wow"])
         except Exception as e:
             log("WoW check:", e); await asyncio.sleep(5); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
@@ -624,8 +656,13 @@ async def front_door(plain_port, tls_port):
             ur, uw = await asyncio.open_connection("127.0.0.1", target)
         except OSError:
             writer.close(); return
+        port = (uw.get_extra_info("sockname") or ("", 0))[1]
+        PEERS[port] = (writer.get_extra_info("peername") or ("?",))[0]
         uw.write(first)
-        await asyncio.gather(pipe(reader, uw), pipe(ur, writer))
+        try:
+            await asyncio.gather(pipe(reader, uw), pipe(ur, writer))
+        finally:
+            PEERS.pop(port, None)
     return await asyncio.start_server(conn, "0.0.0.0", PORT)
 
 def advertise():
