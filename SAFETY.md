@@ -12,7 +12,7 @@ This is a plain-language summary, not legal advice.
 | No input broadcasting / multiboxing | One Thor drives one game on one PC. |
 | Add-ons: free, readable code, no ads, no donation requests | The add-ons it installs are DS Forever's own, unchanged and readable (GPL-3.0). The helper is free and its source is right here. |
 | Account security | The helper never asks for, reads, stores or types your Battle.net login. You sign in on the PC yourself. Use Blizzard's Authenticator. |
-| Starting the game | Uses Battle.net's own launch option (`--exec="launch_uid wowf"`), the same as DS Forever Desktop. |
+| Starting the game | Uses Battle.net's own launch option (`--exec="launch WoWF"`), as DS Forever Desktop does. |
 
 **Risk, honestly:** this is an unofficial tool that Blizzard has neither approved nor forbidden. It follows the lines
 Blizzard enforces (no automation, no memory access, no injection, one action per press), but Blizzard can change its

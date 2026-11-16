@@ -281,7 +281,7 @@ def bnet_running():
 
 async def start_wow():
     """Start WoW Forever like Desktop does: Battle.net first (via its Steam shortcut), then
-    Battle.net.exe --exec="launch_uid wowf" in the same Proton prefix. Never touches credentials."""
+    Battle.net.exe --exec="launch WoWF" in the same Proton prefix. Never touches credentials."""
     if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
         return
     wow_start.update(state="starting", why="", at=time.time())
@@ -316,7 +316,7 @@ async def start_wow():
             env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
                        STEAM_COMPAT_CLIENT_INSTALL_PATH=str(wow_linux.steam_client_root(steam_root)))
             subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
-                              "--exec=launch_uid wowf"], env=env, start_new_session=True,
+                              "--exec=launch WoWF"],   # "launch_uid wowf" only selects the game in a running Battle.net, env=env, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(90):
             await asyncio.sleep(2)

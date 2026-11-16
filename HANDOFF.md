@@ -7,7 +7,7 @@ State 2026-11-16 (helper 0.2): installed here with install.sh (user service `dsf
 
 Untested until the owner has the Thor:
 1. Real Thor pairing + Moonlight PIN in Sunshine (manual PIN: `dsf-bridge code`).
-2. WoW auto-start: `proton run Battle.net.exe --exec=launch_uid wowf` while Steam's Proton (container) already runs Battle.net.
+2. WoW auto-start: VERIFIED 2026-11-16 with `--exec=launch WoWF` (`launch_uid wowf` only selects the game when Battle.net already runs). Battle.net shows as comm "CrBrowserMain" (Chromium).
    If it fails, fallback idea: set Battle.net's shortcut launch options, or DSF_START_CMD.
 3. Process names under Wine (`pid_of` matches comm "Wow.exe", falls back to command line).
 4. KDE focus with a real WoW window; taps alignment on the streamed monitor.

@@ -127,8 +127,17 @@ def pid_of(name, must_contain=None, procs=None):
     pids = [pid for pid, comm in procs if comm.lower() == name.lower()[:15]]
     if not pids:
         rx = _CMD_RE.setdefault(name, re.compile(r"(^|[\\/])" + re.escape(name) + r"( |$)", re.I))
-        wineish = lambda c: "wine" in c or "preloader" in c or c.endswith(".exe") or c.endswith(".ex")   # comm is cut at 15
-        pids = [pid for pid, comm in procs if pid != me and wineish(comm.lower()) and rx.search(_cmdline(pid))]
+        # only Wine processes can be it; their comm is not always the .exe (Battle.net's is "CrBrowserMain"), but the
+        # binary behind them is Wine's preloader: one readlink each instead of reading every command line
+        def wineish(pid, comm):
+            c = comm.lower()
+            if "wine" in c or "preloader" in c or ".exe" in c:
+                return True
+            try:
+                return "wine" in os.readlink(f"/proc/{pid}/exe")
+            except OSError:
+                return False
+        pids = [pid for pid, comm in procs if pid != me and wineish(pid, comm) and rx.search(_cmdline(pid))]
     if must_contain:
         hits = [p for p in pids if must_contain.lower() in _cmdline(p).lower()]
         # a Wine process's command line normally has its full path; if none says, keep the plain match
