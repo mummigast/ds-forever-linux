@@ -3,7 +3,7 @@
 """WoW Forever on Linux: find the install, tell where the game is (login / character select / world),
 and start it through Battle.net. Ports of DS Forever Desktop's WowLocator, LoginLog and WowFlow.Classify.
 Nothing here reads, stores or types credentials."""
-import glob, os, re, subprocess, time
+import glob, os, re, subprocess, threading, time
 from pathlib import Path
 
 HOME = Path.home()
@@ -211,11 +211,19 @@ class WowState:
     def __init__(self):
         self.log = LoginLog()
         self.last_doc = None          # monotonic time of the add-on's last document
+        self.lock = threading.Lock()  # the log follower (a worker thread) and the snapshot (another) share this state
     def restart(self):
-        self.log.reset(); self.last_doc = None
+        with self.lock:
+            self.log.reset(); self.last_doc = None
+    def line(self, text):
+        with self.lock:
+            self.log.line(text)
     def doc_seen(self):
         self.last_doc = time.monotonic()
     def snapshot(self, start_state=None, start_why=""):
+        with self.lock:
+            return self._snapshot(start_state, start_why)
+    def _snapshot(self, start_state=None, start_why=""):
         pid = pid_of(WOW_PROC, "_forever_")
         up = pid is not None
         game, auth = connections(pid) if up else (0, 0)

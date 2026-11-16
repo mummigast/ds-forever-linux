@@ -166,6 +166,7 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
                     shutil.copytree(backup / f, addons_dir / f)
         except Exception as e2:
             return f"add-on install failed ({e}) and so did the restore ({e2}); the old set is kept in {backup}"
+        shutil.rmtree(backup, ignore_errors=True)
         return f"add-on install failed, old set restored: {e}"
     shutil.rmtree(backup, ignore_errors=True)
     msg = f"add-ons {'updated' if have else 'installed'}: set {have or '-'} → {set_no} (/reload in game)"

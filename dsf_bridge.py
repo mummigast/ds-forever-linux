@@ -193,7 +193,7 @@ class Tailer:
         self.carry = lines.pop()[-1024 * 1024:]
         for ln in lines:
             text = ln.decode("utf-8", "replace")
-            wow.log.line(text)
+            wow.line(text)
             self.asm.line(text, out)
         return out
 
@@ -210,7 +210,7 @@ PEERS = {}          # front door: local port of the inner connection -> the real
 
 def attempts_left(ip):
     n, at = misses.get(ip, [0, 0.0])
-    if n >= PER_IP and time.time() - at > LOCK_S:
+    if n and time.time() - at > LOCK_S:              # old misses expire
         misses.pop(ip, None); n = 0
     if pairing["locked_at"] and time.time() - pairing["locked_at"] > LOCK_S:
         new_code()
@@ -219,6 +219,7 @@ def attempts_left(ip):
 def new_code():
     pairing["code"] = f"{secrets.randbelow(1_000_000):06d}"
     pairing["wrong"] = 0
+    misses.clear()                                  # a new code: everyone starts with full attempts
     pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
     code_file = STATE.parent / "pairing-code.txt"
@@ -372,12 +373,19 @@ async def send(ws, msg):
     await ws.send(json.dumps(msg, separators=(",", ":")))
 
 async def broadcast(msgs):
-    for ws in list(sessions.values()):
+    async def one(ws):
         try:
             for m in msgs:
-                await asyncio.wait_for(send(ws, m), 10)   # a stalled Thor must not hold up the others
+                await asyncio.wait_for(send(ws, m), 10)
+        except asyncio.TimeoutError:                 # a Thor that stopped reading: drop it (it reconnects), don't wait again
+            log("a Thor stopped reading: closing its connection")
+            for d, s in list(sessions.items()):
+                if s is ws:
+                    del sessions[d]
+            spawn(ws.close(1011, "not reading"))
         except Exception:
             pass
+    await asyncio.gather(*(one(ws) for ws in list(sessions.values())))   # all at once: one slow Thor doesn't hold up the rest
 
 def _sunshine(method, path, body=None, csrf=None):
     """Sunshine's local web API (127.0.0.1 only), basic auth from SUNSHINE_USER / SUNSHINE_PASS."""
@@ -456,7 +464,7 @@ async def handle(ws):
     ra = ws.remote_address or ("?", 0)
     peer = PEERS.get(ra[1], ra[0])               # through the front door every client looks like 127.0.0.1
     async def idle_guard():                      # sockets that never pair or say hello don't stay open
-        await asyncio.sleep(60)
+        await asyncio.sleep(300)                 # long enough to read and type the code
         if not (device and sessions.get(device) is ws):
             await ws.close(4401, "unauthorized")
     guard = asyncio.create_task(idle_guard())
@@ -525,10 +533,15 @@ async def handle(ws):
                 ok = wow_running()
                 if ok:
                     raised = await asyncio.to_thread(wow_linux.focus_window)   # KDE only; elsewhere a no-op
-                    await send(ws, {"t": "focus_result", "ok": True, "why": "" if raised else "can't raise windows on this desktop"})
+                    await send(ws, {"t": "focus_result", "ok": True, "why": "" if raised else "can't raise windows on this desktop",
+                                    **(await asyncio.to_thread(_info))["wow"]})
                 else:
                     await send(ws, {"t": "focus_result", "ok": False, "state": "starting", "why": "starting WoW"})
                     spawn(start_wow())
+            elif t == "bnet_ready":                  # Desktop types the Thor's saved login into Battle.net; this helper never does
+                await send(ws, {"t": "bnet_ready_result", "ok": False, "why": "sign in to Battle.net on the PC (this helper never types your login)"})
+            elif t == "login_file":                  # the Thor's saved login: deliberately ignored, never stored
+                pass
             elif t == "ping":
                 await send(ws, {"t": "pong", "id": m.get("id")})
             elif t == "unpair":
@@ -563,7 +576,7 @@ async def start_session(ws, device):
     old = sessions.get(device)
     if old and old is not ws:
         await old.close(4409, "replaced")
-    welcome = await asyncio.to_thread(info)
+    welcome = await asyncio.to_thread(_info)         # fresh, not the 2 s cache
     async with feed_lock:
         sessions[device] = ws
         log(f"Session for {device[:8]}…, backlog {len(backlog)}")
