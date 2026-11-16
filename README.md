@@ -11,10 +11,15 @@ Moonlight ↔ your own Sunshine. It never reads, stores or types credentials: si
 1. `uv venv .venv && uv pip install -p .venv websockets`
 2. `./install-addons.sh` (copies the WowCompanion add-ons into the game; `/reload` in game)
 3. Run `./.venv/bin/python dsf_bridge.py`, or install `dsf-bridge.service` as a user unit.
+   When the Thor connects and WoW is not running, the bridge starts the Battle.net Steam shortcut and asks it to
+   launch WoW Forever (`launch_uid wowf`, Proton Hotfix). Override with `DSF_START_CMD`. Untested on the real PC yet.
 4. On the Thor: DS Forever → Streaming → enter the 6-digit code the bridge prints.
 5. Moonlight PIN: the bridge prints a 4-digit PIN; type it in Sunshine's web UI (PIN page), or give the bridge
    `SUNSHINE_USER` / `SUNSHINE_PASS` so it does it itself.
 
 ## Not done (vs Desktop)
-TLS (wss), bringing the WoW window to the front, starting WoW / Battle.net, Sunshine app "WoW Forever" (the Thor
+TLS (wss), bringing the WoW window to the front, Sunshine app "WoW Forever" (the Thor
 falls back to "Desktop"), sign-in screen detection (`screen` is reported as `world` while WoW runs).
+
+## Licence
+GPL-3.0-or-later, as DS Forever (`../LICENSE`). Dependency: websockets (BSD-3-Clause), installed with pip.

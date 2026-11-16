@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Part of a personal fork of DS Forever (GPL-3.0). See FORK.md.
 """DS Forever bridge for Linux: lets the DS Forever app on an AYN Thor use a Linux PC that already
 streams WoW Forever with Sunshine. Replaces the bridge part of DS Forever Desktop (Windows only).
 
@@ -168,17 +170,65 @@ def new_code():
     pairing["code"] = f"{secrets.randbelow(1_000_000):06d}"
     pairing["attempts"] = 5
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
+    code_file = STATE.parent / "pairing-code.txt"
+    code_file.write_text(pairing["code"] + "\n"); os.chmod(code_file, 0o600)
+
+STEAM = Path.home() / ".local/share/Steam"
+BNET_APPID = int(os.environ.get("DSF_BNET_APPID", "3809046808"))   # the non-Steam Battle.net shortcut
+PROTON = Path(os.environ.get("DSF_PROTON", STEAM / "steamapps/common/Proton Hotfix/proton"))
+START_CMD = os.environ.get("DSF_START_CMD")   # optional: your own shell command that starts WoW Forever
+wow_start = {"state": None, "why": "", "at": 0.0}
+
+def bnet_running():
+    return subprocess.run(["pgrep", "-if", r"battle\.net\.exe"], capture_output=True).returncode == 0
+
+async def start_wow():
+    """Start WoW Forever like Desktop does: Battle.net first (via its Steam shortcut), then
+    Battle.net.exe --exec="launch_uid wowf" in the same Proton prefix. Never touches credentials."""
+    if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
+        return
+    wow_start.update(state="starting", why="", at=time.time())
+    await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "Starting WoW on your PC…"}])
+    log("Starting WoW Forever")
+    try:
+        if START_CMD:
+            subprocess.Popen(START_CMD, shell=True, start_new_session=True)
+        else:
+            if not bnet_running():
+                gameid = (BNET_APPID << 32) | 0x02000000
+                subprocess.Popen(["steam", f"steam://rungameid/{gameid}"], start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                for _ in range(60):
+                    await asyncio.sleep(2)
+                    if bnet_running():
+                        break
+                await asyncio.sleep(10)   # let Battle.net sign in / settle
+            env = dict(os.environ, STEAM_COMPAT_DATA_PATH=str(STEAM / f"steamapps/compatdata/{BNET_APPID}"),
+                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(STEAM))
+            subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
+                              "--exec=launch_uid wowf"], env=env, start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(90):
+            await asyncio.sleep(2)
+            if wow_running():
+                wow_start.update(state=None); return
+        wow_start.update(state="start_failed", why="no WoW window after 3 minutes (Battle.net may need you to sign in on the PC)")
+    except Exception as e:
+        wow_start.update(state="start_failed", why=str(e))
+    log("WoW start failed:", wow_start["why"])
+    await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
 
 def wow_running():
     return subprocess.run(["pgrep", "-if", r"wow\.exe"], capture_output=True).returncode == 0
 
 def info():
     running = wow_running()
+    st = "running" if running else (wow_start["state"] or "stopped")
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
             "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS},
             "wow": {"found": GAME_DIR.exists(), "flavor": "forever", "running": running,
-                    "state": "running" if running else "stopped", "focused": running,
-                    "screen": "world" if running else "none", "bnet": "unknown", "needs_you": False},
+                    "state": st, "why": "" if running else wow_start["why"], "focused": running,
+                    "screen": "world" if running else ("starting" if st == "starting" else "none"), "bnet": "unknown", "needs_you": False},
             "stream": "unknown", "pairing_open": True}
 
 def token_sha(tok):
@@ -269,12 +319,19 @@ async def handle(ws):
                     await send(ws, {"t": "error", "error": "unauthorized", "detail": "pair again"})
                     await ws.close(4401, "unauthorized"); return
                 await start_session(ws, device)
+            elif not (device and sessions.get(device) is ws):
+                await send(ws, {"t": "error", "error": "unauthorized", "detail": "hello first"})
+                await ws.close(4401, "unauthorized"); return
             elif t == "focus":
                 ok = wow_running()   # Linux/Wayland: no window raising; Sunshine streams the desktop as is
-                await send(ws, {"t": "focus_result", "ok": ok, "why": "" if ok else "WoW is not running on the PC"})
+                if ok:
+                    await send(ws, {"t": "focus_result", "ok": True, "why": ""})
+                else:
+                    await send(ws, {"t": "focus_result", "ok": False, "state": "starting", "why": "starting WoW"})
+                    asyncio.create_task(start_wow())
             elif t == "ping":
                 await send(ws, {"t": "pong", "id": m.get("id")})
-            elif t == "unpair" and device:
+            elif t == "unpair":
                 state["devices"].pop(device, None); save_state(state)
                 await send(ws, {"t": "unpaired"}); await ws.close(); return
             elif t in ("addons_status", "addons_install"):

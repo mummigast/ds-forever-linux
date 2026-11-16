@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Copy DS Forever's add-ons (the APK's own set) into the PC game's AddOns folder.
 # Same job as DS Forever Desktop's add-on install. Re-run after pulling upstream updates.
 set -euo pipefail
