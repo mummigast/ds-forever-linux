@@ -85,6 +85,8 @@ and shows a **pairing code**. Anything marked **FIX** comes with the exact comma
 | Stuck on "Starting WoW on your PC" | Battle.net may want a sign-in or an update on the PC; or start WoW yourself once |
 | Bottom screen empty | add-ons missing: `dsf-bridge addons`, then `/reload` in the game |
 | Taps land in the wrong place | stream the monitor WoW is on, with WoW full screen |
+| Bottom-screen buttons react but do nothing in the game | in DS Forever's settings turn **DS WoW toolbar** on |
+| A/B and X/Y swapped in the game | the Thor sends its Nintendo-printed buttons by label: switch the Thor's own controller layout (Xbox / swap A-B) in AYN's settings, and set DS Forever's ABXY to Xbox |
 
 ## Other launchers (Lutris, Heroic, Bottles, plain Wine)
 
