@@ -4,6 +4,7 @@ Run: .venv/bin/python -m unittest discover -s tests"""
 import asyncio, hashlib, hmac, json, os, subprocess, sys, tempfile, time, unittest
 from pathlib import Path
 
+import ssl, urllib.request
 import websockets
 
 HERE = Path(__file__).resolve().parent.parent
@@ -54,9 +55,14 @@ class EndToEnd(unittest.TestCase):
         self.proc = subprocess.Popen([sys.executable, str(HERE / "dsf_bridge.py")], env=env,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.code_file = t / "pairing-code.txt"
-        for _ in range(50):
-            if self.code_file.exists():
-                break
+        import socket
+        for _ in range(100):                     # until the code exists and the port accepts (cert generation takes a moment)
+            try:
+                if self.code_file.exists():
+                    socket.create_connection(("127.0.0.1", PORT), 0.2).close()
+                    break
+            except OSError:
+                pass
             time.sleep(0.1)
 
     def tearDown(self):
@@ -117,6 +123,17 @@ class EndToEnd(unittest.TestCase):
             self.log.write_text("")
             self.append("11/16 16:00:00.000  restarted")
             self.assertEqual((await self.recv(ws, "log"))["event"], "restart")
+        # wss on the same port, certificate pinned by the fingerprint from pair_ok (as the Thor does)
+        self.assertRegex(ok.get("fp", ""), r"^[0-9a-f]{64}$")
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+        async with websockets.connect(f"wss://127.0.0.1:{PORT}/v1/ws", ssl=ctx) as ws:
+            der = ws.transport.get_extra_info("ssl_object").getpeercert(binary_form=True)
+            self.assertEqual(hashlib.sha256(der).hexdigest(), ok["fp"])
+            await ws.send(json.dumps({"t": "hello", "proto": 1, "device_id": "thor-1", "token": ok["token"]}))
+            self.assertEqual((await self.recv(ws, "welcome"))["fp"], ok["fp"])
+        # plain HTTP /v1/info through the same port
+        info = json.loads(await asyncio.to_thread(lambda: urllib.request.urlopen(f"http://127.0.0.1:{PORT}/v1/info", timeout=5).read()))
+        self.assertEqual(info["proto"], 1)
         # bad token
         async with websockets.connect(url) as ws:
             await ws.send(json.dumps({"t": "hello", "proto": 1, "device_id": "thor-1", "token": "bad"}))

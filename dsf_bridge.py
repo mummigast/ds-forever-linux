@@ -281,7 +281,7 @@ def info():
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
             "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS},
             "wow": w,
-            "stream": "unknown", "pairing_open": True}
+            "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {})}
 
 def token_sha(tok):
     return hashlib.sha256(tok.encode()).hexdigest()
@@ -374,7 +374,8 @@ async def handle(ws):
                 pin = f"{secrets.randbelow(10000):04d}"
                 log(f"Paired device {device[:8]}…")
                 await send(ws, {"t": "pair_ok", "device_id": device, "token": token, "host_id": state["host_id"],
-                                "pc_name": PC_NAME, "sunshine": info()["sunshine"], "moonlight_pin": pin})
+                                "pc_name": PC_NAME, "sunshine": info()["sunshine"], "moonlight_pin": pin,
+                                **({"fp": FINGERPRINT} if FINGERPRINT else {})})
                 asyncio.create_task(hand_pin(ws, pin, "AYN Thor"))
                 await start_session(ws, device)
                 asyncio.create_task(thor_addons(ws, m))
@@ -471,11 +472,60 @@ async def wow_loop():
             await broadcast([{"t": "wow", **w}, {"t": "status", "text": texts.get(w["screen"], "")}])
         await asyncio.sleep(2)
 
+# ---------------------------------------------------------------- TLS (wss) on the same port, as Desktop [S3]
+TLS_ON = os.environ.get("DSF_TLS", "1") != "0"
+CERT, KEY = STATE.parent / "bridge-cert.pem", STATE.parent / "bridge-key.pem"
+FINGERPRINT = None
+
+def ensure_cert():
+    """A self-signed RSA-2048 certificate made once and kept; returns its SHA-256 (DER, lower-case hex) or None."""
+    if not TLS_ON or not shutil.which("openssl"):
+        return None
+    if not (CERT.exists() and KEY.exists()):
+        r = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+                            "-subj", "/CN=dsf-bridge", "-keyout", str(KEY), "-out", str(CERT)], capture_output=True)
+        if r.returncode != 0:
+            log("TLS off: openssl could not make a certificate"); return None
+        os.chmod(KEY, 0o600)
+    der = ssl.PEM_cert_to_DER_cert(CERT.read_text())
+    return hashlib.sha256(der).hexdigest()
+
+async def front_door(plain_port, tls_port):
+    """Port PORT: a connection whose first byte is a TLS ClientHello (0x16) goes to the wss server, anything else to ws."""
+    async def pipe(r, w):
+        try:
+            while data := await r.read(65536):
+                w.write(data); await w.drain()
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        finally:
+            try:
+                w.close()
+            except Exception:
+                pass
+    async def conn(reader, writer):
+        try:
+            first = await asyncio.wait_for(reader.read(1), 30)
+        except (asyncio.TimeoutError, ConnectionError):
+            writer.close(); return
+        if not first:
+            writer.close(); return
+        target = tls_port if first == b"\x16" else plain_port
+        try:
+            ur, uw = await asyncio.open_connection("127.0.0.1", target)
+        except OSError:
+            writer.close(); return
+        uw.write(first)
+        await asyncio.gather(pipe(reader, uw), pipe(ur, writer))
+    return await asyncio.start_server(conn, "0.0.0.0", PORT)
+
 def advertise():
     txt = [f"proto={PROTO}", f"id={state['host_id']}", f"pc={PC_NAME}", f"sunshine={SUNSHINE_HTTP}", f"ver={VERSION}"]
     sid = sunshine_uniqueid()
     if sid:
         txt.append(f"sid={sid}")
+    if FINGERPRINT:
+        txt += ["tls=1", f"fp={FINGERPRINT}"]
     return subprocess.Popen(["avahi-publish", "-s", PC_NAME, "_dsforever._tcp", str(PORT), *txt],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -490,13 +540,25 @@ async def main():
         log(f"{len(state['devices'])} paired device(s)")
     if addons.installed_set(ADDONS_DIR):
         log(await addon_pass())          # update an existing install at start (never a fresh one)
+    global FINGERPRINT
+    FINGERPRINT = ensure_cert()
     mdns = None if os.environ.get("DSF_NO_MDNS") else advertise()
-    log(f"Bridge on ws://0.0.0.0:{PORT}/v1/ws, following {LOG}")
+    log(f"Bridge on {'ws+wss' if FINGERPRINT else 'ws'}://0.0.0.0:{PORT}/v1/ws, following {LOG}")
     log("WoW start: " + ("DSF_START_CMD" if START_CMD else f"Steam app {STEAM_PREFIX[1]} via {PROTON}" if STEAM_PREFIX and PROTON
                          else "not possible (set DSF_START_CMD)"))
     try:
-        async with serve(handle, "0.0.0.0", PORT, process_request=http_info, ping_interval=15, ping_timeout=45):
-            await asyncio.gather(tail_loop(), wow_loop())
+        kw = dict(process_request=http_info, ping_interval=15, ping_timeout=45)
+        async with serve(handle, "127.0.0.1", 0, **kw) as plain:
+            plain_port = plain.sockets[0].getsockname()[1]
+            tls_port = plain_port
+            tls_srv = None
+            if FINGERPRINT:
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain(CERT, KEY)
+                tls_srv = await serve(handle, "127.0.0.1", 0, ssl=ctx, **kw)
+                tls_port = tls_srv.sockets[0].getsockname()[1]
+            door = await front_door(plain_port, tls_port)
+            async with door:
+                await asyncio.gather(tail_loop(), wow_loop())
     finally:
         if mdns:
             mdns.terminate()
