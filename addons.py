@@ -81,7 +81,8 @@ def fetch_upstream(log=print):
         if not names:
             raise RuntimeError("no add-ons in the source zip")
         root = names[0][:names[0].index(ASSET_PREFIX) + len(ASSET_PREFIX)]
-        tmp = Path(tempfile.mkdtemp(dir=CACHE.parent if CACHE.parent.exists() else None))
+        CACHE.mkdir(parents=True, exist_ok=True)
+        tmp = Path(tempfile.mkdtemp(dir=CACHE))        # same filesystem as `out`, so the rename below works
         for n in names:
             if not n.startswith(root):
                 continue
@@ -121,9 +122,9 @@ def install(src, addons_dir, force=False, allow_new=False, log=print):
             return f"add-ons not installed (set {set_no} available)"
         if have and have >= set_no and not missing:
             return f"installed set {have} differs from {set_no}; left alone (install with force)"
-    backup = addons_dir.parent / ".dsf-addons-backup"
+    backup = CACHE / "addons-backup"                  # outside the game: only our own add-on folders are written there
     shutil.rmtree(backup, ignore_errors=True)
-    backup.mkdir()
+    backup.mkdir(parents=True)
     for f in folders:
         if (addons_dir / f).is_dir():
             shutil.copytree(addons_dir / f, backup / f)
