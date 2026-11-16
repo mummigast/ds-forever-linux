@@ -219,7 +219,8 @@ def attempts_left(ip):
 def new_code():
     pairing["code"] = f"{secrets.randbelow(1_000_000):06d}"
     pairing["wrong"] = 0
-    misses.clear()                                  # a new code: everyone starts with full attempts
+    for ip in [k for k, (n, _) in misses.items() if n < PER_IP]:
+        misses.pop(ip)                              # a new code: full attempts again, except addresses still locked out
     pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
     code_file = STATE.parent / "pairing-code.txt"
@@ -339,6 +340,12 @@ def lan_addresses():
     except (OSError, subprocess.SubprocessError):
         return []
 
+def wow_now():
+    """Just the game's state (no LAN addresses etc.): what the 2 s loop needs."""
+    w = wow.snapshot(wow_start["state"], wow_start["why"])
+    w["found"] = GAME_DIR.exists()
+    return w
+
 _info_cache = [0.0, None]
 def info():
     """The bridge's state for welcome / /v1/info; computed at most every 2 s (it runs pgrep, ss and ip)."""
@@ -375,6 +382,9 @@ async def send(ws, msg):
 async def broadcast(msgs):
     async def one(ws):
         try:
+            tr = getattr(ws, "transport", None)
+            if tr and tr.get_write_buffer_size() > 16 * 1024 * 1024:
+                raise asyncio.TimeoutError          # 16 MB unread: the Thor is not reading
             for m in msgs:
                 await asyncio.wait_for(send(ws, m), 10)
         except asyncio.TimeoutError:                 # a Thor that stopped reading: drop it (it reconnects), don't wait again
@@ -606,7 +616,7 @@ async def tail_loop():
                     while backlog and (size > MAX_BACKLOG_BYTES or len(backlog) > MAX_BACKLOG_DOCS):
                         size -= len(backlog.pop(0).get("doc", ""))
             await broadcast(msgs)
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05 if msgs else 0.2)   # quick while docs flow, light when idle
 
 async def wow_loop():
     last = None
@@ -614,7 +624,7 @@ async def wow_loop():
              "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
         try:
-            w = await asyncio.to_thread(lambda: _info()["wow"])
+            w = await asyncio.to_thread(wow_now)
         except Exception as e:
             log("WoW check:", e); await asyncio.sleep(5); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])

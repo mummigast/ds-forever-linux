@@ -106,15 +106,29 @@ def _cmdline(pid):
     except OSError:
         return ""
 
-def pid_of(name, must_contain=None):
+def _procs():
+    """(pid, comm) of every process, read straight from /proc (far cheaper than several pgrep runs)."""
+    out = []
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                out.append((int(d), Path(f"/proc/{d}/comm").read_text().strip()))
+            except OSError:
+                pass
+    return out
+
+_CMD_RE = {}
+def pid_of(name, must_contain=None, procs=None):
     """PID of a process named exactly `name` (case-insensitive; Wine names processes after their .exe), else one whose
     command line runs it (".../Wow.exe" or "C:\\...\\Wow.exe", spaces allowed). must_contain: a text its command line
     must have, e.g. "_forever_" so retail WoW (also Wow.exe) is not taken for WoW Forever."""
-    r = subprocess.run(["pgrep", "-i", "-x", re.escape(name)], capture_output=True, text=True)
-    pids = [int(x) for x in r.stdout.split()]
+    procs = _procs() if procs is None else procs
+    me = os.getpid()
+    pids = [pid for pid, comm in procs if comm.lower() == name.lower()[:15]]
     if not pids:
-        r = subprocess.run(["pgrep", "-i", "-f", r"(^|[\\/])" + re.escape(name) + r"( |$)"], capture_output=True, text=True)
-        pids = [int(x) for x in r.stdout.split() if int(x) != os.getpid()]
+        rx = _CMD_RE.setdefault(name, re.compile(r"(^|[\\/])" + re.escape(name) + r"( |$)", re.I))
+        wineish = lambda c: "wine" in c or "preloader" in c or c.endswith(".exe") or c.endswith(".ex")   # comm is cut at 15
+        pids = [pid for pid, comm in procs if pid != me and wineish(comm.lower()) and rx.search(_cmdline(pid))]
     if must_contain:
         hits = [p for p in pids if must_contain.lower() in _cmdline(p).lower()]
         # a Wine process's command line normally has its full path; if none says, keep the plain match
@@ -224,7 +238,8 @@ class WowState:
         with self.lock:
             return self._snapshot(start_state, start_why)
     def _snapshot(self, start_state=None, start_why=""):
-        pid = pid_of(WOW_PROC, "_forever_")
+        procs = _procs()
+        pid = pid_of(WOW_PROC, "_forever_", procs)
         up = pid is not None
         game, auth = connections(pid) if up else (0, 0)
         doc_age = time.monotonic() - self.last_doc if self.last_doc else None
@@ -232,7 +247,7 @@ class WowState:
         if not up and start_state == "starting":
             screen = "starting"
         state = "running" if up else (start_state or "stopped")
-        bnet = "unknown" if pid_of(BNET_PROC) else "not_running"
+        bnet = "unknown" if pid_of(BNET_PROC, procs=procs) else "not_running"
         return {"found": True, "flavor": "forever", "running": up, "state": state,
                 "why": "" if up else start_why, "screen": screen, "focused": up, "bnet": bnet,
                 "needs_you": False, "login_error": (self.log.error or "") if screen == "login" else ""}
