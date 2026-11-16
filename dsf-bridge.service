@@ -3,7 +3,7 @@ Description=DS Forever helper for Linux (AYN Thor companion over Sunshine)
 After=network-online.target
 
 [Service]
-ExecStart=@HERE@/.venv/bin/python @HERE@/dsf_bridge.py run
+ExecStart="@HERE@/.venv/bin/python" "@HERE@/dsf_bridge.py" run
 EnvironmentFile=-%h/.config/dsf-bridge/env
 Restart=on-failure
 RestartSec=5

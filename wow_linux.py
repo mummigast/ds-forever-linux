@@ -59,9 +59,16 @@ def proton_for(steam_root, appid):
 
 
 # ---------------------------------------------------------------- processes and connections
-def pid_of(pattern):
-    r = subprocess.run(["pgrep", "-i", "-f", pattern], capture_output=True, text=True)
+WOW_PROC = "wow.exe"            # Wine names its processes after the .exe (comm)
+BNET_PROC = "battle.net.exe"
+
+def pid_of(name):
+    """PID of a process whose name is exactly `name` (case-insensitive), not any command line mentioning it."""
+    r = subprocess.run(["pgrep", "-i", "-x", re.escape(name)], capture_output=True, text=True)
     pids = [int(x) for x in r.stdout.split()]
+    if not pids:   # fallback: the .exe as the program path of a command line (".../Wow.exe" or "C:\\...\\Wow.exe")
+        r = subprocess.run(["pgrep", "-i", "-f", r"^[^ ]*[\\/]" + re.escape(name) + r"( |$)"], capture_output=True, text=True)
+        pids = [int(x) for x in r.stdout.split()]
     return pids[0] if pids else None
 
 def uptime_s(pid):
@@ -159,7 +166,7 @@ class WowState:
     def doc_seen(self):
         self.last_doc = time.monotonic()
     def snapshot(self, start_state=None, start_why=""):
-        pid = pid_of(r"wow\.exe")
+        pid = pid_of(WOW_PROC)
         up = pid is not None
         game, auth = connections(pid) if up else (0, 0)
         doc_age = time.monotonic() - self.last_doc if self.last_doc else None
@@ -167,7 +174,7 @@ class WowState:
         if not up and start_state == "starting":
             screen = "starting"
         state = "running" if up else (start_state or "stopped")
-        bnet = "unknown" if pid_of(r"battle\.net\.exe") else "not_running"
+        bnet = "unknown" if pid_of(BNET_PROC) else "not_running"
         return {"found": True, "flavor": "forever", "running": up, "state": state,
                 "why": "" if up else start_why, "screen": screen, "focused": up, "bnet": bnet,
                 "needs_you": False, "login_error": (self.log.error or "") if screen == "login" else ""}

@@ -134,6 +134,26 @@ class EndToEnd(unittest.TestCase):
         # plain HTTP /v1/info through the same port
         info = json.loads(await asyncio.to_thread(lambda: urllib.request.urlopen(f"http://127.0.0.1:{PORT}/v1/info", timeout=5).read()))
         self.assertEqual(info["proto"], 1)
+        # a web page (Origin header) is refused
+        async with websockets.connect(url, origin="http://evil.example") as ws:
+            with self.assertRaises(websockets.ConnectionClosed):
+                await ws.send(json.dumps({"t": "pair_hello", "device_id": "x"})); await self.recv(ws)
+        # after pairing a fresh code is ready
+        self.assertNotEqual(self.code_file.read_text().strip(), code)
+        # two Thors pairing at once each get their own challenge
+        async with websockets.connect(url) as a, websockets.connect(url) as b:
+            await a.send(json.dumps({"t": "pair_hello", "device_id": "thor-a"})); ca = await self.recv(a, "pair_challenge")
+            await b.send(json.dumps({"t": "pair_hello", "device_id": "thor-b"})); await self.recv(b, "pair_challenge")
+            code2 = self.code_file.read_text().strip()
+            await a.send(json.dumps({"t": "pair_proof", "proof": proof(code2, ca["nonce"], "thor-a")}))
+            self.assertEqual((await self.recv(a))["t"], "pair_ok")
+        # five wrong codes lock pairing
+        async with websockets.connect(url) as ws:
+            await ws.send(json.dumps({"t": "pair_hello", "device_id": "thor-z"})); ch = await self.recv(ws, "pair_challenge")
+            for i in range(5):
+                await ws.send(json.dumps({"t": "pair_proof", "proof": proof("999999", ch["nonce"], "thor-z")}))
+                e = await self.recv(ws, "pair_error")
+            self.assertEqual((e["error"], e["attempts_left"]), ("locked", 0))
         # bad token
         async with websockets.connect(url) as ws:
             await ws.send(json.dumps({"t": "hello", "proto": 1, "device_id": "thor-1", "token": "bad"}))

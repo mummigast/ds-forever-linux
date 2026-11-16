@@ -29,7 +29,6 @@ sed "s|@HERE@|$HERE|g" "$HERE/dsf-bridge.service" > "$HOME/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now dsf-bridge.service
 systemctl --user restart dsf-bridge.service
-loginctl enable-linger "$USER" 2>/dev/null || true   # keep it running without a desktop login (ignored if not allowed)
 sleep 3
 
 echo

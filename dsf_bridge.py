@@ -105,6 +105,8 @@ def game_time(raw, at):
     except Exception:
         return -1
 
+DIGITS = re.compile(r"^[0-9]{1,9}$")
+
 class Assembler:
     MAGIC = "WCB1|"
     def __init__(self):
@@ -120,14 +122,14 @@ class Assembler:
         if body.startswith("pad|"):
             return
         parts = body.split("|", 2)
-        if len(parts) < 3 or not parts[0].isdigit():
+        if len(parts) < 3 or not DIGITS.match(parts[0]):
             return
         seq, spec, payload = int(parts[0]), parts[1], parts[2]
         if self.last >= 0 and seq != self.last + 1:
             out.append({"t": "gap", "seq": seq, "expected": self.last + 1})
         self.last = seq
         a, _, b = spec.partition("/")
-        if not (a.isdigit() and b.isdigit()):
+        if not (DIGITS.match(a) and DIGITS.match(b)):
             return
         idx, total = int(a), int(b)
         if total < 1 or idx < 1 or idx > total:
@@ -191,11 +193,13 @@ class Tailer:
 # ---------------------------------------------------------------- sessions
 sessions = {}          # device_id -> websocket
 backlog = []           # messages since the current log began
-pairing = {"code": None, "attempts": 5}
+pairing = {"code": None, "attempts": 5, "locked_at": 0.0, "pin": None}
+LOCK_S = 300   # after 5 wrong codes pairing pauses this long, then a new code comes up
 
 def new_code():
     pairing["code"] = f"{secrets.randbelow(1_000_000):06d}"
     pairing["attempts"] = 5
+    pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
     code_file = STATE.parent / "pairing-code.txt"
     code_file.write_text(pairing["code"] + "\n"); os.chmod(code_file, 0o600)
@@ -221,6 +225,14 @@ async def addon_pass(force=False, allow_new=False, thor_set=0):
     async with addon_lock:
         try:
             src = await asyncio.to_thread(addon_source)
+            src_set = addons.parse_manifest((Path(src) / "manifest.txt").read_text())[0]
+            if thor_set > src_set and not os.environ.get("DSF_ADDONS_SRC"):
+                try:                                    # the Thor's APK is newer than our copy: take upstream's release
+                    up = await asyncio.to_thread(addons.fetch_upstream, log)
+                    if addons.parse_manifest((up / "manifest.txt").read_text())[0] > src_set:
+                        src = up
+                except Exception as e:
+                    log("upstream add-ons:", e)
             msg = await asyncio.to_thread(addons.install, src, ADDONS_DIR, force, allow_new, log)
         except Exception as e:
             msg = f"add-on update failed: {e}"
@@ -230,8 +242,23 @@ async def addon_pass(force=False, allow_new=False, thor_set=0):
 START_CMD = os.environ.get("DSF_START_CMD")   # optional: your own shell command that starts WoW Forever
 wow_start = {"state": None, "why": "", "at": 0.0}
 
+def session_env():
+    """The desktop session's current environment (DISPLAY, WAYLAND_DISPLAY…): a service started at boot, before the
+    desktop, doesn't have it, and Steam/Proton need it to open windows."""
+    env = dict(os.environ)
+    try:
+        out = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True, timeout=5).stdout
+        for line in out.splitlines():
+            k, sep, v = line.partition("=")
+            if sep and k in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP",
+                             "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"):
+                env[k] = v
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return env
+
 def bnet_running():
-    return subprocess.run(["pgrep", "-if", r"battle\.net\.exe"], capture_output=True).returncode == 0
+    return wow_linux.pid_of(wow_linux.BNET_PROC) is not None
 
 async def start_wow():
     """Start WoW Forever like Desktop does: Battle.net first (via its Steam shortcut), then
@@ -243,21 +270,21 @@ async def start_wow():
     log("Starting WoW Forever")
     try:
         if START_CMD:
-            subprocess.Popen(START_CMD, shell=True, start_new_session=True)
+            subprocess.Popen(START_CMD, shell=True, start_new_session=True, env=session_env())
         elif not (STEAM_PREFIX and PROTON):
             raise RuntimeError("can't start WoW here: set DSF_START_CMD (WoW is not in a Steam/Proton prefix)")
         else:
             steam_root, appid = STEAM_PREFIX
             if not bnet_running():
                 gameid = (appid << 32) | 0x02000000      # a non-Steam shortcut's game id
-                subprocess.Popen(["steam", f"steam://rungameid/{gameid}"], start_new_session=True,
+                subprocess.Popen(["steam", f"steam://rungameid/{gameid}"], start_new_session=True, env=session_env(),
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 for _ in range(60):
                     await asyncio.sleep(2)
                     if bnet_running():
                         break
                 await asyncio.sleep(10)   # let Battle.net sign in / settle
-            env = dict(os.environ, STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
+            env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
                        STEAM_COMPAT_CLIENT_INSTALL_PATH=str(steam_root))
             subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
                               "--exec=launch_uid wowf"], env=env, start_new_session=True,
@@ -273,7 +300,7 @@ async def start_wow():
     await broadcast([{"t": "wow", **info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
 
 def wow_running():
-    return subprocess.run(["pgrep", "-if", r"wow\.exe"], capture_output=True).returncode == 0
+    return wow_linux.pid_of(wow_linux.WOW_PROC) is not None
 
 def info():
     w = wow.snapshot(wow_start["state"], wow_start["why"])
@@ -330,7 +357,7 @@ def sunshine_pin(pin, name):
 async def hand_pin(ws, pin, name):
     # Sunshine accepts the PIN only while the Thor's pairing request is waiting: retry for 90 s.
     if not (os.environ.get("SUNSHINE_USER") and os.environ.get("SUNSHINE_PASS")):
-        log(f"*** Enter Moonlight PIN {pin} in Sunshine's web UI (https://localhost:{SUNSHINE_WEB} → PIN) ***")
+        log(f"*** Enter Moonlight PIN {pin} in Sunshine's web UI (https://localhost:{SUNSHINE_WEB} → PIN); also: dsf-bridge code ***")
         await send(ws, {"t": "status", "text": f"Enter PIN {pin} in Sunshine on the PC"})
         return
     for _ in range(45):
@@ -343,7 +370,11 @@ async def handle(ws):
     path = ws.request.path
     if path != "/v1/ws":
         await ws.close(1008, "not found"); return
+    origin = ws.request.headers.get("Origin")
+    if origin and not re.match(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", origin):
+        await ws.close(4403, "native clients only"); return      # no web pages (as Desktop)
     device = None
+    nonce = None
     try:
         async for raw in ws:
             try:
@@ -352,26 +383,34 @@ async def handle(ws):
                 continue
             t = m.get("t")
             if t == "pair_hello":
-                device = m.get("device_id", "")
-                if not pairing["code"]:
+                device = str(m.get("device_id", ""))[:64]
+                if not pairing["code"] or (pairing["locked_at"] and time.time() - pairing["locked_at"] > LOCK_S):
                     new_code()
-                pairing["nonce"] = secrets.token_hex(16)
-                await send(ws, {"t": "pair_challenge", "nonce": pairing["nonce"],
+                nonce = secrets.token_hex(16)            # per connection
+                await send(ws, {"t": "pair_challenge", "nonce": nonce,
                                 "attempts_left": pairing["attempts"], "locked": pairing["attempts"] <= 0})
-            elif t == "pair_proof" and device:
+            elif t == "pair_proof" and device and nonce:
                 if pairing["attempts"] <= 0:
                     await send(ws, {"t": "pair_error", "error": "locked", "attempts_left": 0}); continue
-                want = hmac.new(pairing["code"].encode(), f"dsf-pair-v1|{pairing['nonce']}|{device}".encode(),
+                want = hmac.new(pairing["code"].encode(), f"dsf-pair-v1|{nonce}|{device}".encode(),
                                 hashlib.sha256).hexdigest()
                 if not hmac.compare_digest(want, str(m.get("proof", "")).lower()):
                     pairing["attempts"] -= 1
-                    await send(ws, {"t": "pair_error", "error": "wrong_code", "attempts_left": pairing["attempts"]})
+                    if pairing["attempts"] <= 0:
+                        pairing["locked_at"] = time.time()
+                        log(f"Pairing locked for {LOCK_S // 60} min after 5 wrong codes")
+                    await send(ws, {"t": "pair_error", "error": "locked" if pairing["attempts"] <= 0 else "wrong_code",
+                                    "attempts_left": pairing["attempts"]})
                     continue
                 token = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
                 state["devices"][device] = {"token_sha": token_sha(token), "paired": int(time.time())}
                 save_state(state)
-                pairing["code"] = None
+                nonce = None
+                new_code()                               # the used code is gone; a fresh one is ready for the next Thor
                 pin = f"{secrets.randbelow(10000):04d}"
+                pairing["pin"] = pin
+                pin_file = STATE.parent / "moonlight-pin.txt"
+                pin_file.write_text(pin + "\n"); os.chmod(pin_file, 0o600)
                 log(f"Paired device {device[:8]}…")
                 await send(ws, {"t": "pair_ok", "device_id": device, "token": token, "host_id": state["host_id"],
                                 "pc_name": PC_NAME, "sunshine": info()["sunshine"], "moonlight_pin": pin,
@@ -380,7 +419,7 @@ async def handle(ws):
                 await start_session(ws, device)
                 asyncio.create_task(thor_addons(ws, m))
             elif t == "hello":
-                device = m.get("device_id", "")
+                device = str(m.get("device_id", ""))[:64]
                 d = state["devices"].get(device)
                 if not d or not hmac.compare_digest(d["token_sha"], token_sha(str(m.get("token", "")))):
                     await send(ws, {"t": "error", "error": "unauthorized", "detail": "pair again"})
@@ -546,6 +585,13 @@ async def main():
     log(f"Bridge on {'ws+wss' if FINGERPRINT else 'ws'}://0.0.0.0:{PORT}/v1/ws, following {LOG}")
     log("WoW start: " + ("DSF_START_CMD" if START_CMD else f"Steam app {STEAM_PREFIX[1]} via {PROTON}" if STEAM_PREFIX and PROTON
                          else "not possible (set DSF_START_CMD)"))
+    async def mdns_watch():
+        nonlocal mdns
+        while mdns:
+            await asyncio.sleep(10)
+            if mdns.poll() is not None:
+                log("mDNS advert stopped (avahi restarted?): publishing again")
+                mdns = advertise()
     try:
         kw = dict(process_request=http_info, ping_interval=15, ping_timeout=45)
         async with serve(handle, "127.0.0.1", 0, **kw) as plain:
@@ -558,7 +604,7 @@ async def main():
                 tls_port = tls_srv.sockets[0].getsockname()[1]
             door = await front_door(plain_port, tls_port)
             async with door:
-                await asyncio.gather(tail_loop(), wow_loop())
+                await asyncio.gather(tail_loop(), wow_loop(), mdns_watch())
     finally:
         if mdns:
             mdns.terminate()
@@ -635,6 +681,9 @@ def cli():
         f = STATE.parent / "pairing-code.txt"
         if f.exists() and subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True).returncode == 0:
             c = f.read_text().strip(); print(f"Pairing code: {c[:3]} {c[3:]}")
+            pf = STATE.parent / "moonlight-pin.txt"
+            if pf.exists() and time.time() - pf.stat().st_mtime < 600:
+                print(f"Moonlight PIN for Sunshine (last pairing): {pf.read_text().strip()}  → https://localhost:{SUNSHINE_WEB} → PIN")
         else:
             print("The helper isn't running: systemctl --user start dsf-bridge"); sys.exit(1)
     elif args.cmd == "forget":

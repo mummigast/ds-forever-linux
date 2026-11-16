@@ -42,7 +42,25 @@ def _get(url, timeout=60):
 
 def fetch_upstream(log=print):
     """Download (once per version) and verify upstream's latest source zip; return a folder with manifest.txt + addons/."""
-    rel = json.loads(_get(f"https://api.github.com/repos/{UPSTREAM}/releases/latest", 20))
+    import time
+    meta = CACHE / "latest.json"
+    try:
+        cached = json.loads(meta.read_text())
+        fresh = time.time() - cached.get("_at", 0) < 3 * 3600      # ask GitHub at most every 3 hours
+    except (OSError, ValueError):
+        cached, fresh = None, False
+    if fresh:
+        rel = cached
+    else:
+        try:
+            rel = json.loads(_get(f"https://api.github.com/repos/{UPSTREAM}/releases/latest", 20))
+            rel["_at"] = time.time()
+            CACHE.mkdir(parents=True, exist_ok=True)
+            meta.write_text(json.dumps({k: rel[k] for k in ("tag_name", "assets", "_at")}))
+        except Exception:
+            if not cached:
+                raise
+            rel = cached                                            # offline: use what we know
     assets = {a["name"]: a["browser_download_url"] for a in rel["assets"]}
     name = next((n for n in assets if n.endswith("-source.zip") and n.startswith("DS-Forever-")), None)
     if not name or "SHA256SUMS" not in assets:
