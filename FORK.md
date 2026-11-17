@@ -20,7 +20,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 - The whole app stays **GPL-3.0** (LICENSE), the same as DS Forever. The Linux helper in `linux-helper/` is GPL-3.0 too.
 - All original copyright, licence and credit notices are kept unchanged: LICENSE, THIRD_PARTY_NOTICES,
   RELEASE_NOTICES.md, SOURCE_PROVENANCE.md, licenses/, and every notice inside the source files.
-- Each change to an upstream file is marked with a `Linux Edition` comment and its date (GPL-3.0 section 5a); the
+- Each changed upstream file carries a `Linux Edition` or `Linux Streaming Edition` comment with its date (GPL-3.0 section 5a); the
   table below lists them, and the git history shows every change against upstream.
 - Dependencies keep their own terms (CascLib MIT, Recast zlib, Moonlight GPL-3.0, OpenSSL Apache-2.0, Opus BSD,
   and the rest in RELEASE_NOTICES.md).
@@ -49,7 +49,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
-Changed upstream files carry a `Linux Edition` comment at each change (GPL-3.0 section 5a). No upstream code is deleted:
+Changed upstream files carry a `Linux Edition` / `Linux Streaming Edition` comment (GPL-3.0 section 5a). No upstream code is deleted:
 the edition's behaviour sits behind switches, and the runtime is left out at packaging time, so upstream merges stay small.
 
 ## What is left out

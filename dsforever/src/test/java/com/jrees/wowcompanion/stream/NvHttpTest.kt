@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): expectations follow the edition's texts.
+
 import org.junit.AfterClass
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals

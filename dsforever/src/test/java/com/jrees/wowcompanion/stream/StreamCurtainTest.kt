@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): expectations follow the edition's texts.
+
 import com.jrees.wowcompanion.SetupFlow
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

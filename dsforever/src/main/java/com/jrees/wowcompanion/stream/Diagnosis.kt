@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): texts name the Linux helper instead of DS Forever Desktop.
+
 /**
  * "IF THE PC ISN'T FOUND, THE APP EXPLAINS WHY (the PC is off, it's on another network, or Desktop isn't running) AND OFFERS TO
  * RETRY" (STREAMING_PLAN.md section 1). What was measured goes in ([Probe]); the reason the player reads comes out. Pure.

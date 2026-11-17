@@ -1,4 +1,5 @@
 ﻿<resources>
+    <!-- Linux Streaming Edition (modified 2026-11-17): the app's name -->
     <string name="app_name">DS Forever Linux Streaming</string>
     <string name="home">홈</string>
     <string name="download">다운로드</string>

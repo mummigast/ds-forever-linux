@@ -1,7 +1,22 @@
-> **DS Forever Linux Streaming Edition** — a personal fork of DS Forever **for streaming WoW Forever from a Linux PC**
-> (Steam/Proton + Sunshine) to an AYN Thor, also over a VPN. Not for WoW installed on the Thor: for that, or for
-> streaming from Windows, use the official DS Forever. Based on DS Forever by Jreese702; not the official app.
-> Changes, licence notes and the Linux build: [FORK.md](FORK.md). The original README follows unchanged.
+> ## DS Forever Linux Streaming Edition
+>
+> **An unofficial, personal fork of [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702**, for one job:
+> streaming WoW Forever from a **Linux PC** (Steam/Proton + Sunshine) to an **AYN Thor**, at home or over a VPN. It adds a
+> Linux helper (`linux-helper/`) in place of the Windows-only DS Forever Desktop and leaves out everything for playing
+> on the Thor itself.
+>
+> - **Not the official app.** For WoW installed on the Thor, or for streaming from Windows, use the official DS Forever.
+> - **No support, no warranty.** Made and tested on one setup; you are welcome to try it. Please don't report its
+>   problems to DS Forever's author.
+> - **No APKs here.** Build it yourself (`./linux-build.sh`); see [FORK.md](FORK.md).
+>
+> **Known problems**
+> - Bottom-screen buttons that act while a WoW window is open (for example *Sell junk* at a vendor, the game menu,
+>   settings) don't work yet: the click lands in the middle of the screen. Use WoW's own buttons there for now.
+> - Right after connecting, the camera may turn by itself until the right stick is moved.
+>
+> What this fork changes, what it leaves out, licences and the Linux build: [FORK.md](FORK.md). The helper:
+> [linux-helper/README.md](linux-helper/README.md). DS Forever's original README follows unchanged.
 
 # DS Forever
 

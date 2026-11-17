@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): texts name the Linux helper instead of DS Forever Desktop.
+
 import android.content.Context
 import org.json.JSONObject
 

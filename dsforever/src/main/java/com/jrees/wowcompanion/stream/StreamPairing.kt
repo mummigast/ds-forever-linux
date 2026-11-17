@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): texts name the Linux helper instead of DS Forever Desktop.
+
 /**
  * PAIRING BY THE CODE ON THE PC (STREAMING_PLAN.md section 2, docs/STREAM_BRIDGE_PROTOCOL.md "Pairing"), as a state machine over
  * three steps the device does with sockets and the tests do with fakes:

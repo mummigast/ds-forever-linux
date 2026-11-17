@@ -1,6 +1,7 @@
 ﻿<resources>
     <string name="add">Добавить</string>
     <string name="adjust_size">Отрегулировать размер</string>
+    <!-- Linux Streaming Edition (modified 2026-11-17): the app's name -->
     <string name="app_name">DS Forever Linux Streaming</string>
     <string name="appearance">Внешний вид</string>
     <string name="audio_driver">Аудиодрайвер</string>

@@ -1,5 +1,7 @@
 package com.jrees.wowcompanion.stream
 
+// Linux Streaming Edition (modified 2026-11-17): texts name the Linux helper instead of DS Forever Desktop.
+
 /**
  * THE PAIRING CODE ON THE THOR ("Enter the code shown in the Linux helper"; STREAMING_PLAN.md section 1): 6 digits, typed with the
  * touch number pad or the controller (D-pad up / down turns the selected digit, left / right moves between digits, A = OK, B = back).
