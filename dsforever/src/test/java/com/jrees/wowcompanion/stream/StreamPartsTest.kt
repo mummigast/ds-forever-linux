@@ -76,8 +76,11 @@ class StreamPartsTest {
 
     @Test fun systemKeysNeverReachThePc() {
         val r = Rec(); val k = StreamKeys(r, 1920, 1080) {}
-        for (x in listOf(64, 108, 133, 134, 135, 67, 70, 76, 95, 96, 107, 127, 66)) { k.key(x, true); k.key(x, false) }
+        for (x in listOf(64, 108, 133, 134, 135, 67, 70, 76, 95, 107, 127, 66)) { k.key(x, true); k.key(x, false) }
         assertTrue(r.keys.isEmpty())
+        // Linux Edition: F12 (X 96) reaches the PC - the add-on's ReloadUI key
+        k.key(96, true); k.key(96, false)
+        assertEquals(listOf(0x7B, 0x7B), r.keys.map { it.first }); r.keys.clear()
         // Esc alone is a game key; Esc under Ctrl is the Start menu / Task Manager
         k.key(9, true); k.key(9, false)
         assertEquals(2, r.keys.size)

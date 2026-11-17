@@ -58,6 +58,13 @@ class StreamKeys(
     }
 
     override fun tap(fx: Float, fy: Float) {
+        // Linux Edition diagnostic (2026-11-17): who asked for this click (finding the 2 s ghost-click source)
+        try {
+            val who = Throwable().stackTrace.drop(1).filter { !it.className.contains("InputSink") && !it.className.contains("RootShell") &&
+                !it.className.contains("TapBridge") && !it.className.startsWith("java.") && !it.className.startsWith("android.") }
+                .take(4).joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber }
+            Log.i("DSFTAP", "tap %.4f,%.4f by %s".format(fx, fy, who))
+        } catch (_: Throwable) {}
         // Linux Edition (modified 2026-11-17): WoW in controller mode keeps its cursor at the screen centre and only hands it to
         // the mouse when it sees mouse MOTION. On a Linux PC (Sunshine + Proton) an absolute position alone is not reported to
         // the game as motion, so WoW snapped the cursor back to the centre before the press (ghost clicks in menus, seen on the
@@ -147,6 +154,8 @@ object XToVk {
     fun vk(xKeycode: Int): Int? = MAP[xKeycode]
 
     /** never sent to the PC */
+    // Linux Edition (modified 2026-11-17): F12 (0x7B) is let through: the add-on binds it to ReloadUI (GameInput.reload, Settings' Reload),
+    // which never worked while streaming because every F-key was refused here. The other F-keys stay refused.
     fun systemKey(vk: Int): Boolean = vk == 0x12 || vk == VK_LMENU || vk == VK_RMENU || vk == VK_LWIN || vk == VK_RWIN ||
-        vk == 0x5D || vk == 0x5F || vk in 0x70..0x87 || vk == 0x2C || vk == 0x13 || vk == 0x14 || vk == 0x90 || vk == 0x91
+        vk == 0x5D || vk == 0x5F || (vk in 0x70..0x87 && vk != 0x7B) || vk == 0x2C || vk == 0x13 || vk == 0x14 || vk == 0x90 || vk == 0x91
 }

@@ -130,6 +130,10 @@ object GameUi {
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
     private var swTapN = -1
+    // Linux Edition (added 2026-11-17): unanswered taps in a row; past MISS_MAX the retry slows to MISS_SLOW_MS (seen: uisw tapped
+    // every 2 s for minutes while WoW's settings window held the cursor, each tap a click in the screen's middle)
+    private var swMiss = 0
+    private var hudMiss = 0
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
     const val SW_PARTY = "party"
@@ -573,7 +577,9 @@ object GameUi {
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
                     now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                    if (s.n != swTapN || now - swTapAt > 1500L) {
+                    if (s.n != swTapN) swMiss = 0
+                    if (s.n != swTapN || now - swTapAt > (if (swMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) {
+                        if (s.n == swTapN) swMiss++
                         swTapN = s.n; swTapAt = now
                         GameInput.tap(ctx, pad, sws.row, swCol)
                     }
@@ -588,7 +594,9 @@ object GameUi {
                         else -> Want("s", prdS, hudScale(), sDef, sStep) } }
                         .firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
                     if (todo != null && s != null && live && s.current && s.hasRow &&
-                        (s.n != hudHTapN || now - hudHTapAt > 1500L) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                        (s.n != hudHTapN || now - hudHTapAt > (if (hudMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) &&
+                        now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                        if (s.n == hudHTapN) hudMiss++ else hudMiss = 0
                         hudHTapN = s.n; hudHTapAt = now
                         val cur = todo.cur!!; val want = todo.want!!
                         val selNow = prdSel ?: "y"
@@ -656,4 +664,7 @@ object GameUi {
     private fun changed() { for (l in listeners) l() }
 
     private const val ROW = "ui"      // Hub.lua ROW
+
+    private const val MISS_MAX = 3            // Linux Edition
+    private const val MISS_SLOW_MS = 30_000L  // Linux Edition
 }

@@ -214,6 +214,12 @@ object TapBridge {
      * live gate, quiet pad and single worker as the cells; never keys.
      */
     fun tapGame(ctx: Context, pad: JSONObject?, gx: Double, gy: Double, what: String, onFail: (String) -> Unit = {}): Boolean {
+        try {  // Linux Edition diagnostic (2026-11-17): who asked
+            val who = Throwable().stackTrace.drop(1).filter { !it.className.contains("TapBridge") && !it.className.startsWith("java.") &&
+                !it.className.startsWith("android.") && !it.className.startsWith("kotlin") }.take(5)
+                .joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber }
+            Log.i("DSFTAP", "ask %s by %s".format("game $gx,$gy $what", who))
+        } catch (_: Throwable) {}
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) { onFail("${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"); return false }
         val c = gamePoint(ctx, pad, gx, gy) ?: run { onFail("no trusted geometry for $what"); return false }
@@ -222,6 +228,12 @@ object TapBridge {
 
     private fun send(ctx: Context, pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, onFail: (String) -> Unit): Boolean {
         if (cells.isEmpty()) return false
+        try {  // Linux Edition diagnostic (2026-11-17): who asked
+            val who = Throwable().stackTrace.drop(1).filter { !it.className.contains("TapBridge") && !it.className.startsWith("java.") &&
+                !it.className.startsWith("android.") && !it.className.startsWith("kotlin") }.take(5)
+                .joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber }
+            Log.i("DSFTAP", "ask %s by %s".format(cells.joinToString { "${it.first}:${it.second}" }, who))
+        } catch (_: Throwable) {}
         val now = System.currentTimeMillis()
         if (!GameInput.live(now)) {
             val why = "${GameInput.gate.why(now) ?: "The game is not live"}: nothing was sent"
