@@ -14,6 +14,19 @@ import java.nio.file.Files
  * bake, the background art) while the game is up or launching, on ANY Thor; it goes on once the game has closed.
  */
 class PlayGateTest {
+    // Linux Edition: the tests below are upstream's rule (streamOnlyBake off); the edition's own rule has its own test
+    @org.junit.Before fun upstreamRule() { PlayGate.streamOnlyBake = false }
+    @org.junit.After fun editionRule() { PlayGate.streamOnlyBake = true }
+
+    @Test fun linuxEditionPausesWhileStreamingAndBuildsWhenNobodyLooks() {
+        PlayGate.streamOnlyBake = true
+        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = true, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
+        assertEquals(null, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
+        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = false, quiet = false))
+        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = false, artRunning = true, gameActive = false, playedThisRun = false, quiet = true))
+        assertEquals(PlayGate.GAME_RUNNING, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = true, playedThisRun = true, quiet = true))
+    }
+
     @After fun reset() {
         InputSink.sink = null; LauncherHooks.gameUp = { false }; LauncherHooks.launchState = ""; LauncherHooks.launchAtMs = 0L
         LauncherHooks.gameStartSec = 0L

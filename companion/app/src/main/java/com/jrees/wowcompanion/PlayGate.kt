@@ -102,7 +102,13 @@ internal object PlayGate {
      * (interiors-bake 74 % CPU there), so it builds only while nobody looks at it: the screen off, or the launcher not in front.
      * [artRunning] = an art run that is really working (one parked for the game does not count).
      */
+    /** Linux Edition (2026-11-17, the user: "pause while streaming"; this edition is for streaming only): true = the indoor bake waits
+     *  while a stream runs and builds when nobody looks (screen off or the app in the background), with no local game needed */
+    @Volatile var streamOnlyBake = true
+
     fun indoorWait(streaming: Boolean, artRunning: Boolean, gameActive: Boolean, playedThisRun: Boolean, quiet: Boolean = true): String? = when {
+        streamOnlyBake && streaming -> GAME_BUSY
+        streamOnlyBake -> if (gameActive) GAME_RUNNING else if (!quiet || artRunning) GAME_BUSY else null
         streaming -> if (artRunning) GAME_BUSY else null
         gameActive -> GAME_RUNNING
         !playedThisRun -> GAME_BUSY
