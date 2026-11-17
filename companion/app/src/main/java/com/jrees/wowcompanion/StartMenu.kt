@@ -36,7 +36,9 @@ object StartMenu {
     fun draw(c: Canvas, area: RectF, pressed: Int, hits: ArrayList<Pair<RectF, Int>>, menuButton: RectF, game: Boolean) {
         hits.clear()
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
-        val rows = if (game) 4 else 3
+        // Linux Streaming Edition: no Battle.net login rows on the start screen (streaming never signs in on the Thor)
+        val noLogin = ChooserPanel.STREAM_ONLY && !game
+        val rows = if (game) 4 else if (noLogin) 2 else 3
         val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
         val top = (area.centerY() - height / 2f).coerceAtLeast(area.top)
         val panel = RectF(area.left, top, area.right, top + height)
@@ -53,6 +55,9 @@ object StartMenu {
         }
         UiKit.button(c, menuButton, "X", StartView.GLYPH_B, down(CLOSE))
         hits += RectF(menuButton) to CLOSE
+        if (noLogin) {
+            put(RectF(inL, y, inR, y + bh), "Report issue", REPORT, true)
+        } else {
         val auto = half(false)
         UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
         val words = UiKit.bodyPaint(StartView.LINE_SIZE)
@@ -62,7 +67,9 @@ object StartMenu {
         y += bh + gap
         val armed = android.os.SystemClock.uptimeMillis() - forgetArmedAt < FORGET_ARM_MS
         put(half(false), if (armed) "Tap again" else "Forget login", FORGET, canForget())
-        if (game) {
+        }
+        if (noLogin) Unit
+        else if (game) {
             if (SetupBridge.openStreamSettings != null) put(half(true), "Stream settings", STREAM, true)
             else put(half(true), "Restart game", RESTART, canRestart())
             y += bh + gap
