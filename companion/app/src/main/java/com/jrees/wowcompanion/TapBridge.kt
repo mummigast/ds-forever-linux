@@ -59,7 +59,7 @@ object TapBridge {
         runCatching { tapLog.add("${java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $what") }
     }
 
-    /** the L1 key channel: OFF since the Alt+F4 closes (2026-10-09), see the batch send below */
+    /** the L1 key channel: ON in the Linux Streaming Edition (Thor test 2026-11-17: quests, vendor, Sell junk as keys); it was OFF after the 2026-10-09 Alt+F4 closes, fixed by CTRL-SHIFT-only chords (pad10c) */
     private const val KEYS_ON = true
 
     // ---------------------------------------------------------------- L1's handshake + sweep (TapPad pad10c)
