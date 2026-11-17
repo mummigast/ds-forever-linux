@@ -21,9 +21,11 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
 // Linux Streaming Edition: what a streaming-only build leaves out (see FORK.md "What is left out")
 val localRuntime = (findProperty("localRuntime") as String?)?.toBoolean() ?: false
 val STREAM_ONLY_DROPPED_LIBS = listOf("libkgslshim.so", "libpulse.so", "libpulsecommon-13.0.so", "libpulsecore-13.0.so", "libsndfile.so",
-    "libltdl.so", "liblsfg-vk-layer.so", "libgnoverlay.so", "libgamenative_dns_v4mapped.so", "libevshim.so").map { "**/$it" }
+    "libltdl.so", "liblsfg-vk-layer.so", "libgnoverlay.so", "libgamenative_dns_v4mapped.so", "libevshim.so",
+    // prebuilt container helpers (no source here): the Turnip hook, patchelf, the Vortek / VirGL renderers, the PulseAudio JNI
+    "libhook_impl.so", "libmain_hook.so", "libpatchelf.so", "libvortekrenderer.so", "libvirglrenderer.so", "libpulseaudio.so").map { "**/$it" }
 val STREAM_ONLY_DROPPED_ASSETS = listOf("<dir>bundled_components", "<dir>box86_64", "<dir>wowbox64", "<dir>wincomponents", "<dir>lsfg_vk",
-    "pulseaudio-gamenative-*.tzst", "redirect.tzst").map { "!$it" }
+    "pulseaudio-gamenative-*.tzst", "redirect.tzst", "libredirect-bionic-wx.so", "libredirect-bionic-wx-minimal.so").map { "!$it" }
 
 android {
     namespace = "app.gamenative"
