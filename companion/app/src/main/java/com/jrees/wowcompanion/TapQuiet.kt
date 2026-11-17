@@ -20,7 +20,10 @@ object TapQuiet {
     const val SETTLE_MS = 30L
     const val MAX_SETTLE_MS = 700L
     const val MAX_HELD_MS = 3_000L
-    const val POLL_MS = 10L             // a held button is checked this often, so the tap follows its release at once
+    const val POLL_MS = 10L
+    /** extra quiet margin while Streaming: the controller and the mouse reach the PC on separate channels, so a click can overtake
+     *  the button release it waited for. Set by [TapSinks.wire]; 0 for the local game. */
+    @Volatile var extraSettleMs = 0L             // a held button is checked this often, so the tap follows its release at once
 
     /**
      * How long to wait before tapping; 0 = tap now. One clock for all: [now], [queuedAt] (when the tap was asked for),
@@ -31,9 +34,10 @@ object TapQuiet {
         if (now - queuedAt >= MAX_HELD_MS + MAX_SETTLE_MS) return 0L
         if (lastChangeAt <= 0L && !held) return 0L      // no controller reader (or nothing pressed yet): as before, at once
         if (held && now - queuedAt < MAX_HELD_MS) return POLL_MS
+        val settle = SETTLE_MS + extraSettleMs
         val quiet = now - lastChangeAt
-        if (quiet >= SETTLE_MS) return 0L
+        if (quiet >= settle) return 0L
         if (now - maxOf(queuedAt, freeSince) >= MAX_SETTLE_MS) return 0L
-        return SETTLE_MS - quiet            // the caller asks again then: a change meanwhile restarts the wait
+        return settle - quiet            // the caller asks again then: a change meanwhile restarts the wait
     }
 }

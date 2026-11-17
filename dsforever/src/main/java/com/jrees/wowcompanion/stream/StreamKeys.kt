@@ -58,7 +58,13 @@ class StreamKeys(
     }
 
     override fun tap(fx: Float, fy: Float) {
+        // Linux PC (Sunshine + Proton): a press sent right after the move can reach WoW before the move does, and WoW in gamepad
+        // mode keeps its cursor parked at the screen centre - the click then lands on whatever is there (ghost clicks in menus).
+        // So: move, give the PC a few frames, move again (in case the first was dropped/coalesced), then click.
         moveTo(fx, fy)
+        sleep(MOVE_SETTLE_MS)
+        moveTo(fx, fy)
+        sleep(MOVE_SETTLE2_MS)
         input.mouseButton(true, BUTTON_LEFT)
         sleep(CLICK_MS)
         input.mouseButton(false, BUTTON_LEFT)
@@ -103,6 +109,8 @@ class StreamKeys(
         const val BUTTON_RIGHT = 0x03
         /** a click's press and release this far apart (the PC's game sees two separate events, as the X server's do) */
         const val CLICK_MS = 16L
+        const val MOVE_SETTLE_MS = 40L
+        const val MOVE_SETTLE2_MS = 20L
         /** the mouse position's reference size (Moonlight sends shorts: at most 32767) */
         const val REF = 30000
     }

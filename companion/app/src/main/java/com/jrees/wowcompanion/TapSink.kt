@@ -20,6 +20,8 @@ class ContainerKeys(private val x: InputSink.Sink) : TapSink, InputSink.Sink by 
 }
 
 object TapSinks {
+    const val STREAM_EXTRA_SETTLE_MS = 90L
+
     /**
      * The sink for [mode]: LOCAL -> the container's X server (wrapped as [ContainerKeys]), STREAM -> [stream]. Null = no input yet
      * (the game screen or the stream is not up): nothing is sent, exactly as before a game screen exists. A Streaming session NEVER
@@ -33,6 +35,7 @@ object TapSinks {
     /** sets [InputSink.sink] for [mode] and says which route it took ("none" = no input) */
     fun wire(mode: PlayMode, container: InputSink.Sink?, stream: TapSink?): String {
         val s = select(mode, container, stream)
+        TapQuiet.extraSettleMs = if (mode == PlayMode.STREAM) STREAM_EXTRA_SETTLE_MS else 0L
         InputSink.sink = s
         return s?.route ?: "none"
     }
