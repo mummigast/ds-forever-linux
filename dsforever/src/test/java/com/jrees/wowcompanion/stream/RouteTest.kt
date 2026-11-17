@@ -55,8 +55,8 @@ class RouteTest {
         assertEquals(Route.Kind.HOME, Route.kind("192.168.1.11", ""))       // no Wi-Fi known: a private address counts as home
         assertEquals("home Wi-Fi", Route.Kind.HOME.label)
         assertTrue(Route.unreachable(listOf("100.69.36.86"), vpnUp = false).endsWith("(Tailscale is off)"))
-        assertEquals("Can't reach your PC - is DS Forever Desktop running?", Route.unreachable(listOf("192.168.1.11", "100.69.36.86"), vpnUp = false))
-        assertEquals("Can't reach your PC - is DS Forever Desktop running?", Route.unreachable(listOf("100.69.36.86"), vpnUp = true))
+        assertEquals("Can't reach your PC - is the Linux helper running?", Route.unreachable(listOf("192.168.1.11", "100.69.36.86"), vpnUp = false))
+        assertEquals("Can't reach your PC - is the Linux helper running?", Route.unreachable(listOf("100.69.36.86"), vpnUp = true))
     }
 
     @Test fun desktopsReportedAddressAndTheStore() {

@@ -1,7 +1,7 @@
 package com.jrees.wowcompanion.stream
 
 /**
- * THE PAIRING CODE ON THE THOR ("Enter the code shown in DS Forever Desktop"; STREAMING_PLAN.md section 1): 6 digits, typed with the
+ * THE PAIRING CODE ON THE THOR ("Enter the code shown in the Linux helper"; STREAMING_PLAN.md section 1): 6 digits, typed with the
  * touch number pad or the controller (D-pad up / down turns the selected digit, left / right moves between digits, A = OK, B = back).
  * Pure: the pairing screen draws [digits] / [cursor] and sends every key here.
  */
@@ -77,7 +77,7 @@ class CodeEntry(val length: Int = LENGTH) {
         /** what the screen says for a refused code */
         fun message(c: Check): String? = when (c) {
             is Check.Ok -> null
-            Check.Empty -> "Enter the 6-digit code shown in DS Forever Desktop."
+            Check.Empty -> "Enter the 6-digit code shown in the Linux helper."
             Check.TooShort -> "The code has 6 digits."
             Check.TooLong -> "The code has only 6 digits."
             Check.NotDigits -> "The code is digits only."

@@ -65,7 +65,7 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         orientation = VERTICAL; gravity = Gravity.CENTER
         background = StreamLook.rounded(StreamLook.PANEL, StreamLook.dp(ctx, 18f).toFloat())
         val p = StreamLook.dp(ctx, 22f); setPadding(p, p, p, p)
-        title.text = "Enter the code shown in DS Forever Desktop"
+        title.text = "Enter the code shown in the Linux helper"
         addView(title)
         addView(pcLine)
         val boxRow = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }

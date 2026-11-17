@@ -29,7 +29,7 @@ import java.util.concurrent.Executors
  * PC's log: PlayModes / BridgeLog), the controller goes to the PC as an Xbox pad.
  *
  * Screens before the stream runs (the controller and touch drive them; nothing reaches the PC then):
- *  - PAIRING: "Enter the code shown in DS Forever Desktop" (first time, or "Pair again"); a PC with a plain Sunshine shows a PIN for
+ *  - PAIRING: "Enter the code shown in the Linux helper" (first time, or "Pair again"); a PC with a plain Sunshine shows a PIN for
  *    Sunshine's own page instead (the first test needs no Desktop);
  *  - CONNECTING, then PROBLEM: why it failed (Diagnosis) with Retry / Pair again / Stream quality / Back, retrying by itself
  *    (ReconnectPolicy) and at once when the network changes;
@@ -420,7 +420,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                     if (waited >= StreamPorts.GIVE_UP_MS && screen == Screen.CONNECTING) {
                         portsWait = null
                         Log.i(TAG, "sunshine ports: none from the PC in ${waited / 1000} s (welcome ${if (ports == null) "none" else "without a port"})")
-                        problem(StreamCurtain.WAITING, pcWhy.ifEmpty { "DS Forever Desktop hasn't said its streaming port." }, auto = true)
+                        problem(StreamCurtain.WAITING, pcWhy.ifEmpty { "The Linux helper hasn't said its streaming port." }, auto = true)
                         return
                     }
                     applyCurtain()
@@ -606,8 +606,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun showPc() {
         val pc = selectedPc()
         pairing.setPc(when {
-            pc == null -> "Looking for your PC on this Wi-Fi… (DS Forever Desktop must be running)"
-            !pc.hasBridge -> "PC: ${pc.name} (${pc.address}) - Sunshine only, no DS Forever Desktop${if (found.size > 1) "   ·   LB / RB: ${found.size} PCs" else ""}"
+            pc == null -> "Looking for your PC on this Wi-Fi… (the Linux helper must be running)"
+            !pc.hasBridge -> "PC: ${pc.name} (${pc.address}) - Sunshine only, no Linux helper${if (found.size > 1) "   ·   LB / RB: ${found.size} PCs" else ""}"
             else -> "PC: ${pc.name} (${pc.address})${if (found.size > 1) "   ·   LB / RB: ${found.size} PCs" else ""}"
         })
     }
@@ -676,7 +676,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
 
     private fun pair(code: String) {
-        val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is DS Forever Desktop running, on the same Wi-Fi?"); return }
+        val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is the Linux helper running, on the same Wi-Fi? Over a VPN: PC address…"); return }
         if (!pc.hasBridge) { pairPlain(pc); return }
         pairing.busy = true
         pairing.setMessage("")
@@ -734,7 +734,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         when (s) {
             is StreamPairing.State.Working -> pairing.setMessage(s.what)
             is StreamPairing.State.ShowPin -> status.show("Pair with Sunshine", "On the PC, open Sunshine's PIN page and enter:\n\n${s.pin}",
-                "No DS Forever Desktop on this PC: the stream works, the companion's live data needs Desktop.", withButtons = false)
+                "No Linux helper on this PC: the stream works, the companion's live data needs the helper.", withButtons = false)
             is StreamPairing.State.BadCode -> { pairing.busy = false; pairing.setMessage(s.message) }
             is StreamPairing.State.WrongCode -> { pairing.busy = false; pairing.reset()
                 pairing.setMessage("That's not the code on the PC.${if (s.triesLeft >= 0) " ${s.triesLeft} tries left." else ""}") }

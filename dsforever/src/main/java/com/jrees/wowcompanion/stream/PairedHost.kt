@@ -199,7 +199,7 @@ object Route {
 
     /** the curtain's line when no address answered ([vpnUp] = the Thor's Tailscale is on; [tried] = what was dialled) */
     fun unreachable(tried: List<String>, vpnUp: Boolean): String {
-        val base = "Can't reach your PC - is DS Forever Desktop running?"
+        val base = "Can't reach your PC - is the Linux helper running?"
         return if (!vpnUp && tried.any(::tailscale) && tried.none { privateLan(it) }) "$base (Tailscale is off)" else base
     }
 }

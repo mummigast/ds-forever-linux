@@ -116,7 +116,7 @@ class NvHttpTest {
             assertEquals("tls", e.stage); assertTrue(e.timedOut); assertEquals(mute.localPort, e.port)
             assertTrue(System.currentTimeMillis() - t0 < 3_000)
             val text = StreamDiag.tlsText("DEN", e)
-            assertTrue(text, text.contains("port (${mute.localPort})") && text.contains("restart DS Forever Desktop"))
+            assertTrue(text, text.contains("port (${mute.localPort})") && text.contains("restart Sunshine"))
         }
         assertTrue(log.single(), log.single().contains("https://127.0.0.1:${mute.localPort}/serverinfo -> tls failed: SocketTimeoutException"))
     }

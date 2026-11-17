@@ -109,7 +109,7 @@ class StreamCurtainTest {
         val looking = curtain(StreamCurtain.decide(false, true, null))
         assertEquals(listOf(StreamCurtain.LOOKING), looking.rows.map { it.label })
         assertEquals(SetupFlow.Mark.WAIT, looking.rows.first().mark)
-        val why = "Can't reach your PC - is DS Forever Desktop running? (Tailscale is off)"
+        val why = "Can't reach your PC - is the Linux helper running? (Tailscale is off)"
         assertEquals(why, curtain(StreamCurtain.decide(false, true, null, problem = why)).line)
         val home = curtain(StreamCurtain.decide(false, true, PcWow(state = "starting", screen = "none", bnet = "signed_in"), route = "home Wi-Fi"))
         assertEquals("PC found (home Wi-Fi)", home.rows.first().label)

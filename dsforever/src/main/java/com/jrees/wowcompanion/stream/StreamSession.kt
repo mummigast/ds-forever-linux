@@ -238,7 +238,7 @@ object StreamDiag {
     fun tlsText(pc: String, e: NvHttpStageException): String = when {
         isPinMismatch(e) -> "$pc answered with a different certificate than the paired one: pair again."
         e.timedOut -> "$pc took the connection on its secure streaming port (${e.port}) but never answered the TLS handshake. " +
-            "Its streaming service looks stuck: restart DS Forever Desktop on the PC."
+            "Its streaming service looks stuck: restart Sunshine on the PC."
         else -> "$pc refused the secure connection on port ${e.port} (${e.cause?.javaClass?.simpleName}: ${e.cause?.message})."
     }
 

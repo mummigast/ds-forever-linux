@@ -75,8 +75,8 @@ class ChooserPanel(context: Context) : View(context) {
             else -> Page.NONE
         }
         // the chooser comes (back): the box starts on Local's card, no old line
-        if (page == Page.CHOOSER && was != Page.CHOOSER) { cell = StartMode.startCell(); note = "" }
-        if (page == Page.SHORTCUTS && was != Page.SHORTCUTS) { cell = StartMode.startCell(); note = "" }
+        if (page == Page.CHOOSER && was != Page.CHOOSER) { cell = startCell(); note = "" }
+        if (page == Page.SHORTCUTS && was != Page.SHORTCUTS) { cell = startCell(); note = "" }
         if (page != Page.SHORTCUTS && page != Page.CHOOSER) shortcuts = false
         visibility = if (page == Page.NONE) GONE else VISIBLE
         contentDescription = when (page) {
@@ -144,17 +144,22 @@ class ChooserPanel(context: Context) : View(context) {
         if (cell == what) { box(c, r); UiKit.button(c, r, word, StartView.GLYPH_A, state) } else UiKit.button(c, r, word, state)
     }
 
+    // Linux Streaming Edition (2026-11-17): one way to play, Streaming; the Local card is never drawn nor reachable
+    private fun startCell() = if (STREAM_ONLY) StartMode.Cell(StartMode.Mode.STREAM, StartMode.Row.CARD) else StartMode.startCell()
+    private fun only(c: StartMode.Cell) = if (STREAM_ONLY && c.row == StartMode.Row.CARD) c.copy(mode = StartMode.Mode.STREAM) else c
+
     private fun drawChooser(c: Canvas) {
         if (StartMenu.open) { drawMenu(c); return }
         val cx = width / 2f
         val title = UiKit.titlePaint(56f).apply { textAlign = Paint.Align.CENTER }
-        c.drawText(Tr.t("How do you want to play?"), cx, MARGIN + 62f, title)
+        c.drawText(Tr.t(if (STREAM_ONLY) "Stream WoW from your PC" else "How do you want to play?"), cx, MARGIN + 62f, title)
         val top = MARGIN + 110f
         val footY = footTop()
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
         val now = android.os.SystemClock.uptimeMillis()
         if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
-        for ((i, mode) in StartMode.Mode.values().withIndex()) {
+        if (STREAM_ONLY) modeCard(c, RectF(MARGIN, top, width - MARGIN, footY - GAP * 2), StartMode.Mode.STREAM, now)
+        else for ((i, mode) in StartMode.Mode.values().withIndex()) {
             val left = MARGIN + i * (colW + GAP * 2)
             modeCard(c, RectF(left, top, left + colW, footY - GAP * 2), mode, now)
         }
@@ -185,7 +190,8 @@ class ChooserPanel(context: Context) : View(context) {
         val colW = (width - MARGIN * 2 - GAP * 2) / 2f
         val now = android.os.SystemClock.uptimeMillis()
         if (feedback.animating(now, false)) postInvalidateDelayed(LoadingScene.FRAME_MS)
-        for ((i, mode) in StartMode.Mode.values().withIndex()) {
+        if (STREAM_ONLY) modeCard(c, RectF(MARGIN, top, width - MARGIN, mainTop - GAP * 2), StartMode.Mode.STREAM, now)
+        else for ((i, mode) in StartMode.Mode.values().withIndex()) {
             val left = MARGIN + i * (colW + GAP * 2)
             modeCard(c, RectF(left, top, left + colW, mainTop - GAP * 2), mode, now)
         }
@@ -231,7 +237,7 @@ class ChooserPanel(context: Context) : View(context) {
 
     private fun blurb(mode: StartMode.Mode) = Tr.t(when (mode) {
         StartMode.Mode.LOCAL -> "WoW Forever runs on this device."
-        StartMode.Mode.STREAM -> "WoW runs on your PC. DS Forever Desktop streams it here."
+        StartMode.Mode.STREAM -> if (STREAM_ONLY) "WoW runs on your Linux PC. The Linux helper streams it here." else "WoW runs on your PC. DS Forever Desktop streams it here."
     })
 
     /** our own vectors in the kit's gold: LOCAL = this two-screen handheld, STREAMING = a PC screen sending its picture */
@@ -278,7 +284,7 @@ class ChooserPanel(context: Context) : View(context) {
         c.drawText(Tr.t("Streaming"), card.centerX(), card.top + PAD + 52f, title)
         val body = UiKit.bodyPaint(30f).apply { textAlign = Paint.Align.CENTER }
         var y = card.top + PAD + 120f
-        val text = Tr.t("Connect to DS Forever Desktop. Type the code it shows on your PC on the top screen.")
+        val text = Tr.t(if (STREAM_ONLY) "Connect to the Linux helper on your PC. Type the code it shows (dsf-bridge code) on the top screen." else "Connect to DS Forever Desktop. Type the code it shows on your PC on the top screen.")
         for (l in SetupPanel.wrap(text, body, card.width() - PAD * 2)) { c.drawText(Tr.t(l), card.centerX(), y, body); y += 40f }
         if (ModeBridge.streamNote.isNotEmpty()) {
             y += 20f
@@ -347,18 +353,18 @@ class ChooserPanel(context: Context) : View(context) {
         }
         when (page) {
             Page.CHOOSER -> when (code) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> cell = StartMode.move(cell, StartMode.Dir.LEFT)
-                KeyEvent.KEYCODE_DPAD_RIGHT -> cell = StartMode.move(cell, StartMode.Dir.RIGHT)
-                KeyEvent.KEYCODE_DPAD_UP -> cell = StartMode.move(cell, StartMode.Dir.UP)
-                KeyEvent.KEYCODE_DPAD_DOWN -> cell = StartMode.move(cell, StartMode.Dir.DOWN)
+                KeyEvent.KEYCODE_DPAD_LEFT -> cell = only(StartMode.move(cell, StartMode.Dir.LEFT))
+                KeyEvent.KEYCODE_DPAD_RIGHT -> cell = only(StartMode.move(cell, StartMode.Dir.RIGHT))
+                KeyEvent.KEYCODE_DPAD_UP -> cell = only(StartMode.move(cell, StartMode.Dir.UP))
+                KeyEvent.KEYCODE_DPAD_DOWN -> cell = only(StartMode.move(cell, StartMode.Dir.DOWN))
                 KeyEvent.KEYCODE_BUTTON_A -> padAct(cell)
                 // B on the chooser: nothing to go back to (swallowed: never an accidental exit of the app)
             }
             Page.SHORTCUTS -> when (code) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.LEFT)
-                KeyEvent.KEYCODE_DPAD_RIGHT -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.RIGHT)
-                KeyEvent.KEYCODE_DPAD_UP -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.UP)
-                KeyEvent.KEYCODE_DPAD_DOWN -> cell = StartMode.moveShortcuts(cell, StartMode.Dir.DOWN)
+                KeyEvent.KEYCODE_DPAD_LEFT -> cell = only(StartMode.moveShortcuts(cell, StartMode.Dir.LEFT))
+                KeyEvent.KEYCODE_DPAD_RIGHT -> cell = only(StartMode.moveShortcuts(cell, StartMode.Dir.RIGHT))
+                KeyEvent.KEYCODE_DPAD_UP -> cell = only(StartMode.moveShortcuts(cell, StartMode.Dir.UP))
+                KeyEvent.KEYCODE_DPAD_DOWN -> cell = only(StartMode.moveShortcuts(cell, StartMode.Dir.DOWN))
                 KeyEvent.KEYCODE_BUTTON_A -> padAct(cell)
                 KeyEvent.KEYCODE_BUTTON_B -> padAct(Back)
             }
@@ -401,6 +407,8 @@ class ChooserPanel(context: Context) : View(context) {
     }
 
     companion object {
+        /** Linux Streaming Edition: Streaming is the only way to play (no Local card, no Battle.net sign-in) */
+        const val STREAM_ONLY = true
         const val MARGIN = 40f
         const val PAD = 36f
         const val GAP = 18f

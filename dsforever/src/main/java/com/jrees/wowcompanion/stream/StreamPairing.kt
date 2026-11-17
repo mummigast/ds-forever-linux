@@ -55,17 +55,17 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
     fun pairWithCode(pc: FoundPc, typed: String, thorSubnet: String): State {
         val check = CodeEntry.validate(typed)
         if (check !is CodeEntry.Check.Ok) return emit(State.BadCode(CodeEntry.message(check) ?: "Check the code."))
-        if (!pc.hasBridge) return emit(State.Failed("DS Forever Desktop isn't running on ${pc.name}.", true))
-        if (!pc.hasSunshine) return emit(State.Failed("${pc.name}'s streaming service isn't answering. Restart DS Forever Desktop.", true))
+        if (!pc.hasBridge) return emit(State.Failed("The Linux helper isn't running on ${pc.name}.", true))
+        if (!pc.hasSunshine) return emit(State.Failed("${pc.name}'s streaming service isn't answering. Restart the Linux helper.", true))
         val code = check.code
         try {
             emit(State.Working("Checking the code with ${pc.name}…"))
             val armed = when (val a = steps.armBridge(pc, code)) {
                 is Arm.Armed -> a
                 is Arm.WrongCode -> return emit(State.WrongCode(a.left))
-                Arm.CodeExpired -> return emit(State.Failed("That code expired. Enter the new code shown in DS Forever Desktop."))
-                Arm.NotPairing -> return emit(State.Failed("Pairing is paused after too many wrong codes: press Refresh in DS Forever Desktop, then enter the new code."))
-                is Arm.Unreachable -> return emit(State.Failed("Couldn't reach DS Forever Desktop on ${pc.name} (${a.why})."))
+                Arm.CodeExpired -> return emit(State.Failed("That code expired. Enter the new code shown in the Linux helper."))
+                Arm.NotPairing -> return emit(State.Failed("Pairing is paused after too many wrong codes: press Refresh in the Linux helper, then enter the new code."))
+                is Arm.Unreachable -> return emit(State.Failed("Couldn't reach the Linux helper on ${pc.name} (${a.why})."))
             }
             if (!BridgeProtocol.validToken(armed.token)) {
                 try { steps.finishBridge(false, "bad token") } catch (_: Throwable) {}
@@ -76,7 +76,7 @@ class StreamPairing(private val steps: Steps, private val onState: (State) -> Un
             if (moon.state != MoonPairing.State.PAIRED) {
                 try { steps.finishBridge(false, moon.state.name) } catch (_: Throwable) {}
                 return emit(when (moon.state) {
-                    MoonPairing.State.PIN_WRONG -> State.Failed("The PC didn't accept the code. Enter the code shown in DS Forever Desktop again.")
+                    MoonPairing.State.PIN_WRONG -> State.Failed("The PC didn't accept the code. Enter the code shown in the Linux helper again.")
                     MoonPairing.State.ALREADY_IN_PROGRESS -> State.Failed("Another device is pairing with ${pc.name} right now. Try again in a moment.")
                     else -> State.Failed("Pairing failed${if (moon.why.isNotEmpty()) ": ${moon.why}" else ""}.")
                 })

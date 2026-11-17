@@ -34,12 +34,12 @@ object Diagnosis {
         OK("Connected", "", false),
         NO_WIFI("The Thor isn't on Wi-Fi", "Connect to your home Wi-Fi or turn on Tailscale, then retry.", true),
         OTHER_NETWORK("The PC is on another network", "The Thor and the PC must be on the same home Wi-Fi.", true),
-        DESKTOP_NOT_RUNNING("DS Forever Desktop isn't running", "Start DS Forever Desktop on the PC (or turn on \"Start with Windows\").", true),
-        PC_OFF("The PC isn't answering", "The PC is off or asleep, or DS Forever Desktop isn't running.", true),
+        DESKTOP_NOT_RUNNING("The Linux helper isn't running", "Start the Linux helper on the PC (or turn on \"Start with Windows\").", true),
+        PC_OFF("The PC isn't answering", "The PC is off or asleep, or the Linux helper isn't running.", true),
         /** off the home network over the Thor's VPN, nothing answers */
-        VPN_NO_ANSWER("The PC isn't answering over Tailscale", "Is the PC on, with Tailscale and DS Forever Desktop running?", true),
-        BRIDGE_ONLY_DOWN("The companion can't reach the PC", "The stream works, but Desktop's bridge isn't answering: restart DS Forever Desktop.", true),
-        NOT_PAIRED("Pair again", "The PC doesn't know this Thor any more. Enter the code shown in DS Forever Desktop.", false),
+        VPN_NO_ANSWER("The PC isn't answering over the VPN", "Is the PC on, with the VPN and the Linux helper running?", true),
+        BRIDGE_ONLY_DOWN("The companion can't reach the PC", "The stream works, but the helper's bridge isn't answering: restart the Linux helper.", true),
+        NOT_PAIRED("Pair again", "The PC doesn't know this Thor any more. Enter the code shown in the Linux helper.", false),
     }
 
     fun reason(p: Probe): Reason = when {
