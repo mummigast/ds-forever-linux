@@ -3,7 +3,7 @@
 **Unofficial.** Stream WoW Forever from a Linux PC to your AYN Thor with [DS Forever](https://github.com/Jreese702/DS-Forever).
 
 > **Status: early.** Works end to end against a simulated Thor; real-device testing is ongoing. Please
-> [open an issue](https://github.com/mummigast/dsf-linux-helper/issues) with the output of `dsf-bridge doctor` if
+> [open an issue](https://github.com/mummigast/ds-forever-linux/issues) with the output of `dsf-bridge doctor` if
 > something doesn't work.
 
 Play **World of Warcraft: Forever** on your **Linux PC** and stream it to an **AYN Thor**: the game on the top screen,
@@ -34,8 +34,8 @@ DS Forever Desktop, which only exists for Windows.
 ## Install (about a minute)
 
 ```sh
-git clone https://github.com/mummigast/dsf-linux-helper.git
-cd dsf-linux-helper
+git clone https://github.com/mummigast/ds-forever-linux.git
+cd ds-forever-linux/linux-helper
 ./install.sh
 ```
 
