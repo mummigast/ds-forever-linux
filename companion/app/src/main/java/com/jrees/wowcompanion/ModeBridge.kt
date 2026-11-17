@@ -31,6 +31,8 @@ object ModeBridge {
      * our move to the top screen relaunched it): [StartMode.onCreate] decides (the icon = the chooser, a shortcut = its mode).
      */
     fun start(ctx: Context, extra: String?, recreated: Boolean = false) {
+        // Linux Streaming Edition: the edition's own start list and indoor wording (off by default, so upstream's tests keep theirs)
+        SetupFlow.streamOnly = ChooserPanel.STREAM_ONLY; IndoorSchedulerStep.streamOnly = ChooserPanel.STREAM_ONLY
         StartMode.onCreate(route, extra, recreated, LauncherHooks.gameUp(), SetupBridge.restarting, SetupBridge.inputs?.busy != null)
             ?.let { go(it) }
     }

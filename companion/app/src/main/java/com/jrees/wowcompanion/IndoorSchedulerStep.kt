@@ -47,12 +47,16 @@ object IndoorSchedulerStep : ArtHarvest.Step {
     /** the launcher's optional row: never a blocker, so [done] only picks the tick */
     data class Readiness(val label: String, val done: Boolean)
 
+    /** Linux Streaming Edition: the row says when it builds and shows a percentage (set by ModeBridge.start) */
+    @Volatile var streamOnly = false
+
     fun readiness(ctx: Context): Readiness = readiness(status(ctx))
 
     internal fun readiness(s: IndoorScheduler.Status?): Readiness {
+        if (streamOnly) return editionReadiness(s)
         val head = "Indoor Maps (Optional)"
-        if (s == null) return Readiness("$head: built in the background after Play", false)
-        val count = if (s.total > 0) "${s.ready} / ${s.total} ready" else "starting"
+        if (s == null) return Readiness(if (streamOnly) "$head: builds while the app is open, pauses while you stream" else "$head: built in the background after Play", false)
+        val count = if (s.total > 0) "${s.ready} / ${s.total} ready" + (if (streamOnly) " (${s.ready * 100 / s.total}%)" else "") else "starting"
         val tail = when (s.phase) {
             IndoorScheduler.Phase.CATALOGUE -> " - listing buildings"
             IndoorScheduler.Phase.BAKING -> if (s.deferred > 0) " - ${s.deferred} to retry" else ""
@@ -61,6 +65,20 @@ object IndoorSchedulerStep : ArtHarvest.Step {
             IndoorScheduler.Phase.DEFERRED, IndoorScheduler.Phase.STOPPED -> if (s.note.isEmpty()) "" else " - ${s.note}"
         }
         return Readiness("$head: $count$tail", s.phase == IndoorScheduler.Phase.DONE)
+    }
+
+    /** Linux Streaming Edition: short enough for the start list's row ("Indoor maps: 120 / 340 (35%)") */
+    private fun editionReadiness(s: IndoorScheduler.Status?): Readiness {
+        val head = "Indoor maps"
+        if (s == null) return Readiness("$head: build while the app is open", false)
+        if (s.phase == IndoorScheduler.Phase.DONE) return Readiness("$head: ready", true)
+        if (s.phase == IndoorScheduler.Phase.CATALOGUE || s.total <= 0) return Readiness("$head: listing buildings", false)
+        val count = "${s.ready} / ${s.total} (${s.ready * 100 / s.total}%)"
+        val tail = when (s.phase) {
+            IndoorScheduler.Phase.PAUSED -> if (s.note == PlayGate.GAME_BUSY) ", paused while streaming" else ", paused"
+            else -> ""
+        }
+        return Readiness("$head: $count$tail", false)
     }
 
     private fun dataDir(ctx: Context) = File(ArtHarvest.root(ctx), "interiors_sched").also { it.mkdirs() }

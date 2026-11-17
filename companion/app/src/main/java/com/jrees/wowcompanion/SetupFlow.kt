@@ -372,6 +372,9 @@ object SetupFlow {
         return Prompt("signin", title, text, buttons)
     }
 
+    /** Linux Streaming Edition: no Battle.net login nor Thor-side add-ons rows (set by ModeBridge.start) */
+    @Volatile var streamOnly = false
+
     fun checks(i: Inputs): List<Check> = buildList {
         if (i.installedExternal) add(Check("DS Forever: on the SD card - move it to internal storage", Mark.BAD))
         add(when {
@@ -381,7 +384,7 @@ object SetupFlow {
             else -> Check("Game folder: ${i.path}", Mark.OK)
         })
         if (i.staleData != null) add(Check("Game folder: its Data is out of date - copy it again from your PC", Mark.BAD))
-        add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
+        if (!streamOnly) add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
             Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
             Art.RUNNING -> Check(if (i.artRebuild) "Game art: updating for the new game version: ${i.artPercent}%"
@@ -392,10 +395,10 @@ object SetupFlow {
         })
         // the user's pick, 2026-11-16: the maps' own row right under the game art (it never holds Play: optional while they build)
         i.maps?.let { add(if (it) Check(MAPS_READY, Mark.OK, full = true) else Check(MAPS_WAIT, Mark.OPTIONAL, full = true)) }
-        add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
+        if (!streamOnly) add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
             ?: Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
                 (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
-        i.indoor?.let { add(Check("Indoor maps (builds while playing): $it", Mark.OPTIONAL)) }
+        i.indoor?.let { add(if (streamOnly) Check("Indoor maps: $it", Mark.OPTIONAL, full = true) else Check("Indoor maps (builds while playing): $it", Mark.OPTIONAL)) }
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)
         i.appLine?.let { add(Check(it, if (it.endsWith("up to date")) Mark.OK else Mark.OPTIONAL)) }
