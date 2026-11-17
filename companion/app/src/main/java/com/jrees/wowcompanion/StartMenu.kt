@@ -38,7 +38,7 @@ object StartMenu {
         val bh = StartView.BUTTON_H; val gap = StartView.GAP
         // Linux Streaming Edition: no Battle.net login rows on the start screen (streaming never signs in on the Thor)
         val noLogin = ChooserPanel.STREAM_ONLY && !game
-        val rows = if (game) 4 else if (noLogin) 2 else 3
+        val rows = if (game) 4 else if (noLogin) 1 else 3
         val height = PAD * 2 + bh * rows + CONTROLLER_H + gap * rows
         val top = (area.centerY() - height / 2f).coerceAtLeast(area.top)
         val panel = RectF(area.left, top, area.right, top + height)
@@ -92,7 +92,7 @@ object StartMenu {
         if (game) {
             put(half(false), rWord, REGION, true)
             put(half(true), "Exit game", EXIT, canExit())
-        } else put(RectF(inL, y, inR, y + bh), rWord, REGION, true)
+        } else if (!noLogin) put(RectF(inL, y, inR, y + bh), rWord, REGION, true)     // streaming: the region is the PC's business
     }
 
     /** the four face buttons where they sit: Nintendo's X top and A right, Xbox's Y top and B right */
