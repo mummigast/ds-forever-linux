@@ -4835,6 +4835,16 @@ WC.padMap = {
     -- at once out of a fight (never between the fight's start and the lockdown: its keys are the fight's), else at the fight's end
     petFollowB = function(on)
         local want = on == true
+        -- Linux Streaming Edition (2026-11-17, "tell memory"): the word is kept per character (WowCompanionSpellsDB.petFollowB) and put
+        -- back at entering the world (the block after this table), so the app's padtab tell after every login / reload is not needed
+        pcall(function()
+            local k = whoKey()
+            if not k then return end
+            if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+            local db = _G.WowCompanionSpellsDB
+            if type(db.petFollowB) ~= "table" then db.petFollowB = {} end
+            db.petFollowB[k] = want or nil
+        end)
         if OV.pf.told ~= want then
             OV.pf.told = want
             R.lastBind = 0
@@ -5068,6 +5078,25 @@ WC.padMap = {
         return ok
     end,
 }
+
+-- Linux Streaming Edition (2026-11-17, "tell memory"): B's pet follow back from WowCompanionSpellsDB.petFollowB at entering the world
+-- (1 s later, after the router's own login work), so the padmap says pf.on at once and the app's PetFollowB.needsTell stays quiet
+do
+    local pfr = CreateFrame("Frame")
+    local function restore()
+        local k = whoKey()
+        local db = _G.WowCompanionSpellsDB
+        if k and type(db) == "table" and type(db.petFollowB) == "table" and db.petFollowB[k] == true and OV.pf.told ~= true then
+            pcall(WC.padMap.petFollowB, true)
+        end
+    end
+    WC.padMapPfRestore = restore      -- for the harness
+    pfr:RegisterEvent("PLAYER_ENTERING_WORLD")
+    pfr:SetScript("OnEvent", function(_, ev)
+        pfr:UnregisterEvent(ev)
+        if type(C_Timer) == "table" then C_Timer.After(1, restore) else restore() end
+    end)
+end
 
 -- ---------------------------------------------------------------- events
 

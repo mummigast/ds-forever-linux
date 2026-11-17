@@ -2098,6 +2098,21 @@ local function startTo(rooms)
     end
     gack(nil, "start", true, rooms and "rooms" or "game")
 end
+-- Linux Streaming Edition (2026-11-17, "tell memory"; the user: "do the tell taps too"): the app told q35 once per session
+-- (qact 35 / 36, an automatic click at every login) although it only repeats the D-pad toolbar choice PadMap keeps per character
+-- (WowCompanionSpellsDB.dpad). Now Start's way is derived from that choice at entering the world (toolbar off = the game, else the
+-- rooms, the default) and said in the same guestack {op "start"}; the app takes that answer as told and taps only on a real change.
+do
+    local sf = CreateFrame("Frame")
+    sf:RegisterEvent("PLAYER_ENTERING_WORLD")
+    sf:SetScript("OnEvent", function(_, ev)
+        sf:UnregisterEvent(ev)
+        local ok, ds = pcall(function() return WC.padMap.dpadState() end)
+        local off = ok and type(ds) == "table" and ds.want == false        -- (not `and ds.want or nil`: false would turn into nil)
+        pcall(startTo, not off)
+    end)
+    WC.questsStartDerive = function() return sf:GetScript("OnEvent")(sf, "PLAYER_ENTERING_WORLD") end   -- for the harness
+end
 -- THE PLAYER MENU, MIRRORED (q41 read, q43 run). The game's unit popup menu for "SELF" (the menu the player's portrait opens) is
 -- Blizzard Lua, so the binary cannot name its API: whichever this build has is tried (UnitPopupManager:GetMenu, else
 -- UnitPopupMenus.SELF; the entries through GetEntries or GetMenuButtons). Each entry the game would show (CanShow) goes out with its

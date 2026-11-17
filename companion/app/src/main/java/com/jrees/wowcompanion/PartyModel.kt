@@ -257,6 +257,8 @@ object PartyModel {
     const val RS_GUARD_MS = 500L
     /** the resend (party row col 22) at most this often */
     const val RESEND_MS = 10_000L
+    /** Linux Streaming Edition: how long FIRST_DOC waits for the party document the add-on sends at login by itself */
+    const val FIRST_GRACE_MS = 5_000L
     /** a taker's off tap again after this while Party mode still says on */
     const val TAKER_RETRY_MS = 2_000L
 
@@ -322,6 +324,9 @@ object PartyModel {
         private var rsAt = -1L
         private var askedAt = -RESEND_MS
         private var firstAskDone = false
+        // Linux Streaming Edition (2026-11-17, "tell memory"): the add-on sends its party document at login by itself (PadMap's
+        // RIDE login); FIRST_DOC waits [FIRST_GRACE_MS] after the first current document, so that click is only made when it did not come
+        private var firstDocAt = -1L
         /** the box the app draws while Party mode is on (1-based), the optimistic one between documents */
         var box = 1
             private set
@@ -358,7 +363,7 @@ object PartyModel {
         }
 
         /** the game session ended (logout / world closed): the cfg must be asked again */
-        fun newSession() { currentCfg = false; firstAskDone = false }
+        fun newSession() { currentCfg = false; firstAskDone = false; firstDocAt = -1L }
 
         private var takerTapped: String? = null
         private var takerAt = 0L
@@ -415,7 +420,10 @@ object PartyModel {
         fun shouldAsk(why: Ask, live: Boolean, now: Long): Boolean {
             if (!live) return false
             val wanted = when (why) {
-                Ask.FIRST_DOC -> !firstAskDone && !currentParty
+                Ask.FIRST_DOC -> {
+                    if (firstDocAt < 0L) firstDocAt = now
+                    !firstAskDone && !currentParty && now - firstDocAt >= FIRST_GRACE_MS
+                }
                 // 2026-11-04 (the cursor: every ask is a click on the top screen): Home's return asks only while no CURRENT party
                 // document came this session (the add-on sends every change itself, and its heartbeat re-sends)
                 Ask.HOME_SHOWN -> !currentParty
