@@ -136,6 +136,9 @@ object GameUi {
     // every 2 s for minutes while WoW's settings window held the cursor, each tap a click in the screen's middle)
     private var swMiss = 0
     private var swWhy = ""
+    private var swPart = ""
+    private val swParked = HashSet<String>()
+    private var swParkedAt = 0L
     private var hudMiss = 0
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
@@ -265,8 +268,10 @@ object GameUi {
         else -> if (on) "PRD_ON" else "PRD_OFF"
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
-    fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? =
-        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).firstOrNull { p ->
+    fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? = swNextSkip(s, emptySet(), want)
+    /** Linux Edition: [swNext] without the parts in [skip] */
+    fun swNextSkip(s: Sw, skip: Set<String>, want: (String) -> Boolean): Pair<String, Boolean>? =
+        listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).filter { it !in skip }.firstOrNull { p ->
             val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
                                  SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
@@ -583,13 +588,19 @@ object GameUi {
             else if (character != null) {
                 // hub17: the split switches first, one absolute tap at a time on their own row, the next after the game's answer (or 1.5 s)
                 val sws = sw
-                val next = sws?.let { swNext(it) { p -> swWant(p) } }
+                // Linux Edition (added 2026-11-17): a switch the game never answers (seen: the target frame) is parked after MISS_MAX
+                // tries so the ones after it (resource bar, nameplates...) still go; parked ones get another go every MISS_SLOW_MS
+                if (now - swParkedAt > MISS_SLOW_MS) swParked.clear()
+                val next = sws?.let { swNextSkip(it, swParked) { p -> swWant(p) } ?: swNext(it) { p -> swWant(p) } }
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
                     now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                    if (s.n != swTapN) swMiss = 0
-                    if (s.n != swTapN || now - swTapAt > (if (swMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) {
-                        if (s.n == swTapN) swMiss++
+                    val part = next!!.first
+                    if (s.n != swTapN || part != swPart) swMiss = 0
+                    if (swMiss >= MISS_MAX && part !in swParked) { swParked.add(part); swParkedAt = now; swMiss = 0 }
+                    else if (s.n != swTapN || part != swPart || now - swTapAt > (if (swMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) {
+                        if (s.n == swTapN && part == swPart) swMiss++
+                        swPart = part
                         swTapN = s.n; swTapAt = now
                         GameInput.tap(ctx, pad, sws.row, swCol)
                     }

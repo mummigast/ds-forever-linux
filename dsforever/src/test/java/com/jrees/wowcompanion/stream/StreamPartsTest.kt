@@ -101,7 +101,9 @@ class StreamPartsTest {
         val r = Rec(); val k = StreamKeys(r, 1920, 1080) {}
         k.tap(0.5f, 0.25f)
         assertEquals(2, r.pos.size)                                                          // moved twice before the press
-        for (p in r.pos) assertArrayEquals(intArrayOf(15000, 7500, StreamKeys.REF, StreamKeys.REF), p)
+        // Linux Edition: + LINUX_NUDGE_PX screen pixels on each axis
+        val ex = Math.round((0.5f + StreamKeys.LINUX_NUDGE_PX / 1920) * StreamKeys.REF); val ey = Math.round((0.25f + StreamKeys.LINUX_NUDGE_PX / 1080) * StreamKeys.REF)
+        for (p in r.pos) assertArrayEquals(intArrayOf(ex, ey, StreamKeys.REF, StreamKeys.REF), p)
         assertEquals(listOf(true to StreamKeys.BUTTON_LEFT, false to StreamKeys.BUTTON_LEFT), r.buttons)
         k.tap(2f, -1f)                                                                       // clamped to the screen
         assertArrayEquals(intArrayOf(StreamKeys.REF, 0, StreamKeys.REF, StreamKeys.REF), r.pos.last())

@@ -35,6 +35,9 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Reload UI works while streaming: F12 (the add-on's ReloadUI key) is let through; other F-keys stay blocked | `dsforever/.../stream/StreamKeys.kt` |
 | Unanswered game-switch taps back off to every 30 s after 3 tries (was every 2 s forever: ghost clicks with WoW's settings open) | `companion/.../GameUi.kt` |
 | `DSFTAP` log line per tap with its caller (diagnostics) | `TapBridge.kt`, `StreamKeys.kt` |
+| Click positions +1 screen px: on Linux the pointer landed ~1 px up-left (measured in WoW), on the edge of the tap pad's ~2 px rows, so the row above took the press | `dsforever/.../stream/StreamKeys.kt` |
+| The character is taken from a replayed document until a live one comes (a Thor joining a running game never learned it, so no per-character switch was sent) | `companion/.../CompanionHost.kt`, `GameUi.kt` |
+| A switch the game never answers is parked after 3 tries so the rest still go | `companion/.../GameUi.kt` |
 | The Linux PC helper (replaces DS Forever Desktop) | `linux-helper/` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |

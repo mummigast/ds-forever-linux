@@ -72,9 +72,10 @@ class StreamKeys(
         // position, nudge 1 px and back, position again, then press.
         moveTo(fx, fy)
         // not +1 then -1 at once: both land in one game frame and sum to no motion at all (2026-11-17, strays unchanged)
-        input.mouseMove(4, 4)
+        // sideways only: pointer acceleration can leave a pixel of drift, and the pad's rows are 2 game px tall (columns ~6)
+        input.mouseMove(4, 0)
         sleep(MOVE_SETTLE_MS)
-        input.mouseMove(-4, -4)
+        input.mouseMove(-4, 0)
         sleep(MOVE_SETTLE_MS)
         moveTo(fx, fy)
         sleep(MOVE_SETTLE2_MS)
@@ -89,7 +90,11 @@ class StreamKeys(
         // 1.0.21 (streaming taps missed the tap pad: the PC's cursor measured at 1169,101 for the uisw cell at 1169,103): the position
         // goes out on a FINE reference, not in stream pixels - Sunshine scales it to the PC's screen in floating point, so a 1080p
         // stream no longer rounds a click off the pad's 2-game-pixel rows on a 1440p PC
-        input.mousePosition(Math.round(fx.coerceIn(0f, 1f) * REF), Math.round(fy.coerceIn(0f, 1f) * REF), REF, REF)
+        // Linux Edition (added 2026-11-17): on a Linux PC the pointer lands ~1 px up-left of the aim (measured in WoW with
+        // GetCursorPosition: aim 0.4487,0.1032 -> 0.4482,0.1024 on 1920x1080), on the edge of the pad's ~2 px rows, so the row above
+        // took the press. One screen pixel of correction puts it back on the cell's centre.
+        val cx = fx + LINUX_NUDGE_PX / streamW.coerceAtLeast(1); val cy = fy + LINUX_NUDGE_PX / streamH.coerceAtLeast(1)
+        input.mousePosition(Math.round(cx.coerceIn(0f, 1f) * REF), Math.round(cy.coerceIn(0f, 1f) * REF), REF, REF)
     }
 
     override fun moveBy(dx: Int, dy: Int) {
@@ -123,6 +128,7 @@ class StreamKeys(
         /** a click's press and release this far apart (the PC's game sees two separate events, as the X server's do) */
         const val CLICK_MS = 16L
         const val MOVE_SETTLE_MS = 16L
+        const val LINUX_NUDGE_PX = 1.0f   // Linux Edition
         const val MOVE_SETTLE2_MS = 8L
         /** the mouse position's reference size (Moonlight sends shorts: at most 32767) */
         const val REF = 30000
