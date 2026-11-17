@@ -35,7 +35,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Indoor maps build while the app is open and not streaming, pause during a stream; the start list shows their progress ("120 / 340 (35%)") | `companion/.../PlayGate.kt` (`streamOnlyBake`), `IndoorSchedulerStep.kt` |
 | Texts name the Linux helper instead of DS Forever Desktop; a stuck streaming service says "restart Sunshine" | `dsforever/.../stream/*` |
 | The video decoder is not forced to its top clock (heat); low latency and realtime priority stay | `dsforever/.../stream/StreamMedia.kt` |
-| Clicks land when streaming from Linux: a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
+| Clicks land in the game world when streaming from Linux (not yet while a WoW window is open, see *Known problems*): a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
 | **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |
 | Update check and problem reports point at this fork, not upstream | `app/build.gradle.kts`, `companion/.../ProblemReport.kt` |
@@ -64,6 +64,13 @@ use it stays, unused:
   `libvirglrenderer`, `libpulseaudio`.
 
 The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapshot at all.
+
+## Known problems
+
+- **Clicks while a WoW window is open** (vendor, game menu, settings): WoW then shows its controller cursor, the app's
+  clicks land in the middle of the screen instead of on the add-ons' hidden buttons, and buttons such as *Sell junk*
+  answer "no answer from the game". In the game world without a window, clicks work. Being worked on.
+- Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled).
 
 ## Thor setup
 

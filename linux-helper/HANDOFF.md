@@ -4,8 +4,9 @@ Goal: stream WoW Forever from a Linux PC (Steam/Proton + Sunshine) to an AYN Tho
 Edition app; this helper replaces DS Forever Desktop. Read ../FORK.md (what the app changes and why), README.md, SAFETY.md.
 
 State 2026-11-17: works end to end on a real Thor, at home and over WireGuard: pairing (also by **PC address…**), automatic
-Sunshine PIN when SUNSHINE_USER/PASS are set, WoW start from the Thor, add-ons installed from this repository, every
-bottom-screen button and HUD switch, Reload UI, no ghost clicks. Tests: `.venv/bin/python -m unittest discover -s tests`.
+Sunshine PIN when SUNSHINE_USER/PASS are set, WoW start from the Thor, add-ons installed from this repository, HUD
+switches and bottom-screen buttons in the game world, Reload UI. NOT yet: clicks while a WoW window is open (vendor, game
+menu, settings): WoW's controller cursor takes them to the screen centre (padstray). Tests: `.venv/bin/python -m unittest discover -s tests`.
 
 What made clicks work on Linux (app side, StreamKeys/GameUi; details in FORK.md):
 - WoW in controller mode only gives its cursor to the mouse on real motion: a 4 px relative nudge (out, wait, back) before
