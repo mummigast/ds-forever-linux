@@ -58,10 +58,14 @@ class StreamKeys(
     }
 
     override fun tap(fx: Float, fy: Float) {
-        // Linux Edition (modified 2026-11-17): a press sent right after the move can reach WoW before the move does, and WoW in gamepad
-        // mode keeps its cursor parked at the screen centre - the click then lands on whatever is there (ghost clicks in menus).
-        // So: move, give the PC a few frames, move again (in case the first was dropped/coalesced), then click.
+        // Linux Edition (modified 2026-11-17): WoW in controller mode keeps its cursor at the screen centre and only hands it to
+        // the mouse when it sees mouse MOTION. On a Linux PC (Sunshine + Proton) an absolute position alone is not reported to
+        // the game as motion, so WoW snapped the cursor back to the centre before the press (ghost clicks in menus, seen on the
+        // Thor: cursor to the pad, then to the centre, then the click). A relative nudge is real motion, as on Windows: so
+        // position, nudge 1 px and back, position again, then press.
         moveTo(fx, fy)
+        input.mouseMove(1, 0)
+        input.mouseMove(-1, 0)
         sleep(MOVE_SETTLE_MS)
         moveTo(fx, fy)
         sleep(MOVE_SETTLE2_MS)
@@ -109,8 +113,8 @@ class StreamKeys(
         const val BUTTON_RIGHT = 0x03
         /** a click's press and release this far apart (the PC's game sees two separate events, as the X server's do) */
         const val CLICK_MS = 16L
-        const val MOVE_SETTLE_MS = 40L
-        const val MOVE_SETTLE2_MS = 20L
+        const val MOVE_SETTLE_MS = 16L
+        const val MOVE_SETTLE2_MS = 8L
         /** the mouse position's reference size (Moonlight sends shorts: at most 32767) */
         const val REF = 30000
     }
