@@ -18,11 +18,11 @@ class PlayGateTest {
     @org.junit.Before fun upstreamRule() { PlayGate.streamOnlyBake = false }
     @org.junit.After fun editionRule() { PlayGate.streamOnlyBake = true }
 
-    @Test fun linuxEditionPausesWhileStreamingAndBuildsWhenNobodyLooks() {
+    @Test fun linuxEditionPausesWhileStreamingAndBuildsOtherwise() {
         PlayGate.streamOnlyBake = true
         assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = true, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
         assertEquals(null, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = false, quiet = true))
-        assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = false, quiet = false))
+        assertEquals(null, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = false, playedThisRun = false, quiet = false))
         assertEquals(PlayGate.GAME_BUSY, PlayGate.indoorWait(streaming = false, artRunning = true, gameActive = false, playedThisRun = false, quiet = true))
         assertEquals(PlayGate.GAME_RUNNING, PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = true, playedThisRun = true, quiet = true))
     }
