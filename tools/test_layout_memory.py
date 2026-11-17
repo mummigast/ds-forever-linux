@@ -2,8 +2,8 @@
 
     python tools/test_layout_memory.py
 
-Checks: the app's layout mask tap and cast-bar tap are kept per character in WowCompanionDB.hubLy with the time; a login within
-15 min puts them back by itself (hub doc want = the mask, cb hidden), an older entry does NOT (playing on the PC: nothing hidden),
+Checks: the app's layout mask tap and cast-bar tap are kept per character in WowCompanionDB.hubLy with the time; a login puts them
+back by itself (no timer), /wcui shows everything again and forgets,
 another character gets nothing, a later tap still wins, a corrupt table never breaks the load. Needs lupa. Exit 1 on failure."""
 import os
 import sys
@@ -46,11 +46,15 @@ def main():
     G.ROWS.ui(None, 32)
     d = doc(L, G)
     chk("4: a later tap wins (want %s, cb %s)" % (d.want, d.cb and d.cb.hidden), d.want == 0 and not (d.cb and d.cb.hidden))
-    hm.EXTRA = hm.EXTRA.replace('NOWT = 1000600', 'NOWT = 1001000')
+    hm.EXTRA = hm.EXTRA.replace('NOWT = 1000600', 'NOWT = 1090000')
     L, G = hm.boot(saved)
     d = doc(L, G)
-    chk("5: 16+ min later (played on the PC?): nothing hidden (want %s)" % d.want, d.want is None and not (d.cb and d.cb.hidden))
-    hm.EXTRA = hm.EXTRA.replace('NOWT = 1001000', 'NOWT = 1000600')
+    chk("5: a day later: still put back, no timer (want %s)" % d.want, d.want == 5 and d.cb.hidden is True)
+    G.SlashCmdList.WCUI("")
+    d = doc(L, G)
+    chk("5b: /wcui: everything shown, cast bar back (want %s cb %s)" % (d.want, d.cb.hidden), d.want == 0 and d.cb.hidden is False)
+    chk("5c: /wcui forgets the kept entry", G.WowCompanionDB.hubLy["Rutger-Mograine"] is None)
+    hm.EXTRA = hm.EXTRA.replace('NOWT = 1090000', 'NOWT = 1000600')
     L, G = hm.boot(saved, name="Bank Dea")
     d = doc(L, G)
     chk("6: another character: nothing (want %s)" % d.want, d.want is None)
