@@ -34,7 +34,8 @@ class VideoDecoder(private val surface: Surface, private val onFirstFrame: () ->
             val fmt = MediaFormat.createVideoFormat(mime, width, height).apply {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
                 setInteger(MediaFormat.KEY_PRIORITY, 0)                       // realtime
-                setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE.toInt())
+                // Linux Edition (removed 2026-11-17): KEY_OPERATING_RATE = Short.MAX_VALUE kept the decoder at its top clock whatever the
+                // stream needed (heat on the Thor; the user runs a small underclock). Low latency + realtime priority stay.
                 setInteger("vendor.qti-ext-dec-low-latency.enable", 1)
                 setInteger("vendor.qti-ext-dec-picture-order.enable", 1)
             }
