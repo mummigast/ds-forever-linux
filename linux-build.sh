@@ -2,6 +2,7 @@
 # DS Forever Linux Edition: one-command build on a Linux PC (no Windows tools needed).
 #   ./linux-build.sh            debug APK (signed with this PC's ~/.android/debug.keystore)
 #   ./linux-build.sh --test     also run the streaming module's unit tests
+#   DSF_LOCAL_RUNTIME=1 ./linux-build.sh   also fetch and package the local game runtime (Proton, drivers...; upstream's full app)
 # Needs: JDK 17 and the Android SDK (platform 36, build-tools 36.1.0, NDK 27.2.12479018, cmake 3.22.1).
 # Defaults to ~/.local/android-build/{jdk-17*,sdk}; override with JAVA_HOME / ANDROID_HOME.
 # Output: app/build/outputs/apk/modern/debug/app-modern-debug.apk. Personal builds only: see FORK.md before sharing an APK.
@@ -25,10 +26,12 @@ dep() {  # name url commit
     [ "$(git -C "$d" rev-parse HEAD)" = "$3" ] || { echo "$1 is not at $3"; exit 1; }
 }
 
+if [ "${DSF_LOCAL_RUNTIME:-0}" = 1 ]; then
 echo "== runtime components (checksum-verified)"
 sed "s#shasum -a 256 -c \"\$REPO_DIR/tools/components.sha256\"#sha256sum -c \"$TMPD/c.sha\"#" "$(lf tools/fetch_components.sh)" > "$TMPD/fc.sh"
 tr -d '\r' < tools/components.sha256 > "$TMPD/c.sha"
 cp "$TMPD/fc.sh" tools/.fc_linux.sh; bash tools/.fc_linux.sh | grep -v '^have ' || true; rm -f tools/.fc_linux.sh
+fi   # the Streaming Edition does not package them (app/build.gradle.kts, -PlocalRuntime)
 
 JNI=companion/app/src/main/jniLibs/arm64-v8a
 if [ ! -s $JNI/libcasc.so ] || [ ! -s $JNI/libinteriors.so ]; then
@@ -54,7 +57,8 @@ fi
 echo "== gradle"
 cp "$(lf gradlew)" ./.gradlew-linux; chmod +x ./.gradlew-linux
 TASKS=(:app:assembleModernDebug); [ "${1:-}" = "--test" ] && TASKS=(:dsforever:testDebugUnitTest "${TASKS[@]}")
-./.gradlew-linux --no-daemon "${TASKS[@]}"; rm -f ./.gradlew-linux
+EXTRA=(); [ "${DSF_LOCAL_RUNTIME:-0}" = 1 ] && EXTRA=(-PlocalRuntime=true)
+./.gradlew-linux --no-daemon "${EXTRA[@]}" "${TASKS[@]}"; rm -f ./.gradlew-linux
 APK=app/build/outputs/apk/modern/debug/app-modern-debug.apk
 LIST=$(unzip -l "$APK")
 for so in libcasc.so libinteriors.so libdsf-moonlight.so; do grep -q "lib/arm64-v8a/$so" <<<"$LIST" || { echo "MISSING $so in the APK"; exit 1; }; done
