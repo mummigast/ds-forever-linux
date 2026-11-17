@@ -32,11 +32,20 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
 | **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |
 | Update check and problem reports point at this fork, not upstream | `app/build.gradle.kts`, `companion/.../ProblemReport.kt` |
+| Reload UI works while streaming: F12 (the add-on's ReloadUI key) is let through; other F-keys stay blocked | `dsforever/.../stream/StreamKeys.kt` |
+| Unanswered game-switch taps back off to every 30 s after 3 tries (was every 2 s forever: ghost clicks with WoW's settings open) | `companion/.../GameUi.kt` |
+| `DSFTAP` log line per tap with its caller (diagnostics) | `TapBridge.kt`, `StreamKeys.kt` |
 | The Linux PC helper (replaces DS Forever Desktop) | `linux-helper/` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
 Changed upstream files carry a `Linux Edition` comment at each change (GPL-3.0 section 5a).
+
+## Thor setup
+
+- Window focus: **Top screen**. With auto-lock, touching the bottom screen moves focus there and controller presses
+  (L/R in the bottom menus, game buttons) stop arriving.
+- Pairing over a VPN: Streaming → **PC address…** → the PC's LAN IP.
 
 ## Build
 
