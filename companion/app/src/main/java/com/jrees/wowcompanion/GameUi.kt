@@ -480,7 +480,7 @@ object GameUi {
     fun castBarRow(): Row? {
         val h = castBarHidden ?: return null
         val hide = castBarHide()
-        val want = castBar.wantsHidden(hide, visible)
+        val want = castBar.wantsHidden(hide, eff)
         val note = when {
             h == want -> if (h) "Hidden now" else "On the top screen now"
             last is UiStep.Tap -> "Waits for the layout first"
@@ -489,6 +489,23 @@ object GameUi {
         return Row(CASTBAR_ID, "Cast bar", null, if (hide) UiMode.OFF else UiMode.ON, true, h, note)
     }
     const val CASTBAR_ID = "castbar"
+
+    /** Linux Streaming Edition (2026-11-17, the user: "add the button in the app"): "Normal game UI" ON = the layout and cast bar as if
+     *  the companion were off the screen (everything back), for playing without the app; the add-on keeps it like any layout tap */
+    fun normalUi(): Boolean = prefs?.getBoolean("normalui", false) ?: false
+    private val eff get() = visible && !normalUi()
+    fun setNormalUi(on: Boolean) {
+        prefs?.edit()?.putBoolean("normalui", on)?.apply()
+        reconcile()
+        changed()
+    }
+    fun normalUiRow(): Row? {
+        if (castBarHidden == null && state == null) return null
+        val on = normalUi()
+        return Row(NORMAL_ID, "Normal game UI", null, if (on) UiMode.ON else UiMode.OFF, true, false,
+            if (on) "Everything shown on the top screen" else "The companion's layout")
+    }
+    const val NORMAL_ID = "normalui"
 
     /** a `hub` document; [current] is GameInput.note()'s answer for it */
     fun onHub(msg: JSONObject, current: Boolean) {
@@ -567,7 +584,7 @@ object GameUi {
         val live = GameInput.live(now)
         // a state the game wrote before it went quiet says nothing about now
         val s = state?.let { if (live) it else it.copy(current = false) }
-        val step = policy.step(s, room.name, visible, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+        val step = policy.step(s, room.name, eff, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
             return
@@ -582,7 +599,7 @@ object GameUi {
             if (why != swWhy) { swWhy = why; android.util.Log.i("DSFTAP", "switches: $why") }
         } catch (t: Throwable) { android.util.Log.i("DSFTAP", "switches: diag threw $t") }
         if (step !is UiStep.Tap) {
-            val col = castBar.step(castBarHidden, castBarHide(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+            val col = castBar.step(castBarHidden, castBarHide(), eff, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
             // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
             else if (character != null) {
@@ -661,7 +678,7 @@ object GameUi {
                    else "The game does not offer this yet"
         }
         val s = state ?: return "Waiting for the game"
-        val wantHidden = policy.wantsHidden(el, room.name, visible)
+        val wantHidden = policy.wantsHidden(el, room.name, eff)
         if (el.hidden == wantHidden) return if (el.hidden) "Hidden now" else "On the top screen now"
         return when {
             step is UiStep.Wait && s.pending -> "Changes when combat ends"

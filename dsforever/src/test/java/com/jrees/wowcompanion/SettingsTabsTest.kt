@@ -81,7 +81,7 @@ class SettingsTabsTest {
             G.TARGET to listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
-            G.WINDOWS to listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
+            G.WINDOWS to listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
                 "Player frame", "Target frame", "Controller bars, buffs and XP"),
             G.BUTTONS to listOf("ABXY location", "Button glyphs", "B: pet follow"),       // the user, 2026-11-16: B on Home, a pet class only
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
@@ -127,7 +127,7 @@ class SettingsTabsTest {
             "Right class radial: pick", "Smart Y", "Resource bar", "Pet bar", "HUD height", "HUD width", "HUD scale", "Compass bar",
             "World markers", "Compass follows the camera", "Aggro tint", "Minimap", "Controller bars, buffs and XP", "Quest tracker",
             "Chat window", "NPC windows", "Loot window", "Player frame", "Target bar", "Target health text", "Target of target", "Target frame",
-            "DS party frames", "Party frames", "Cast bar", "Enemy nameplates", "Game tooltips", "Minimap zoom outdoors", "Minimap zoom indoors",
+            "DS party frames", "Party frames", "Cast bar", "Normal game UI", "Enemy nameplates", "Game tooltips", "Minimap zoom outdoors", "Minimap zoom indoors",
             "Quest tracking", "World map", "Message input") +
             ThirdPartyAddons.SPOKEN.rowWords() + ThirdPartyAddons.POLESTAR.rowWords() + ThirdPartyAddons.QUESTTRAIL.rowWords() +
             ThirdPartyAddons.MANNERS.rowWords() +
@@ -221,7 +221,7 @@ class SettingsTabsTest {
             CastBarPolicy.HUD_HIDE, CastBarPolicy.HUD_LOWER, CastBarPolicy.HUD_HIGHER, CastBarPolicy.HUD_HDEF, CastBarPolicy.HUD_SEL))
         assertEquals(listOf("off", "low", "high"), Settings.AVOID_DANGER)
         // Top screen > Game windows: the approved order, by the rows' own ids
-        assertEquals(listOf("minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud"),
+        assertEquals(listOf("normalui", "minimap", "tracker", "chat", "dialogs", "loot", "hidetips", "castbar", GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud"),
             GameUiSection.WINDOWS_ORDER)
     }
 
@@ -352,13 +352,13 @@ class SettingsPreviewRowsTest {
     @Test fun everyTopTileHasAPicture() {
         val missing = GameUiTiles.ALL.filter { it !in GameUiTiles.PICTURED }
         assertTrue("Top screen tiles with no picture: $missing", missing.isEmpty())
-        assertEquals(19, GameUiTiles.ALL.size)
+        assertEquals(20, GameUiTiles.ALL.size)
         val word = TopWords.WORD
         val shown = GameUiTiles.ALL + GameUiTiles.EXTRAS.values.flatten()
         assertEquals("each once", shown.size, shown.toSet().size)
         // (the layout editor's "Edit layout" is SettingsView's row, not a tile; HUD height / scale moved into the editor)
         val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP && it != SettingsTabs.Block.LAYOUT }.flatMap { it.rows }
-        assertEquals(25, topRows.size)
+        assertEquals(26, topRows.size)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {
@@ -426,7 +426,7 @@ object TopWords {
         GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
         GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
         "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
-        GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
+        GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.NORMAL_ID to "Normal game UI", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
         "hud" to "Controller bars, buffs and XP")
 }
 

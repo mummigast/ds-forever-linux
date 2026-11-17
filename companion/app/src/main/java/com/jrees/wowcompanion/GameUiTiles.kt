@@ -50,7 +50,7 @@ object GameUiTiles {
         GameUi.HUD_ID to "Resource bar", GameUi.UFT_ID to "Target bar", GameUi.NP_ID to "Enemy nameplates", GameUi.NPF_ID to "Friendly plates",
         GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
         GameUi.WM_ID to "World markers", PS_ID to "Polestar", "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window",
-        "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window", GameUiSection.TIPS_ID to "Tooltips", GameUi.CASTBAR_ID to "Cast bar",
+        "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window", GameUiSection.TIPS_ID to "Tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.NORMAL_ID to "Normal game UI",
         GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame", "hud" to "Controller bars")
 
     /** a band row's label (short: the tile above names the element) */
@@ -63,7 +63,7 @@ object GameUiTiles {
      *  does" panel beside the page, which would squeeze the grid): every tile has one */
     val PICTURED: Set<String> = setOf(GameUi.HUD_ID, GameUi.UFT_ID, GameUi.NP_ID, GameUi.NPF_ID, GameUi.UFP_ID, GameUi.PARTY_ID,
         GameUiSection.COMPASS_ID, GameUi.WM_ID, PS_ID, "minimap", "tracker", "chat", "dialogs", GameUiSection.LOOT_ID,
-        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud")
+        GameUiSection.TIPS_ID, GameUi.CASTBAR_ID, GameUi.NORMAL_ID, GameUi.PLAYER_ID, GameUi.TARGET_ID, "hud")
 
     /** every tile, every group (19 with Polestar in use) */
     val ALL: List<String> get() = TILES.values.flatten()

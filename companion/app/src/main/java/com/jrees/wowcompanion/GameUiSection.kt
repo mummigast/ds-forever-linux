@@ -154,7 +154,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         "minimap", "hud", "tracker", "chat", "dialogs" -> GameUi.elementRow(id)
         LOOT_ID -> lootRow(); COMPASS_ID -> compassRow(); COMPASS_CAM_ID -> compassCamRow(); TIPS_ID -> tipsRow(); RINGS_ID -> ringsRow()
         GameUiTiles.PS_ID -> polestarRow()
-        GameUi.CASTBAR_ID -> GameUi.castBarRow(); GameUi.HUD_ID -> GameUi.hudRow(); GameUi.PET_ID -> GameUi.petRow()
+        GameUi.CASTBAR_ID -> GameUi.castBarRow(); GameUi.NORMAL_ID -> GameUi.normalUiRow(); GameUi.HUD_ID -> GameUi.hudRow(); GameUi.PET_ID -> GameUi.petRow()
         GameUi.HUD_H_ID -> GameUi.hudHeightRow(); GameUi.HUD_W_ID -> GameUi.hudWidthRow(); GameUi.HUD_S_ID -> GameUi.hudScaleRow()
         GameUi.UFT_ID -> GameUi.ufTargetRow(); GameUi.UFHP_ID -> GameUi.ufHpRow(); GameUi.UFTOT_ID -> GameUi.ufTotRow()
         GameUi.NP_ID -> GameUi.nameplatesRow(); GameUi.NPF_ID -> GameUi.friendlyPlatesRow()
@@ -172,7 +172,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         // 2026-11-16 (the tiles): Polestar's own frame is Navigation's third tile (it was SettingsView's row)
         Part.NAVIGATION -> listOfNotNull(compassRow(), compassCamRow(), GameUi.worldMarkersRow(), polestarRow())
         // the game's own windows, in the approved order (the game's elements by their ids; the controller bars last)
-        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow()))
+        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(GameUi.normalUiRow(), lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow()))
             .sortedBy { r -> WINDOWS_ORDER.indexOf(r.id).let { if (it < 0) WINDOWS_ORDER.size else it } }
         // Party mode out of Experimental, on by default (the user, 2026-11-12)
         // hub47 Smart Res under Party mode (the user, 2026-11-13: "an enable smart res toggle setting for party mode")
@@ -360,6 +360,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             TIPS_ID -> TipsSwitch.turn(context, m != UiMode.ON)          // tt2: On = they show (turn() takes "hide")
             RINGS_ID -> RingsSwitch.turn(context, m == UiMode.ON)
             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
+            GameUi.NORMAL_ID -> GameUi.setNormalUi(m == UiMode.ON)
             GameUi.HUD_ID -> GameUi.setHud(m == UiMode.ON)
             GameUi.PET_ID -> GameUi.setSwitch(GameUi.SW_PET, m == UiMode.ON)
             GameUi.PLAYER_ID -> GameUi.setSwitch(GameUi.SW_PLAYER, m == UiMode.ON)
@@ -750,7 +751,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             c.drawText(Tr.t(hint), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.HUD_ID ||
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.NORMAL_ID || r.id == GameUi.HUD_ID ||
             r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.PARTY_ID || r.id == GameUi.NP_ID || r.id == GameUi.WM_ID ||
             r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID || r.id == GameUi.UFTOT_ID || r.id == GameUi.PET_ID || r.id == GameUi.SRES_ID ||
             r.id == GameUi.NPF_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
@@ -821,6 +822,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             else "No friendly nameplates. For this character."
         if (r.id == GameUi.NP_ID) return if (r.mode == UiMode.ON) "The bars over hostile mobs are on. Off gives the game's own setting back."
             else "The game's own nameplate setting, as you had it."
+        if (r.id == GameUi.NORMAL_ID) return if (r.mode == UiMode.ON) "The game's normal UI: minimap, chat, tracker and cast bar all shown. For playing without the app."
+            else "The companion hides what it shows on the bottom screen."
         if (r.id == GameUi.CASTBAR_ID) return if (r.mode == UiMode.ON) "The game's own cast bar stays on the top screen."
             else "Hidden while the companion is on this screen; Home's bar shows every cast."
         val room = r.home?.label?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "its"
@@ -953,7 +956,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         const val STATUS_TOP = 2f
         const val STATUS_ROW_H = STATUS_TOP + ROW_H
         /** Top screen > Game windows' order (the user's approved list): the game's elements and our switches by id */
-        val WINDOWS_ORDER = listOf("minimap", "tracker", "chat", "dialogs", LOOT_ID, TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID,
+        val WINDOWS_ORDER = listOf(GameUi.NORMAL_ID, "minimap", "tracker", "chat", "dialogs", LOOT_ID, TIPS_ID, GameUi.CASTBAR_ID, GameUi.PLAYER_ID,
             GameUi.TARGET_ID, "hud")
         const val SLOP = 24f
         /** a tile's name: Friz 25, shrunk to fit down to 18, then cut */

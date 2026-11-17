@@ -91,6 +91,7 @@ object TilePictures {
             GameUiSection.LOOT_ID -> loot(c)
             GameUiSection.TIPS_ID -> tooltip(c)
             GameUi.CASTBAR_ID -> castBar(c)
+            GameUi.NORMAL_ID -> normalUi(c)
             GameUi.PLAYER_ID -> unitFrame(c, look, target = false)
             GameUi.TARGET_ID -> unitFrame(c, look, target = true)
             "hud" -> controllerBars(c, look)
@@ -391,6 +392,16 @@ object TilePictures {
     }
 
     /** the game's cast bar: its groove, the gold fill, the spark at its end, the spell's name */
+    /** Normal game UI: a screen with every part in its corner (minimap, chat, tracker, cast bar) */
+    private fun normalUi(c: Canvas) {
+        figure(c, 108f, 64f, 52f, Color.rgb(22, 24, 30))
+        pF.color = Color.argb(220, 200, 200, 210)
+        c.drawCircle(176f, 34f, 9f, pF)
+        c.drawRoundRect(RectF(30f, 80f, 82f, 104f), 3f, 3f, pF)
+        c.drawRoundRect(RectF(160f, 52f, 184f, 84f), 2f, 2f, pF)
+        c.drawRoundRect(RectF(84f, 90f, 132f, 98f), 2f, 2f, pF)
+    }
+
     private fun castBar(c: Canvas) {
         figure(c, 108f, 44f, 32f, Color.rgb(22, 24, 30))
         val r = RectF(22f, 56f, 194f, 74f)

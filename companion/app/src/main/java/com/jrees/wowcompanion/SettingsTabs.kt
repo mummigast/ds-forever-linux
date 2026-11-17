@@ -100,7 +100,7 @@ object SettingsTabs {
         // hub31: Polestar's own frame on the top screen (it was under Add-ons > Polestar), shown while Polestar is in use. 2026-11-16 (the
         // tiles): Navigation's third tile, drawn by Navigation's GameUiSection part (it was SettingsView's row)
         POLESTAR_TOP(Group.NAVIGATION, "Polestar on the top screen", listOf("Polestar on the top screen"), Drawer.GAME_UI),
-        GAME_UI(Group.WINDOWS, "Game windows", listOf("Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
+        GAME_UI(Group.WINDOWS, "Game windows", listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
             "Game tooltips", "Cast bar", "Player frame", "Target frame", "Controller bars, buffs and XP"), Drawer.GAME_UI),
         // ---- Controller
         CONTROLLER(Group.BUTTONS, "Buttons", listOf("ABXY location", "Button glyphs")),

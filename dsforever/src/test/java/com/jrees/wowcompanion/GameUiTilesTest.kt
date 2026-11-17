@@ -22,9 +22,9 @@ class GameUiTilesTest {
 
     @Test fun nineteenTilesInTheirGroups() {
         assertEquals(listOf(TG.HUD, TG.TARGET, TG.PARTY, TG.NAVIGATION, TG.WINDOWS), GameUiTiles.TILES.keys.toList())
-        assertEquals(listOf(1, 3, 2, 3, 10), GameUiTiles.TILES.values.map { it.size })
-        assertEquals(19, GameUiTiles.ALL.size)
-        assertEquals(19, GameUiTiles.ALL.toSet().size)
+        assertEquals(listOf(1, 3, 2, 3, 11), GameUiTiles.TILES.values.map { it.size })
+        assertEquals(20, GameUiTiles.ALL.size)
+        assertEquals(20, GameUiTiles.ALL.toSet().size)
         // the Game windows in the user's approved order
         assertEquals(GameUiSection.WINDOWS_ORDER, GameUiTiles.TILES.getValue(TG.WINDOWS))
         // the user's pick (2A): the Pet bar in the Resource bar's band, with the width stepper (height and scale: the layout editor's)
