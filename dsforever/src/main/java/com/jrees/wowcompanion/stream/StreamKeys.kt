@@ -71,8 +71,10 @@ class StreamKeys(
         // Thor: cursor to the pad, then to the centre, then the click). A relative nudge is real motion, as on Windows: so
         // position, nudge 1 px and back, position again, then press.
         moveTo(fx, fy)
-        input.mouseMove(1, 0)
-        input.mouseMove(-1, 0)
+        // not +1 then -1 at once: both land in one game frame and sum to no motion at all (2026-11-17, strays unchanged)
+        input.mouseMove(4, 4)
+        sleep(MOVE_SETTLE_MS)
+        input.mouseMove(-4, -4)
         sleep(MOVE_SETTLE_MS)
         moveTo(fx, fy)
         sleep(MOVE_SETTLE2_MS)

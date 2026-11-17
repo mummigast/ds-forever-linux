@@ -28,7 +28,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Change | Where |
 |---|---|
 | Own app ID `app.dsforever.companion.linux` and name "DS Forever Linux Edition": installs beside the official app | `app/build.gradle.kts`, `res/values*/strings.xml` |
-| Ghost clicks fixed when streaming from Linux: a 1 px relative nudge before each click so WoW hands its controller cursor to the mouse, then position and click | `dsforever/.../stream/StreamKeys.kt` |
+| Clicks land when streaming from Linux: a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
 | **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |
 | Update check and problem reports point at this fork, not upstream | `app/build.gradle.kts`, `companion/.../ProblemReport.kt` |
