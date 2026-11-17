@@ -3068,7 +3068,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && !d.name.isNullOrEmpty()) RadialMeta.who = "${d.name}-${d.realm ?: ""}"     // the spell radials' own settings
                     if (current && !d.name.isNullOrEmpty()) QuestWatchKeep.character("${d.name}-${d.realm ?: ""}")
                     if (!d.name.isNullOrEmpty()) TaxiNet.character("${d.name}-${d.realm ?: ""}")
-                    if (current && !d.name.isNullOrEmpty()) GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
+                    // Linux Edition (modified 2026-11-17): a Thor that joins a running game only gets this document REPLAYED (not current), so
+                    // the character stayed unknown and no per-character switch (HUD, player frame, resource bar...) was ever tapped. A replayed
+                    // one sets it until the first current one has come (replays run oldest first, so the newest replayed wins); after that,
+                    // only current ones (a character switch).
+                    if (!d.name.isNullOrEmpty() && (current || !GameUi.characterLive)) {
+                        GameUi.character = "${d.name}-${d.realm ?: ""}"     // hub13: HUD mode per character
+                        if (current) GameUi.characterLive = true
+                    }
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
                     if (current && !d.name.isNullOrEmpty()) { val who = "${d.name}-${d.realm ?: ""}"; ui.post { ChatFilter.character(who); TalkKeep.character(who) } }
                     lastDpad = d; settings.homeSection.dpadChanged()

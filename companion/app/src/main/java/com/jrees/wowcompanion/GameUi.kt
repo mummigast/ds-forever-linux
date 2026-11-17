@@ -50,6 +50,8 @@ object GameUi {
         set(v) { if (field != v) { field = v; playerClass = classFor(v); reconcile(); changed() } }    // Smart Res: the new character's class (its party document, before or after)
     /** the hub document's cb.hidden; null = an add-on without it (no row) */
     @Volatile private var castBarHidden: Boolean? = null
+    /** Linux Edition: true once a CURRENT document named the character (replayed ones may set it until then) */
+    @Volatile var characterLive = false
     /** LATER 25: one of the game's tracking abilities is on (the map document's track: h / m / t = 1) */
     @Volatile private var tracking = false
     /** the map document's `track` part arrived ({h, m, t}: 1 = on); a change re-checks the layout (the "While tracking" minimap) */
@@ -133,6 +135,7 @@ object GameUi {
     // Linux Edition (added 2026-11-17): unanswered taps in a row; past MISS_MAX the retry slows to MISS_SLOW_MS (seen: uisw tapped
     // every 2 s for minutes while WoW's settings window held the cursor, each tap a click in the screen's middle)
     private var swMiss = 0
+    private var swWhy = ""
     private var hudMiss = 0
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
@@ -566,6 +569,13 @@ object GameUi {
         }
         last = step
         // hub11: the cast bar's own tap, never in the same moment as a layout tap (one tap at a time)
+        // Linux Edition diagnostic (2026-11-17): why the switches are (not) tapped, logged on change
+        try {
+            val sws0 = sw; val nx = sws0?.let { swNext(it) { p -> swWant(p) } }
+            val why = "step=${step.javaClass.simpleName} char=${character != null} sw=${sws0 != null} next=$nx col=${if (sws0 != null && nx != null) swCol(sws0, nx.first, nx.second) else null} " +
+                "state=${s != null} current=${s?.current} live=$live settled=${now >= helloAt + GameUiPolicy.SETTLE_MS}"
+            if (why != swWhy) { swWhy = why; android.util.Log.i("DSFTAP", "switches: $why") }
+        } catch (t: Throwable) { android.util.Log.i("DSFTAP", "switches: diag threw $t") }
         if (step !is UiStep.Tap) {
             val col = castBar.step(castBarHidden, castBarHide(), visible, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
