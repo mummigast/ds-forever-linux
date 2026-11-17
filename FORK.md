@@ -30,6 +30,11 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Change | Where |
 |---|---|
 | Own app ID `app.dsforever.companion.linux` and name "DS Forever Linux Streaming": installs beside the official app | `app/build.gradle.kts`, `res/values*/strings.xml` |
+| **Streaming only**: the start screen has one Stream card (no Local card, so no Battle.net sign-in and no local game launch); the start list drops the Battle.net and Thor add-on rows | `companion/.../ChooserPanel.kt` (`STREAM_ONLY`), `SetupFlow.kt`, `ModeBridge.kt` |
+| **The local game runtime is not packaged** (see *What is left out*): 270 MB -> about 130 MB | `app/build.gradle.kts` (`-PlocalRuntime=true` restores) |
+| Indoor maps build while the app is open and not streaming, pause during a stream; the start list shows their progress ("120 / 340 (35%)") | `companion/.../PlayGate.kt` (`streamOnlyBake`), `IndoorSchedulerStep.kt` |
+| Texts name the Linux helper instead of DS Forever Desktop; a stuck streaming service says "restart Sunshine" | `dsforever/.../stream/*` |
+| The video decoder is not forced to its top clock (heat); low latency and realtime priority stay | `dsforever/.../stream/StreamMedia.kt` |
 | Clicks land when streaming from Linux: a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
 | **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |
@@ -40,11 +45,25 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Click positions +1 screen px: on Linux the pointer landed ~1 px up-left (measured in WoW), on the edge of the tap pad's ~2 px rows, so the row above took the press | `dsforever/.../stream/StreamKeys.kt` |
 | The character is taken from a replayed document until a live one comes (a Thor joining a running game never learned it, so no per-character switch was sent) | `companion/.../CompanionHost.kt`, `GameUi.kt` |
 | A switch the game never answers is parked after 3 tries so the rest still go | `companion/.../GameUi.kt` |
-| The Linux PC helper (replaces DS Forever Desktop) | `linux-helper/` |
+| The Linux PC helper (replaces DS Forever Desktop); it installs the add-ons from this repository, so they match the app built from the same checkout | `linux-helper/` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
-Changed upstream files carry a `Linux Edition` comment at each change (GPL-3.0 section 5a).
+Changed upstream files carry a `Linux Edition` comment at each change (GPL-3.0 section 5a). No upstream code is deleted:
+the edition's behaviour sits behind switches, and the runtime is left out at packaging time, so upstream merges stay small.
+
+## What is left out
+
+The Streaming Edition's APK does not package what only the local game (WoW running on the Thor) uses. The code that would
+use it stays, unused:
+
+- the runtime components: the Proton/Wine build, DXVK, both Turnip drivers (`bundled_components`), box64, PulseAudio,
+  `redirect.tzst`, `libredirect-bionic-wx*.so` (proprietary per THIRD_PARTY_NOTICES), the Windows components, LSFG;
+- the container's prebuilt libraries: `libkgslshim`, `libpulse*`, `libsndfile`, `libltdl`, `liblsfg-vk-layer`,
+  `libgnoverlay`, the DNS shim, `libevshim`, `libhook_impl`, `libmain_hook`, `libpatchelf`, `libvortekrenderer`,
+  `libvirglrenderer`, `libpulseaudio`.
+
+The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapshot at all.
 
 ## Thor setup
 
@@ -57,8 +76,9 @@ Changed upstream files carry a `Linux Edition` comment at each change (GPL-3.0 s
 ```
 ./linux-build.sh --test
 ```
-Fetches and checksum-verifies the runtime components, builds the two native libraries (CascLib, Recast) and the
-Moonlight prebuilts if missing, then the APK. Without the native libraries the app says "this build has no file reader".
+Builds the two native libraries (CascLib, Recast) and fetches the Moonlight prebuilts if missing, then the APK. Without the
+native libraries the app says "this build has no file reader". `DSF_LOCAL_RUNTIME=1` also fetches (checksum-verified) and
+packages the local game runtime, as upstream's full app.
 
 ## Following upstream
 
@@ -72,7 +92,9 @@ Upstream's version number is kept (the fork tracks its releases); the app's upda
 ## Sharing
 
 - **Source:** free to share, fork and change under GPL-3.0. Keep the notices, mark your own changes.
-- **APKs:** please build your own with `./linux-build.sh`. This repo does not hand out APKs: besides the GPL code,
-  the app contains runtime parts whose redistribution rights DS Forever itself lists as unresolved
-  (RELEASE_NOTICES.md: the Proton/Wine build, Turnip drivers, `redirect.tzst`, `libkgslshim.so`, a Samsung SDK, some
-  fonts/art). If you do pass a build on, you must also offer its complete corresponding source (GPL-3.0 section 6).
+- **APKs:** build your own with `./linux-build.sh`; this repository does not hand out APKs. Leaving out the local runtime
+  removes the parts DS Forever's RELEASE_NOTICES.md lists as not cleared for redistribution (Proton/Wine build, Turnip,
+  `redirect`, `libkgslshim`, PulseAudio/box64 builds). Still open before anyone hands out a build: the fonts' and some
+  artwork's exact provenance (RELEASE_NOTICES.md, "Actual Launcher Inputs"), and the data files the app ships
+  (`assets/safepath`, `assets/harvest`), which come from upstream as they are. Anyone passing a build on must also offer
+  its complete corresponding source (GPL-3.0 section 6).
