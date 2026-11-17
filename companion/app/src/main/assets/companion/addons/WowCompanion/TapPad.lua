@@ -454,6 +454,7 @@ end
 local KEY_MOD_NAMES = "CTRL-SHIFT"           -- the game's order for a chord without Alt
 local KEY_MODS = KEY_MOD_NAMES .. "-"
 local KEY_ROWS = { "INSERT", "HOME", "END", "PAGEUP", "PAGEDOWN", "UP", "DOWN", "LEFT", "RIGHT" }
+local KEY_SPARE = { "uisw" }   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
 local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "keytest" }   -- = KEY_ROWS, by name
 local KEY_COLS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
                    "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "MINUS", "EQUALS", "[", "]" }
@@ -573,6 +574,14 @@ function pad.bindKeys()
     for i, name in ipairs(KEY_HOT) do
         local r = pad.rows[name]
         if r and not r.secure and KEY_ROWS[i] then giveRow(name, KEY_ROWS[i]) end
+    end
+    -- Linux Streaming Edition (2026-11-17, Thor test: every HUD switch click strayed, "padstray"): chq's row key PAGEDOWN, never given in
+    -- the game (no keys reach chat's typing), goes to a spare row (KEY_SPARE: "uisw", Hub's switches), so those go as keys too
+    for _, sn in ipairs(KEY_SPARE) do
+        local sr = pad.rows[sn]
+        if sr and not sr.secure and not keys.keyOf[sn] then
+            giveRow(sn, "PAGEDOWN")     -- chq's key only: never one another keyed row (pause, spick...) may still register for
+        end
     end
     keys.bound = next(keys.keyOf) ~= nil and next(keys.colKey) ~= nil
     if keys.bound and not keys.session then
