@@ -329,10 +329,15 @@ async def start_wow(retried=False):
                 wow_start.update(state=None, at=0)
                 await asyncio.sleep(3)
                 return await start_wow(retried=True)
-        for _ in range(90):
+        for i in range(1, 91):
             await asyncio.sleep(2)
             if wow_running():
                 wow_start.update(state=None); return
+            # a Battle.net that has just started ignores a launch until its home page is up (2026-11-17: sent ~12 s after
+            # it appeared, nothing; the same command by hand a few minutes later started WoW at once): send it again
+            if not START_CMD and STEAM_PREFIX and PROTON and i % 20 == 0 and bnet_running():
+                log("no WoW yet: asking Battle.net again")
+                launch_wowf(*STEAM_PREFIX)
         wow_start.update(state="start_failed", why="no WoW window after 3 minutes (Battle.net may need you to sign in on the PC)")
     except Exception as e:
         wow_start.update(state="start_failed", why=str(e))
