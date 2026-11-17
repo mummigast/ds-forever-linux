@@ -279,7 +279,7 @@ def session_env():
 def bnet_running():
     return wow_linux.pid_of(wow_linux.BNET_PROC) is not None
 
-async def start_wow():
+async def start_wow(retried=False):
     """Start WoW Forever like Desktop does: Battle.net first (via its Steam shortcut), then
     Battle.net.exe --exec="launch WoWF" in the same Proton prefix. Never touches credentials."""
     if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
@@ -294,7 +294,8 @@ async def start_wow():
             raise RuntimeError("can't start WoW here: set DSF_START_CMD (WoW is not in a Steam/Proton prefix)")
         else:
             steam_root, appid = STEAM_PREFIX
-            if not bnet_running():
+            stale = bnet_running()                       # a Battle.net already up (maybe from hours ago)
+            if not stale:
                 gameid = (appid << 32) | 0x02000000      # a non-Steam shortcut's game id
                 url = f"steam://rungameid/{gameid}"
                 client = wow_linux.steam_client_root(steam_root)
@@ -313,11 +314,21 @@ async def start_wow():
                 await asyncio.sleep(10)   # let Battle.net sign in / settle
             if wow_running():
                 wow_start.update(state=None); return
-            env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
-                       STEAM_COMPAT_CLIENT_INSTALL_PATH=str(wow_linux.steam_client_root(steam_root)))
-            subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe",
-                              "--exec=launch WoWF"],   # "launch_uid wowf" only selects the game in a running Battle.net, env=env, start_new_session=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            launch_wowf(steam_root, appid)
+            if stale and not retried:
+                # an old Battle.net can ignore the launch (seen 2026-11-17: up since the evening before, no WoW): after a
+                # minute, close that Proton session and start fresh once
+                for _ in range(30):
+                    await asyncio.sleep(2)
+                    if wow_running():
+                        wow_start.update(state=None); return
+                log("Battle.net ignored the launch: restarting it")
+                await broadcast([{"t": "status", "text": "Restarting Battle.net on your PC…"}])
+                n = await asyncio.to_thread(close_prefix, steam_root, appid)
+                log(f"closed {n} processes of the old session")
+                wow_start.update(state=None, at=0)
+                await asyncio.sleep(3)
+                return await start_wow(retried=True)
         for _ in range(90):
             await asyncio.sleep(2)
             if wow_running():
@@ -327,6 +338,44 @@ async def start_wow():
         wow_start.update(state="start_failed", why=str(e))
     log("WoW start failed:", wow_start["why"])
     await broadcast([{"t": "wow", **_info()["wow"]}, {"t": "status", "text": "WoW didn't start: " + wow_start["why"]}])
+
+def launch_wowf(steam_root, appid):
+    """Battle.net.exe --exec="launch WoWF" in WoW's Proton prefix ("launch_uid wowf" only selects the game)."""
+    env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
+               STEAM_COMPAT_CLIENT_INSTALL_PATH=str(wow_linux.steam_client_root(steam_root)))
+    subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe", "--exec=launch WoWF"],
+                     env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def close_prefix(steam_root, appid):
+    """Ends every process of WoW's Proton session (Battle.net, its agent, wineserver, Steam's reaper for it): by PID,
+    matched on the prefix path in the process's environment or command line, never our own process tree."""
+    tail = f"/steamapps/compatdata/{appid}"
+    me = {os.getpid(), os.getppid()}
+    pids = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) in me:
+            continue
+        try:
+            env = Path(f"/proc/{d}/environ").read_bytes().split(b"\0")
+            argv = Path(f"/proc/{d}/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        envs = {k: v for k, _, v in (e.decode(errors="replace").partition("=") for e in env)}
+        # only what Proton / Steam set for this game: never a process that merely mentions the path in its arguments
+        ours = envs.get("STEAM_COMPAT_DATA_PATH", "").rstrip("/").endswith(tail) or \
+               envs.get("WINEPREFIX", "").rstrip("/").endswith(tail + "/pfx") or \
+               (argv and argv[0].endswith(b"/reaper") and f"AppId={appid}".encode() in argv)
+        if ours:
+            pids.append(int(d))
+    found = len(pids)
+    for sig in (15, 9):
+        for pid in pids:
+            try: os.kill(pid, sig)
+            except OSError: pass
+        if sig == 15:
+            time.sleep(5)
+            pids = [p for p in pids if Path(f"/proc/{p}").exists()]
+    return found
 
 def wow_running():
     return wow_linux.pid_of(wow_linux.WOW_PROC, "_forever_") is not None
