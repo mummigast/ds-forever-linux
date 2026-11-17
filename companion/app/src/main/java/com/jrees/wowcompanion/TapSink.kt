@@ -20,7 +20,7 @@ class ContainerKeys(private val x: InputSink.Sink) : TapSink, InputSink.Sink by 
 }
 
 object TapSinks {
-    const val STREAM_EXTRA_SETTLE_MS = 90L
+    const val STREAM_EXTRA_SETTLE_MS = 90L  // Linux Edition (added 2026-11-17), see TapQuiet.extraSettleMs
 
     /**
      * The sink for [mode]: LOCAL -> the container's X server (wrapped as [ContainerKeys]), STREAM -> [stream]. Null = no input yet

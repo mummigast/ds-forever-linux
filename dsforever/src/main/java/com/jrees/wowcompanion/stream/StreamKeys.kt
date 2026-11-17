@@ -58,7 +58,7 @@ class StreamKeys(
     }
 
     override fun tap(fx: Float, fy: Float) {
-        // Linux PC (Sunshine + Proton): a press sent right after the move can reach WoW before the move does, and WoW in gamepad
+        // Linux Edition (modified 2026-11-17): a press sent right after the move can reach WoW before the move does, and WoW in gamepad
         // mode keeps its cursor parked at the screen centre - the click then lands on whatever is there (ghost clicks in menus).
         // So: move, give the PC a few frames, move again (in case the first was dropped/coalesced), then click.
         moveTo(fx, fy)

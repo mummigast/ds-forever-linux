@@ -612,7 +612,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         })
     }
 
-    // LINUX FORK: a PC typed in by address, for a Thor on a VPN (WireGuard) where the mDNS advert cannot reach. The Linux helper
+    // Linux Edition (added 2026-11-17): a PC typed in by address, for a Thor on a VPN (WireGuard) where the mDNS advert cannot reach. The Linux helper
     // answers GET /v1/info on its bridge port with what the advert's TXT would carry (name, id, Sunshine port, TLS fingerprint).
     private var seenPcs: List<FoundPc> = emptyList()
     private var manualPc: FoundPc? = null

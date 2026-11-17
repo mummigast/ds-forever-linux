@@ -81,7 +81,7 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "PC address…") { if (!busy) onAddress() },
+        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, /* Linux Edition */ StreamLook.button(ctx, "PC address…") { if (!busy) onAddress() },
             StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
     }

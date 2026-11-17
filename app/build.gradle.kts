@@ -48,7 +48,7 @@ android {
 
     defaultConfig {
         // DS Forever (S5, the user 2026-10-08: "(a) Become 'DS Forever'"): THE one app, installed over the old DS Forever app
-        applicationId = "app.dsforever.companion"
+        applicationId = "app.dsforever.companion.linux"  // Linux Edition: installs beside the official app
 
         minSdk = 26
 
@@ -61,7 +61,7 @@ android {
         buildConfigField("boolean", "GOLD", "false")
         // DS Forever's self-update (Track C, the user's rulings 2026-10-12): the PUBLIC release repo "owner/repo" whose latest GitHub
         // release carries DS-Forever-<version>.apk. Empty = no repo yet: the update check says so and does nothing. No token, ever.
-        buildConfigField("String", "DSF_RELEASE_REPO", "\"Jreese702/DS-Forever\"")
+        buildConfigField("String", "DSF_RELEASE_REPO", "\"mummigast/ds-forever-linux\"")
         val iconValue = "@mipmap/ic_launcher"
         val iconRoundValue = "@mipmap/ic_launcher_round"
         manifestPlaceholders.putAll(

@@ -1,3 +1,7 @@
+> **DS Forever Linux Edition** — a personal fork of DS Forever for streaming from a Linux PC (and over a VPN).
+> Based on DS Forever by Jreese702; not the official app. What changed, the licence notes and the Linux build: see
+> [FORK.md](FORK.md). The original README follows unchanged.
+
 # DS Forever
 
 Android launcher and companion for the World of Warcraft: Forever beta. Forked
