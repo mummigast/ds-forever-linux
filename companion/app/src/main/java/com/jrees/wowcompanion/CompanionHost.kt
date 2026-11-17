@@ -2739,6 +2739,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val gid = msg.optString("id")
                 // the capture's own word, sooner than its next holder report: a hold that HOLDS (not "pending") starts direct presses
                 val op = msg.optString("op")
+                // Linux Streaming Edition (tell memory): Quests' word on Start's way (its own derivation at login, or the answer to a tell)
+                if (op == "start" && msg.optBoolean("ok")) when (msg.optString("why")) { "rooms" -> startToldWant = true; "game" -> startToldWant = false }
                 if (op == "hold" && msg.optBoolean("ok") && msg.optString("why") != "pending") capHolder = "pad:$gid"
                 // a REFUSED free / leave (Quests q37: "close first" while the game's map shows) keeps the guest holding: capHolder stays
                 if ((op == "free" || op == "leave") && msg.optBoolean("ok", true) && capHolder == "pad:$gid") capHolder = ""
@@ -3081,7 +3083,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     lastDpad = d; settings.homeSection.dpadChanged()
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
-                    if (current && d.want != startToldWant) startTell(d.want == true)
+                    // Linux Streaming Edition (2026-11-17, "tell memory"): Quests derives Start's way from the same choice at entering
+                    // the world and says it (guestack op "start", taken as told below), so the session's FIRST tell waits START_GRACE_MS
+                    // for that word and is only tapped when it did not come; a later change of the choice is told at once as before
+                    // (compared as Quests does: never asked = the rooms, its default; the old code told nothing then, and still doesn't)
+                    val wantRooms = d.want != false
+                    if (current && wantRooms != startToldWant && !(startToldWant == null && d.want == null)) {
+                        if (startToldWant == null) {
+                            ui.postDelayed({ val now = lastDpad?.want != false
+                                if (now == wantRooms && now != startToldWant) startTell(now) }, START_GRACE_MS)
+                        } else startTell(wantRooms)
+                    }
                     // Cast's toolbar group: while the router holds the bare D-pad, AND while it only stepped aside for a room's or the
                     // bar's hold (b51, the user: "my dpad shows my normal spells" - the router says on=false whenever a guest holds, and
                     // the app kept the last one replayed at its start, with no padmap after it for 12 minutes). A GAME WINDOW (aside =
@@ -3930,6 +3942,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var shownView: View? = null
     private val roomExit = android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)      // FastOutLinearIn (UI Art)
     private var startToldWant: Boolean? = null
+    private val START_GRACE_MS = 3_000L
     /** qact 36 = Start to the rooms (our wheel), 35 = Start to the game (Quests q35); answered by guestack {op "start"} */
     private fun startTell(rooms: Boolean) {
         val sent = TapBridge.tap(this, questsPad, "qact", if (rooms) 36 else 35) { why -> Log.i("WCHOME", "start: told refused ($why)") }

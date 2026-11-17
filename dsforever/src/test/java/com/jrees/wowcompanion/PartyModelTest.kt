@@ -241,10 +241,13 @@ class PartyModelTest {
         s.onParty(party(), current = false, now = 0L)                // a replayed party: shown, nothing asked
         assertNotNull(s.party)
         assertFalse(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = false, now = 0L))   // not live: never
-        assertTrue(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 100L))
+        // Linux Streaming Edition (tell memory): FIRST_DOC waits FIRST_GRACE_MS after the first current document for the add-on's own
+        assertFalse(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 100L))      // the grace starts
+        assertFalse(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 5_000L))    // still inside it
+        assertTrue(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 5_100L))     // no party came: asked
         assertFalse(s.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 20_000L))   // once
-        assertFalse(s.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 5_000L))   // 10 s apart
-        assertTrue(s.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 10_100L))
+        assertFalse(s.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 10_000L))  // 10 s apart
+        assertTrue(s.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 15_200L))
         s.onCfg(cfg(), current = true)
         assertFalse(s.shouldAsk(PartyModel.Ask.PARTY_ON, live = true, now = 40_000L))    // cfg is of this session
         s.newSession()
@@ -254,5 +257,15 @@ class PartyModelTest {
         assertFalse(t.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 0L))
         // 2026-11-04: with a current party document, Home's return asks nothing (each ask is a click)
         assertFalse(t.shouldAsk(PartyModel.Ask.HOME_SHOWN, live = true, now = 60_000L))
+        // tell memory: the add-on's party document landing inside the grace means no click at all
+        val u = PartyModel.State()
+        assertFalse(u.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 0L))
+        u.onParty(party(), current = true, now = 2_000L)
+        assertFalse(u.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 6_000L))
+        // a new session starts a new grace
+        u.newSession()
+        val v = PartyModel.State(); v.newSession()
+        assertFalse(v.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 50_000L))
+        assertTrue(v.shouldAsk(PartyModel.Ask.FIRST_DOC, live = true, now = 55_000L))
     }
 }
