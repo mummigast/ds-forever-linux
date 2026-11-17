@@ -1,6 +1,7 @@
 # Safety, rules and licences
 
-What the Linux helper does and doesn't do, so you can decide whether to use it. Reviewed 2026-11-16 against helper 0.2.
+What the Linux helper (and the Streaming Edition app with it) does and doesn't do, so you can decide whether to use it.
+Reviewed 2026-11-17.
 This is a plain-language summary, not legal advice.
 
 ## Blizzard: EULA, Terms of Use and the UI Add-On Development Policy
@@ -13,6 +14,7 @@ This is a plain-language summary, not legal advice.
 | Add-ons: free, readable code, no ads, no donation requests | The add-ons it installs are DS Forever's own, unchanged and readable (GPL-3.0). The helper is free and its source is right here. |
 | Account security | The helper never asks for, reads, stores or types your Battle.net login. You sign in on the PC yourself. Use Blizzard's Authenticator. |
 | Starting the game | Uses Battle.net's own launch option (`--exec="launch WoWF"`), as DS Forever Desktop does. |
+| The app's clicks | As in DS Forever, the Thor app's bottom-screen buttons are mouse clicks (through Moonlight) on the add-ons' own hidden buttons: one press, one click. When it connects, the app also clicks the add-ons' layout switches a few times to set up its HUD (frames shown or hidden); that is interface setup, never a game action. |
 
 **Risk, honestly:** this is an unofficial tool that Blizzard has neither approved nor forbidden. It follows the lines
 Blizzard enforces (no automation, no memory access, no injection, one action per press), but Blizzard can change its
@@ -22,7 +24,8 @@ DS Forever's own add-on folders.
 ## What it changes on your PC
 
 - `~/.config/dsf-bridge/`: settings (`env`), paired Thors, the pairing code, its TLS certificate (private files, mode 600).
-- `~/.cache/dsf-bridge/`: DS Forever's add-ons downloaded from the upstream release, a temporary backup during updates.
+- `~/.cache/dsf-bridge/`: a temporary backup during add-on updates (and the upstream download, only if the helper runs
+  outside this repository).
 - `~/.local/bin/dsf-bridge`, `~/.config/systemd/user/dsf-bridge.service`.
 - In the game: only `Interface/AddOns/WowCompanion*` (DS Forever's add-ons). Never `WTF/`, Config.wtf, macros, key
   bindings or settings.
@@ -38,8 +41,8 @@ DS Forever's own add-on folders.
   from other sites (an `Origin` header other than localhost) are refused.
 - If you give it your Sunshine login (optional), it is used only for Sunshine's local API on 127.0.0.1 to enter the
   Moonlight PIN, and is kept in `~/.config/dsf-bridge/env` (mode 600).
-- Outgoing: only GitHub (upstream DS Forever's latest release, at most every 3 hours, verified with its SHA256SUMS) when
-  the add-ons need an update.
+- Outgoing: none in normal use (the add-ons come from this repository). Only a helper run outside the repository fetches
+  them from upstream DS Forever's latest release on GitHub (at most every 3 hours, verified with its SHA256SUMS).
 
 ## Licences
 
@@ -47,12 +50,9 @@ DS Forever's own add-on folders.
 |---|---|---|
 | This helper | GPL-3.0-or-later | `LICENSE` |
 | DS Forever's bridge protocol (`docs/STREAM_BRIDGE_PROTOCOL.md`) | GPL-3.0 | copied unchanged, credited |
-| DS Forever's add-ons (installed into the game) | GPL-3.0 | downloaded from upstream's release and installed unchanged, notices kept |
+| DS Forever's add-ons (installed into the game) | GPL-3.0 | DS Forever's own, from this repository, installed unchanged, notices kept |
 | [websockets](https://github.com/python-websockets/websockets) | BSD-3-Clause | installed by pip, not bundled |
-| DS Forever APK on the Thor | upstream's | get it from upstream's releases; **this project does not build or ship an APK** |
-
-DS Forever's `RELEASE_NOTICES.md` lists prebuilt parts of the APK whose redistribution rights are not cleared. That is
-why this project never redistributes the APK: you install upstream's official release yourself.
+| The Streaming Edition app on the Thor | GPL-3.0 (DS Forever's), dependencies their own | you build it from this repository; **this project hands out no APKs** (see ../FORK.md, *Sharing*) |
 
 Trademarks: World of Warcraft and Battle.net are trademarks of Blizzard Entertainment. Unofficial; not affiliated with
 or endorsed by Blizzard Entertainment, DS Forever, WoW Forever, GameNative, Valve or LizardByte (Sunshine).
