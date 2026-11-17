@@ -51,7 +51,8 @@ internal object StreamLook {
  * turns the selected digit, left / right moves, A = Pair, B = back, X = delete, LB / RB = the previous / next PC found.
  */
 internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, private val onBack: () -> Unit,
-                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit) : LinearLayout(ctx) {
+                           private val onQuality: () -> Unit, private val onPcStep: (Int) -> Unit,
+                           private val onAddress: () -> Unit = {}) : LinearLayout(ctx) {
     val entry = CodeEntry()
     private val boxes = List(CodeEntry.LENGTH) { StreamLook.text(ctx, 34f, bold = true) }
     private val pcLine = StreamLook.text(ctx, 16f, StreamLook.DIM)
@@ -80,7 +81,8 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "Back (B)") { onBack() }))
+        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "PC address…") { if (!busy) onAddress() },
+            StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
     }
 
