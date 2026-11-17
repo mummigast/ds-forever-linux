@@ -740,6 +740,7 @@ fun WoWForeverScreen(
         // keyed by the build too (regions fix): another region's build can carry the same version name
         val build = "${v.remoteVersion} ${v.remoteBuildConfig}"
         if (!v.isOutdated || autoUpdatedFor == build || isUpdating) return@LaunchedEffect
+        if (com.jrees.wowcompanion.StartMode.STREAM_ONLY) return@LaunchedEffect   // Linux Streaming Edition: never download a client onto the device
         autoUpdatedFor = build
         setupLog("update: starting by itself (${v.remoteVersion})")
         performUpdate()

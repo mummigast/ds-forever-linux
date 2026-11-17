@@ -34,7 +34,12 @@ object StartMode {
 
     /** the route of a fresh open: a shortcut's extra = its mode; the normal icon (no / an unknown extra) = the chooser, every time */
     fun resolve(shortcutExtra: String?): Route =
-        parse(shortcutExtra)?.let { Route.Into(it, By.SHORTCUT) } ?: Route.Chooser
+        if (STREAM_ONLY) Route.Into(Mode.STREAM, By.PICKED)
+        else parse(shortcutExtra)?.let { Route.Into(it, By.SHORTCUT) } ?: Route.Chooser
+
+    /** Linux Streaming Edition (2026-11-17, the user: "it should go straight to the stream button"): the app opens on Stream every
+     *  time; the chooser and the Local start-up checks (game client update, art build, Battle.net login) never run */
+    @JvmField var STREAM_ONLY = true
 
     /**
      * The launcher's activity was created ([current] the route this process already had, null = none yet). [recreated] = Android
@@ -44,6 +49,7 @@ object StartMode {
      */
     fun onCreate(current: Route?, extra: String?, recreated: Boolean, gameUp: Boolean, restarting: Boolean, busy: Boolean = false): Route? {
         if (current == null) return resolve(extra)
+        if (STREAM_ONLY) return null
         if (parse(extra) != null) return onShortcut(current, extra, gameUp, restarting, busy)
         if (recreated || gameUp || restarting || busy) return null
         return if (current == Route.Chooser) null else Route.Chooser
@@ -83,7 +89,7 @@ object StartMode {
      * restart is under way, or our login form is open (its own B closes it).
      */
     fun canGoBack(route: Route?, gameUp: Boolean, busy: Boolean, restarting: Boolean, loginFormOpen: Boolean): Boolean =
-        route is Route.Into && !gameUp && !busy && !restarting && !loginFormOpen
+        !STREAM_ONLY && route is Route.Into && !gameUp && !busy && !restarting && !loginFormOpen
 
     // ------------------------------------------------------------------ the required installs, per mode
 

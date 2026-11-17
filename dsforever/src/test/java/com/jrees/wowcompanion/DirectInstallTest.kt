@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DirectInstallTest {
+    init { StartMode.STREAM_ONLY = false }   // the upstream chooser behaviour; the Linux edition default is tested in StreamOnlyTest
     private val missing = SetupFlow.Inputs(path = "/g", folderFound = false)
 
     @Test fun aMissingGameOffersBoth() {
