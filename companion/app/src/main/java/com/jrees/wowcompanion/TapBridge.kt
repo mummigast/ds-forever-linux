@@ -60,7 +60,7 @@ object TapBridge {
     }
 
     /** the L1 key channel: OFF since the Alt+F4 closes (2026-10-09), see the batch send below */
-    private const val KEYS_ON = false
+    private const val KEYS_ON = true
 
     // ---------------------------------------------------------------- L1's handshake + sweep (TapPad pad10c)
     /** this game session's key token, from a CURRENT "padkeytest" answer to our click on keytest's cell 0; null = no keys */
