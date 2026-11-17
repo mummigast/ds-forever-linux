@@ -233,10 +233,16 @@ wow = wow_linux.WowState()
 ADDONS_DIR = GAME_DIR / "Interface" / "AddOns"
 addon_lock = asyncio.Lock()
 
+# the Streaming Edition's own copy: this helper lives in the app's repository, so its add-ons match the app that was built
+REPO_ADDONS = Path(__file__).resolve().parent.parent / "companion/app/src/main/assets/companion"
+
 def addon_source():
-    """DSF_ADDONS_SRC (a folder with manifest.txt + addons/), else upstream DS Forever's latest release (verified)."""
+    """DSF_ADDONS_SRC (a folder with manifest.txt + addons/), else the repository's own copy (the app built from the same
+    checkout), else upstream DS Forever's latest release (verified)."""
     if os.environ.get("DSF_ADDONS_SRC"):
         return Path(os.environ["DSF_ADDONS_SRC"])
+    if (REPO_ADDONS / "manifest.txt").is_file() and (REPO_ADDONS / "addons").is_dir():
+        return REPO_ADDONS
     return addons.fetch_upstream(log)
 
 async def addon_pass(force=False, allow_new=False, thor_set=0):

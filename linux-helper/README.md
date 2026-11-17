@@ -1,16 +1,17 @@
-# dsf-linux-helper: DS Forever on Linux
+# The Linux helper (DS Forever Linux Streaming Edition)
 
-**Unofficial.** Stream WoW Forever from a Linux PC to your AYN Thor with [DS Forever](https://github.com/Jreese702/DS-Forever).
+**Unofficial.** The PC half of the [DS Forever Linux Streaming Edition](../FORK.md): stream WoW Forever from a Linux PC
+to your AYN Thor, with DS Forever's companion on the bottom screen. Based on [DS Forever](https://github.com/Jreese702/DS-Forever).
 
-> **Status: early.** Works end to end against a simulated Thor; real-device testing is ongoing. Please
-> [open an issue](https://github.com/mummigast/ds-forever-linux/issues) with the output of `dsf-bridge doctor` if
-> something doesn't work.
+> **Status: a personal project.** Used and tested on one setup (KDE Plasma on Wayland, Steam/Proton, Sunshine Flatpak, an
+> AYN Thor at home and over WireGuard). Others are welcome to try it; there is no support. `dsf-bridge doctor` checks a setup.
 
 Play **World of Warcraft: Forever** on your **Linux PC** and stream it to an **AYN Thor**: the game on the top screen,
 DS Forever's touch companion (map, bags, quests, chat, party) on the bottom screen.
 
-**What you run:** the official **DS Forever app** on the Thor, plus this small **helper** on the PC. The helper replaces
-DS Forever Desktop, which only exists for Windows.
+**What you run:** the **DS Forever Linux Streaming** app on the Thor (built from this repository), plus this small
+**helper** on the PC. The helper replaces DS Forever Desktop, which only exists for Windows. Streaming from Windows, or
+WoW installed on the Thor itself: use the official DS Forever instead.
 
 ```
  Linux PC                                          AYN Thor
@@ -28,8 +29,12 @@ DS Forever Desktop, which only exists for Windows.
 - **Sunshine** ([Flatpak](https://flathub.org/apps/dev.lizardbyte.app.Sunshine) or your distro's package), set up and running.
 - **Python 3.10+** with venv, and **avahi** with its tools. Most desktops have them; otherwise install
   `python3-venv avahi-utils` (Debian/Ubuntu) or `avahi-tools` (Fedora).
-- PC and Thor on the **same home network**.
-- **DS Forever** installed on the Thor: the APK from [its releases](https://github.com/Jreese702/DS-Forever/releases/latest).
+- PC and Thor on the **same home network** for the first pairing (later also over a VPN such as WireGuard; or pair over the
+  VPN with **PC address…**).
+- The **DS Forever Linux Streaming** app on the Thor: build it with `./linux-build.sh` in the repository's root (see
+  [FORK.md](../FORK.md)) and install the APK. This repository does not hand out APKs.
+- On the Thor: window focus on **Top screen** (AYN's settings). With auto-lock, controller presses can go to the bottom
+  screen and stop reaching the game.
 
 ## Install (about a minute)
 
@@ -44,16 +49,17 @@ and shows a **pairing code**. Anything marked **FIX** comes with the exact comma
 
 ## Connect the Thor (once)
 
-0. **First start of DS Forever asks to install the game on the Thor: say yes (Install directly).** DS Forever builds the
-   bottom screen's maps and icons from the game's own files, so it needs a WoW Forever folder on the Thor even for
-   streaming, and offers *Streaming* only after its setup checks pass (about 250 MB to start, Wi-Fi and 60 GB free needed).
-1. On the Thor open **DS Forever → Streaming**. It finds your PC by itself.
+0. **First start asks to install the game on the Thor: say yes (Install directly).** The app builds the bottom screen's maps
+   and icons from the game's own files, so it needs a WoW Forever folder on the Thor even for streaming (about 250 MB to
+   start; it fetches more pieces as it builds). The indoor maps build while the app is open and you are not streaming.
+1. On the Thor open the app and press **Streaming**. It finds your PC by itself on the same network; over a VPN, use
+   **PC address…** and type the PC's LAN address.
 2. Type the **6-digit code**. To see it again: `dsf-bridge code`.
 3. The Thor then pairs its Moonlight with Sunshine using a **4-digit PIN**:
    open Sunshine's web page on the PC (`https://localhost:47990`), go to **PIN**, and type the PIN that
    `dsf-bridge code` shows (or the one on the Thor's screen).
    *Skip this step every time:* put your Sunshine login in `~/.config/dsf-bridge/env` (`SUNSHINE_USER=` / `SUNSHINE_PASS=`).
-4. Done. From now on: open DS Forever on the Thor and pick Streaming.
+4. Done. From now on: open the app on the Thor and press Streaming.
 
 ## What happens when you play
 
@@ -79,13 +85,15 @@ and shows a **pairing code**. Anything marked **FIX** comes with the exact comma
 
 | The Thor says | Try |
 |---|---|
-| "The PC isn't answering" / "Desktop isn't running" | `dsf-bridge doctor`: helper running? firewall open for 48210/tcp and mDNS? same network? |
-| "The stream works, but Desktop's bridge isn't answering" | the helper is down or blocked: `systemctl --user restart dsf-bridge`, check the firewall |
+| "The PC isn't answering" / "The Linux helper isn't running" | `dsf-bridge doctor`: helper running? firewall open for 48210/tcp and mDNS? same network? |
+| "The stream works, but the helper's bridge isn't answering" | the helper is down or blocked: `systemctl --user restart dsf-bridge`, check the firewall |
 | "Pair again" | `dsf-bridge code`, enter it on the Thor; Sunshine's PIN step again if asked |
 | Stuck on "Starting WoW on your PC" | Battle.net may want a sign-in or an update on the PC; or start WoW yourself once |
 | Bottom screen empty | add-ons missing: `dsf-bridge addons`, then `/reload` in the game |
 | Taps land in the wrong place | stream the monitor WoW is on, with WoW full screen |
-| Bottom-screen buttons react but do nothing in the game | in DS Forever's settings turn **DS WoW toolbar** on |
+| Bottom-screen buttons react but do nothing in the game | stream the monitor WoW is on, full screen, at the PC's native resolution; `/reload` in the game |
+| No PC found over a VPN | **PC address…** on the pairing screen, then the PC's LAN address |
+| Controller does nothing after reinstalling the app | restart Sunshine (it keeps the old controller slot): `systemctl --user restart app-dev.lizardbyte.app.Sunshine.service` for the Flatpak's user unit |
 | A/B and X/Y swapped in the game | the Thor sends its Nintendo-printed buttons by label: switch the Thor's own controller layout (Xbox / swap A-B) in AYN's settings, and set DS Forever's ABXY to Xbox |
 
 ## Other launchers (Lutris, Heroic, Bottles, plain Wine)
@@ -124,5 +132,5 @@ Protocol: `docs/STREAM_BRIDGE_PROTOCOL.md` (copied from DS Forever, GPL-3.0). Fi
 ## Credits
 
 [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702 and contributors (GPL-3.0): the Thor app, its add-ons
-and the bridge protocol this helper implements. This project is a Linux stand-in for its Windows-only DS Forever Desktop
-and is not affiliated with it.
+and the bridge protocol this helper implements. This helper is a Linux stand-in for its Windows-only DS Forever Desktop
+and is not affiliated with it. The add-ons it installs are DS Forever's own, from this repository (the same version as the app you built).
