@@ -18,6 +18,13 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
     }
 } else null
 
+// Linux Streaming Edition: what a streaming-only build leaves out (see FORK.md "What is left out")
+val localRuntime = (findProperty("localRuntime") as String?)?.toBoolean() ?: false
+val STREAM_ONLY_DROPPED_LIBS = listOf("libkgslshim.so", "libpulse.so", "libpulsecommon-13.0.so", "libpulsecore-13.0.so", "libsndfile.so",
+    "libltdl.so", "liblsfg-vk-layer.so", "libgnoverlay.so", "libgamenative_dns_v4mapped.so", "libevshim.so").map { "**/$it" }
+val STREAM_ONLY_DROPPED_ASSETS = listOf("<dir>bundled_components", "<dir>box86_64", "<dir>wowbox64", "<dir>wincomponents", "<dir>lsfg_vk",
+    "pulseaudio-gamenative-*.tzst", "redirect.tzst").map { "!$it" }
+
 android {
     namespace = "app.gamenative"
     compileSdk = 36
@@ -158,8 +165,13 @@ android {
             // 'extractNativeLibs' was not enough to keep the jniLibs and
             // the libs went missing after adding on-demand feature delivery
             useLegacyPackaging = true
+            // Linux Streaming Edition (2026-11-17): the local game container's prebuilt runtime is left out (streaming never runs it;
+            // these are also the inputs RELEASE_NOTICES.md lists as not cleared for redistribution). -PlocalRuntime=true keeps them.
+            if (!localRuntime) excludes += STREAM_ONLY_DROPPED_LIBS
         }
     }
+    // Linux Streaming Edition: the container's assets (Proton/DXVK/Turnip, box64, PulseAudio, redirect, Windows components, LSFG)
+    if (!localRuntime) androidResources { ignoreAssetsPatterns += STREAM_ONLY_DROPPED_ASSETS }
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
