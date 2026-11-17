@@ -1,14 +1,16 @@
-# DS Forever Linux Edition
+# DS Forever Linux Streaming Edition
 
 **Based on [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702.** Almost everything here is their work
-(and, before them, the WoW Forever for Android, GameNative, Pluvia and Winlator contributors). This fork only adds what
-is needed to stream WoW Forever from a **Linux PC** (Steam/Proton + Sunshine) to an AYN Thor, including over a VPN such
-as WireGuard.
+(and, before them, the WoW Forever for Android, GameNative, Pluvia and Winlator contributors).
 
-**A personal project.** It is made to work on one setup: a Linux PC with Steam/Proton and Sunshine, and an AYN Thor,
-at home or over WireGuard. Anyone is free to try it, build it and change it under the GPL-3.0, but it comes with no
-support, no promises and no warranty (GPL-3.0 sections 15-16). For everything that is not Linux-specific, use and
-support the official DS Forever. Please don't report problems with this fork to DS Forever's author.
+**For streaming from a Linux PC only.** This edition streams WoW Forever from a **Linux PC** (Steam/Proton + Sunshine)
+to an AYN Thor, at home or over a VPN such as WireGuard, with the Linux helper in `linux-helper/` in place of DS Forever
+Desktop. It is not meant for playing WoW installed on the Thor itself: **for that, and for streaming from Windows, use
+the official [DS Forever](https://github.com/Jreese702/DS-Forever)** - it does those better.
+
+**A personal project.** Made to work on one setup. Anyone is free to try it, build it and change it under the GPL-3.0, but it
+comes with no support, no promises and no warranty (GPL-3.0 sections 15-16). Please don't report problems with this fork to
+DS Forever's author.
 
 Unofficial: not affiliated with or endorsed by DS Forever's author, Blizzard Entertainment, WoW Forever or GameNative.
 World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you need your own game and account.
@@ -27,7 +29,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 
 | Change | Where |
 |---|---|
-| Own app ID `app.dsforever.companion.linux` and name "DS Forever Linux Edition": installs beside the official app | `app/build.gradle.kts`, `res/values*/strings.xml` |
+| Own app ID `app.dsforever.companion.linux` and name "DS Forever Linux Streaming": installs beside the official app | `app/build.gradle.kts`, `res/values*/strings.xml` |
 | Clicks land when streaming from Linux: a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
 | **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |

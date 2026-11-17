@@ -1,6 +1,7 @@
-> **DS Forever Linux Edition** — a personal fork of DS Forever for streaming from a Linux PC (and over a VPN).
-> Based on DS Forever by Jreese702; not the official app. What changed, the licence notes and the Linux build: see
-> [FORK.md](FORK.md). The original README follows unchanged.
+> **DS Forever Linux Streaming Edition** — a personal fork of DS Forever **for streaming WoW Forever from a Linux PC**
+> (Steam/Proton + Sunshine) to an AYN Thor, also over a VPN. Not for WoW installed on the Thor: for that, or for
+> streaming from Windows, use the official DS Forever. Based on DS Forever by Jreese702; not the official app.
+> Changes, licence notes and the Linux build: [FORK.md](FORK.md). The original README follows unchanged.
 
 # DS Forever
 
