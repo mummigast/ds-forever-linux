@@ -11,6 +11,9 @@ Newest first. Based on DS Forever 1.0.34 (upstream add-on set 402). What differs
   layout editor were affected).
 - The pairing screen fits the Thor's top screen (Stream quality, PC address and Back beside the keypad).
 - No "Save your Battle.net login" button: the PC signs in.
+- **Stream settings** in the start screen's Menu too, before a stream (it opens the quality page and connects when it closes).
+- A switch the game never answers retries every 30 s straight away once it is set aside (it got three quick taps first).
+- Three of this edition's fixes were offered to DS Forever as pull requests (#532 HUD memory, #533 switch backoff, #534 PC address).
 - Known: the XP bar switch does nothing yet; the Damage meter is untested.
 
 ## 2026-11-18: add-on set 407
