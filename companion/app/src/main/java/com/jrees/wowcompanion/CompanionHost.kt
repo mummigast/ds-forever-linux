@@ -3555,7 +3555,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val oneApp = LauncherHooks.pkg != null
         if (oneApp && s.realm) NativeLogin.clear(this)       // the native sign-in done: login.txt goes now at the latest (backstop)
         // the watcher's inWorld stays set for the run without root (its "back at login" needs root): out of the world = NativeLogin's
-        if (if (oneApp) (native == null && loginNote == null) || !s.clientUp || (s.inWorld && !NativeLogin.outOfWorld) || reloadAt != 0L
+        // Linux Streaming Edition (2026-11-18, Thor: "save your battle.net login" showed after Streaming): no Battle.net row at all; the PC signs in
+        if (ChooserPanel.STREAM_ONLY || if (oneApp) (native == null && loginNote == null) || !s.clientUp || (s.inWorld && !NativeLogin.outOfWorld) || reloadAt != 0L
             else !s.showRow || reloadAt != 0L) {
             startView.login = StartView.Login.NONE
             startView.loginBusy = false
