@@ -25,7 +25,7 @@ if ENV_FILE.exists():
             os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
 
 import websockets
-import wow_linux
+import paircode, wow_linux
 import addons
 from websockets.asyncio.server import serve
 
@@ -223,6 +223,8 @@ def new_code():
         misses.pop(ip)                              # a new code: full attempts again, except addresses still locked out
     pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
+    net = paircode.encode_tail(lan_addresses(), PORT)
+    if net: log(f"*** Other network (Thor on WireGuard / another subnet): {paircode.groups(net)} ***")
     code_file = STATE.parent / "pairing-code.txt"
     write_private(code_file, pairing["code"] + "\n")
 
@@ -874,6 +876,8 @@ def cli():
         f = STATE.parent / "pairing-code.txt"
         if f.exists() and subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True).returncode == 0:
             c = f.read_text().strip(); print(f"Pairing code: {c[:3]} {c[3:]}")
+            net = paircode.encode_tail(lan_addresses(), PORT)
+            if net: print(f"Other network (Thor on WireGuard / another subnet): {paircode.groups(net)}")
             pf = STATE.parent / "moonlight-pin.txt"
             if pf.exists() and time.time() - pf.stat().st_mtime < 600:
                 print(f"Moonlight PIN for Sunshine (last pairing): {pf.read_text().strip()}  → https://localhost:{SUNSHINE_WEB} → PIN")

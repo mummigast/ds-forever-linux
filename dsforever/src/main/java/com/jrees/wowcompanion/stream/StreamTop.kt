@@ -19,6 +19,8 @@ import com.jrees.wowcompanion.PlayMode
 import com.jrees.wowcompanion.PlayModes
 import com.jrees.wowcompanion.PopupHold
 import com.jrees.wowcompanion.SetupBridge
+import com.jrees.wowcompanion.StreamSettingsLink
+import com.jrees.wowcompanion.StreamTest
 import com.jrees.wowcompanion.fork.DsForeverScreen
 import java.util.concurrent.Executors
 
@@ -29,11 +31,16 @@ import java.util.concurrent.Executors
  * PC's log: PlayModes / BridgeLog), the controller goes to the PC as an Xbox pad.
  *
  * Screens before the stream runs (the controller and touch drive them; nothing reaches the PC then):
- *  - PAIRING: "Enter the code shown in the Linux helper" (first time, or "Pair again"); a PC with a plain Sunshine shows a PIN for
+ *  - PAIRING: "Enter the code shown in DS Forever Desktop" (first time, or "Pair again"); a PC with a plain Sunshine shows a PIN for
  *    Sunshine's own page instead (the first test needs no Desktop);
  *  - CONNECTING, then PROBLEM: why it failed (Diagnosis) with Retry / Pair again / Stream quality / Back, retrying by itself
  *    (ReconnectPolicy) and at once when the network changes;
- *  - QUALITY: "Stream quality".
+ *  - QUALITY: "Stream quality", only while Streaming's placeholder covers the bottom screen (no PC paired: the pairing's Y).
+ * THE STREAM'S SETTINGS ARE THE BOTTOM SCREEN'S (the user, 2026-11-18 on test 1488: "the streaming settings appear on the top screen and
+ * the controller inputs get all wacky, they should probably appear on the bottom screen in the stream settings box"): Settings >
+ * Performance > Stream settings reads and writes them through [settingsLink] (quality, Defaults, Test connection); every Y / "Stream
+ * quality" here opens that band (SetupBridge.openStreamSettings). While it is open over the waiting screen (no game in the world to
+ * hold the pad for the room) every press goes to it ([SetupBridge.streamPadHolds]), none to the PC.
  * While STREAMING every pad press goes to the PC, except while one of our pop-ups holds the pad (PopupHold, as the launcher does);
  * DS Forever's own readers get a copy of every press (PadFeed), exactly as in Local.
  */
@@ -71,6 +78,26 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private lateinit var status: StatusView
     private var qualityView: QualityView? = null
     private var qualityAtOpen = StreamQuality()
+    /** the bottom screen's Stream settings band is open */
+    @Volatile private var bandOpen = false
+    /** the test's rows for that band (null = none this visit) */
+    @Volatile private var bandTest: StreamTest? = null
+    /** the presses held for the bottom screen's band (SetupBridge.streamPadHolds) at the last press: the PC's pad let go on the change */
+    private var padForBand = false
+    private val bandPadNames = SignInPad()
+
+    /** the stream's settings as the bottom screen's band sees them ([StreamSettingsLink]): what they do is unchanged (the old page's) */
+    private val settingsLink = object : StreamSettingsLink {
+        override fun quality(): StreamQuality = playable()
+        override fun can120(q: StreamQuality): Boolean = this@StreamTop.can120(q)
+        override fun change(q: StreamQuality) { quality = q; StreamQuality.save(activity, q); SetupBridge.streamSettingsChanged() }
+        override fun opened() { bandOpen = true; qualityAtOpen = quality; bandTest = null; testRan = false; Log.i(TAG, "stream settings: open (bottom screen)") }
+        override fun closed() { bandOpen = false; bandDone() }
+        override fun test() { if (bandOpen) runTest(bandOut) }
+        override fun tested(): StreamTest? = bandTest
+        override fun restartsOnClose(): Boolean = bandOpen && screen == Screen.STREAMING && session != null && quality != qualityAtOpen
+        override fun say(line: String): String = TestView.trHead(line)
+    }
     private var screen = Screen.CONNECTING
     private var beforeQuality = Screen.CONNECTING
 
@@ -105,13 +132,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         view.addView(mask, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         curtainView = com.jrees.wowcompanion.LoadingTopView(activity).apply {
             curtain = { (shows() as? StreamCurtain.Shows.Curtain)?.let { it.rows to it.line } }
-            setOnTouchListener { _, _ -> true }
+            // Desktop 0.2.36's update of the PC game: its bar under its row
+            curtainBars = { (shows() as? StreamCurtain.Shows.Curtain)?.bars.orEmpty() }
+            // a tap on a stop is its Retry, as A is (the user's ruling 2026-11-18)
+            setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_UP && retryShown()) wowRetry("a tap"); true }
             contentDescription = "Starting WoW on your PC"
         }
         view.addView(curtainView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         overlay = FrameLayout(activity)
         view.addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) }, onAddress = { askAddress() })
+        pairing = PairingView(activity, onPair = { pair(it) }, onBack = { back() }, onQuality = { openQuality() }, onPcStep = { stepPc(it) })
         status = StatusView(activity, onRetry = { retryNow(byHand = true) }, onPairAgain = { show(Screen.PAIRING) }, onQuality = { openQuality() }, onBack = { back() })
         overlay.centered(pairing, 640f)
         overlay.centered(status, 760f)
@@ -264,10 +294,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     fun opened() {
         if (isOpen) return
         isOpen = true
+        SetupBridge.streamSettings = settingsLink
         host = store.host()
         // the companion on the bottom screen, reading the PC's log through the bridge (Local is untouched: PlayModes defaults to it)
         applyMode()
-        discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> seenPcs = pcs; found = withManual(pcs); onFound() }.also { it.start() }
+        discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> found = pcs; onFound() }.also { it.start() }
         watchNetwork()
         if (!MoonBridge.loaded) { problem("Streaming isn't in this build", "This DS Forever was built without Moonlight's core.", auto = false); return }
         if (host == null) { SetupBridge.qualityFirst = false; show(Screen.PAIRING) }
@@ -284,6 +315,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     fun closed() {
         if (!isOpen) return
         isOpen = false
+        bandOpen = false; bandTest = null; padForBand = false
+        SetupBridge.streamSettings = null
         stopStream("leaving")
         discovery?.stop(); discovery = null
         netCallback?.let { try { activity.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Throwable) {} }
@@ -322,7 +355,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 gameAccount = { gameAccount() },
-                streamMode = { playable().let { Triple(it.width, it.height, it.fps) } }).also { bridge = it }
+                streamMode = { playable().let { Triple(it.width, it.height, it.fps) } },
+                // settings follow (2026-11-18): our kept tables to and from the PC, only down a pinned wss connection (as the login)
+                svDir = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
 
@@ -571,7 +607,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
-        SetupBridge.openStreamSettings = { main.post { openQuality() } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -660,6 +695,34 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (host == null) show(Screen.PAIRING) else connect()
     }
 
+    /** the curtain shows Desktop's stop with its Retry ([StreamCurtain.stopLine]) */
+    private fun retryShown(): Boolean = (screen == Screen.STREAMING || screen == Screen.CONNECTING) &&
+        (shows() as? StreamCurtain.Shows.Curtain)?.retry == true
+    /** the curtain shows Desktop's update of the PC game with its Cancel (B) ([StreamCurtain.patchShows]) */
+    private fun cancelShown(): Boolean = (screen == Screen.STREAMING || screen == Screen.CONNECTING) &&
+        (shows() as? StreamCurtain.Shows.Curtain)?.cancel == true
+    private var patchCancelAt = 0L
+
+    /** the player's Cancel (B) on the update's bar: Desktop stops it (the old game stays as it was) */
+    private fun patchCancel() {
+        val now = System.currentTimeMillis()
+        if (now - patchCancelAt < WOW_RETRY_GAP_MS) return
+        patchCancelAt = now
+        Log.i(TAG, "PC: Cancel (B): the game update stops")
+        worker.execute { if (bridge?.patchCancel() != true) Log.i(TAG, "PC: Cancel not sent (no bridge connection)") }
+    }
+    private var wowRetryAt = 0L
+
+    /** the player's Retry after Desktop stopped: WoW once more on the PC (one press = one restart; a press within
+     *  [WOW_RETRY_GAP_MS] of the last is the same press) */
+    private fun wowRetry(how: String) {
+        val now = System.currentTimeMillis()
+        if (now - wowRetryAt < WOW_RETRY_GAP_MS) return
+        wowRetryAt = now
+        Log.i(TAG, "PC: Retry ($how): WoW once more")
+        worker.execute { if (bridge?.wowRetry() != true) Log.i(TAG, "PC: Retry not sent (no bridge connection)") }
+    }
+
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }
         teardown()
@@ -671,7 +734,6 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = 0
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
-        SetupBridge.openStreamSettings = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null
@@ -743,78 +805,52 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         })
     }
 
-    // Linux Edition (added 2026-11-17): a PC typed in by address, for a Thor on a VPN (WireGuard) where the mDNS advert cannot reach. The Linux helper
-    // answers GET /v1/info on its bridge port with what the advert's TXT would carry (name, id, Sunshine port, TLS fingerprint).
-    private var seenPcs: List<FoundPc> = emptyList()
-    private var manualPc: FoundPc? = null
-
-    private fun withManual(pcs: List<FoundPc>): List<FoundPc> {
-        val m = manualPc ?: return pcs
-        return if (pcs.any { it.address == m.address || (m.desktopId.isNotEmpty() && it.desktopId == m.desktopId) }) pcs else listOf(m) + pcs
-    }
-
-    private fun askAddress() {
-        val prefs = activity.getSharedPreferences(HostStore.PREFS, android.content.Context.MODE_PRIVATE)
-        val edit = android.widget.EditText(activity).apply {
-            setSingleLine(); hint = "192.168.1.10  or  192.168.1.10:48210"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-            setText(prefs.getString(KEY_MANUAL_ADDR, "")); setSelection(text.length)
-        }
-        android.app.AlertDialog.Builder(activity).setTitle("PC address").setView(edit)
-            .setPositiveButton("Find") { _, _ ->
-                val a = edit.text.toString().trim()
-                if (a.isNotEmpty()) { prefs.edit().putString(KEY_MANUAL_ADDR, a).apply(); lookUp(a) }
-            }
-            .setNegativeButton("Cancel", null).show()
-    }
-
-    private fun lookUp(typed: String) {
-        val hostPart = typed.substringBefore(':').trim()
-        val port = typed.substringAfter(':', "").trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: MANUAL_PORT
-        if (!Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(hostPart) || hostPart.split('.').any { it.toInt() > 255 }) {
-            pairing.setMessage("Type the PC's IPv4 address, like 192.168.1.10"); return
-        }
-        pairing.setMessage("Looking for the PC at $hostPart…")
-        worker.execute {
-            val pc = try {
-                val c = java.net.URL("http://$hostPart:$port/v1/info").openConnection() as java.net.HttpURLConnection
-                c.connectTimeout = 4000; c.readTimeout = 4000
-                try {
-                    if (c.responseCode != 200) null else {
-                        val o = org.json.JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-                        val sun = o.optJSONObject("sunshine")?.optInt("http_port", 0) ?: 0
-                        val txt = buildMap {
-                            put("pc", o.optString("pc_name")); put("id", o.optString("host_id"))
-                            if (sun > 0) put("sunshine", sun.toString())
-                            if (o.optBoolean("tls")) { put("tls", "1"); put("fp", o.optString("fp")) }
-                        }
-                        val bp = o.optInt("bridge_port", port).takeIf { it in 1..65535 } ?: port
-                        FoundPcs.merge(listOf(Advert(FoundPcs.DSFOREVER, o.optString("pc_name").ifBlank { hostPart }, hostPart, bp, txt))).firstOrNull()
-                    }
-                } finally { c.disconnect() }
-            } catch (t: Throwable) { Log.w(TAG, "manual PC $hostPart:$port: ${t.javaClass.simpleName}"); null }
-            main.post {
-                if (pc == null) { pairing.setMessage("No DS Forever helper answered at $hostPart:$port"); return@post }
-                manualPc = pc
-                found = withManual(seenPcs)
-                pcIndex = found.indexOfFirst { it.address == pc.address }.coerceAtLeast(0)
-                pairing.setMessage("")
-                onFound()
-            }
-        }
-    }
-
     private fun stepPc(by: Int) { if (found.isNotEmpty()) { pcIndex = ((pcIndex + by) % found.size + found.size) % found.size; showPc() } }
 
     private fun pair(code: String) {
-        val pc = selectedPc() ?: run { pairing.setMessage("No PC found yet: is the Linux helper running, on the same Wi-Fi? Over a VPN: PC address…"); return }
+        // the Other network code (PairCode; the user's picks 2026-11-18, design B): a PC mDNS can't see is dialled there
+        val parsed = PairCode.parse(code)
+        if (parsed != null && parsed.hasAddress) { pairByAddress(code, parsed); return }
+        // no PC on this network: the Other network row opens by itself, "PC not found" under it
+        val pc = selectedPc() ?: run { pairing.notFound(); return }
         if (!pc.hasBridge) { pairPlain(pc); return }
+        pairWith(pc, code)
+    }
+
+    private fun pairWith(pc: FoundPc, code: String) {
         pairing.busy = true
         pairing.setMessage("")
         worker.execute {
             val id = store.identity()
             val flow = StreamPairing(RealPairSteps(id, store.clientId())) { s -> main.post { pairState(s) } }
             flow.pairWithCode(pc, code, NetProbe.subnet(activity))
+        }
+    }
+
+    /** a code with the PC's address: the PC mDNS found there, else Desktop's /v1/info at that address (all asked at once), else the
+     *  picked PC; nothing = "PC not reachable at ..." */
+    private fun pairByAddress(code: String, parsed: PairCode.Parsed) {
+        val seen = found; val picked = selectedPc()
+        pairing.busy = true
+        pairing.setMessage("")
+        worker.execute {
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(parsed.addresses.size.coerceIn(1, 2))
+            val asks = parsed.addresses.associateWith { a -> pool.submit<String?> { NetProbe.bridgeInfo(a, parsed.bridgePort, PAIR_INFO_MS) } }
+            val t = try {
+                PairCode.target(parsed, seen, picked) { a ->
+                    try { asks[a]?.get(PAIR_INFO_MS * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: Throwable) { null }
+                }
+            } finally { pool.shutdownNow() }
+            main.post {
+                when (t) {
+                    is PairCode.Target.Use -> {
+                        if (t.byCode) Log.i(TAG, "pairing: ${t.pc.name} at the code's address ${t.pc.address}:${t.pc.bridgePort}")
+                        if (!t.pc.hasBridge) { pairing.busy = false; pairPlain(t.pc) } else pairWith(t.pc, code)
+                    }
+                    is PairCode.Target.NotReachable -> { pairing.busy = false; pairing.setMessage(com.jrees.wowcompanion.Tr.t(PairCode.notReachable(t.addresses))) }
+                    PairCode.Target.NoPc -> pairing.notFound()
+                }
+            }
         }
     }
 
@@ -865,9 +901,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         when (s) {
             is StreamPairing.State.Working -> pairing.setMessage(s.what)
             is StreamPairing.State.ShowPin -> status.show("Pair with Sunshine", "On the PC, open Sunshine's PIN page and enter:\n\n${s.pin}",
-                "No Linux helper on this PC: the stream works, the companion's live data needs the helper.", withButtons = false)
+                "No DS Forever Desktop on this PC: the stream works, the companion's live data needs Desktop.", withButtons = false)
             is StreamPairing.State.BadCode -> { pairing.busy = false; pairing.setMessage(s.message) }
-            is StreamPairing.State.WrongCode -> { pairing.busy = false; pairing.reset()
+            is StreamPairing.State.WrongCode -> { pairing.busy = false; pairing.reset(keepOther = true)
                 pairing.setMessage("That's not the code on the PC.${if (s.triesLeft >= 0) " ${s.triesLeft} tries left." else ""}") }
             is StreamPairing.State.Failed -> { pairing.busy = false
                 if (screen == Screen.PIN) { show(Screen.PAIRING) }
@@ -898,7 +934,78 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         applyCurtain()
     }
 
+    /** Y / "Stream quality": the bottom screen's Stream settings band (every route the same); the top screen's page only while
+     *  Streaming's placeholder covers the bottom screen (no PC paired yet: the pairing) */
     private fun openQuality() {
+        val bottom = SetupBridge.openStreamSettings
+        if (bottom != null && !com.jrees.wowcompanion.ModeBridge.streamCovers) { bottom(); return }
+        openQualityTop()
+    }
+
+    /** the band closed: a change made while streaming applies now (the stream connects again, the game on the PC keeps running); a test
+     *  still running stops; a test run meanwhile connects again (the old page's Done) */
+    private fun bandDone() {
+        if (testThread?.isAlive == true) { testCancel = true; testSession?.stop(); synchronized(pcTestGate) { pcTestGate.notifyAll() } }
+        bandTest = null
+        val tested = testRan
+        testRan = false
+        Log.i(TAG, "stream settings: closed (${if (quality != qualityAtOpen) "changed: ${quality.label}" else "no change"})")
+        if (screen == Screen.STREAMING && quality != qualityAtOpen && session != null) {
+            stopStream("stream settings changed")
+            retryNow()
+        } else if (tested && session == null && host != null && screen != Screen.PAIRING && screen != Screen.PIN && screen != Screen.QUALITY &&
+            screen != Screen.TEST) {
+            show(Screen.CONNECTING)
+            retryNow()
+        }
+    }
+
+    /** the bottom band's test rows, as TestView shows them on the top screen (built off the test's thread, read by the band's draw) */
+    private val bandOut = object : TestOut {
+        private val rows = LinkedHashMap<ConnTest.Step, StreamTest.Row>()
+        private var reason = ""
+        private var fix = ""
+        private var running = false
+        private fun publish() {
+            val t = synchronized(rows) { StreamTest(rows.values.toList(), reason, fix, running) }
+            if (!bandOpen) return
+            bandTest = t
+            SetupBridge.streamSettingsChanged()
+        }
+        override fun clear() {
+            synchronized(rows) { rows.clear(); for (s in ConnTest.Step.values()) rows[s] = StreamTest.Row(s.label, "", StreamTest.Mark.WAIT)
+                reason = ""; fix = ""; running = true }
+            publish()
+        }
+        override fun working(s: ConnTest.Step) { synchronized(rows) { rows[s] = StreamTest.Row(s.label, "", StreamTest.Mark.WORKING) }; publish() }
+        override fun result(r: ConnTest.Result) {
+            synchronized(rows) {
+                rows[r.step] = StreamTest.Row(r.step.label, r.line, when (r.state) {
+                    ConnTest.State.PASS -> StreamTest.Mark.PASS; ConnTest.State.FAIL -> StreamTest.Mark.FAIL
+                    ConnTest.State.SKIP -> StreamTest.Mark.SKIP; ConnTest.State.NOT_RUN -> StreamTest.Mark.WAIT })
+                if (r.state == ConnTest.State.FAIL) { reason = r.line; fix = r.fix }
+            }
+            publish()
+        }
+        override fun done() { synchronized(rows) { running = false }; publish() }
+    }
+
+    /** where a test's rows go: the top screen's TestView (the pairing's page) or the bottom screen's band ([bandOut]) */
+    private interface TestOut {
+        fun clear()
+        fun working(s: ConnTest.Step)
+        fun result(r: ConnTest.Result)
+        fun done()
+    }
+    private fun topOut(v: TestView) = object : TestOut {
+        override fun clear() { v.clear() }
+        override fun working(s: ConnTest.Step) { v.working(s) }
+        override fun result(r: ConnTest.Result) { v.result(r) }
+        override fun done() { v.done() }
+    }
+
+    /** the top screen's "Stream quality" page (the pairing, while the bottom screen shows Streaming's placeholder) */
+    private fun openQualityTop() {
         if (screen == Screen.QUALITY) return
         beforeQuality = screen
         qualityAtOpen = quality
@@ -954,10 +1061,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun openTest() {
-        val v = testView ?: TestView(activity, onRun = { runTest() }, onClose = { closeTest() }).also { testView = it; overlay.centered(it, 680f) }
+        val v = testView ?: TestView(activity, onRun = { testView?.let { runTest(topOut(it)) } }, onClose = { closeTest() })
+            .also { testView = it; overlay.centered(it, 680f) }
         show(Screen.TEST)
         v.bringToFront()
-        runTest()
+        runTest(topOut(v))
     }
 
     private fun closeTest() {
@@ -967,8 +1075,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (qualityView != null) { show(Screen.QUALITY); qualityView?.bringToFront() } else show(beforeQuality)
     }
 
-    private fun runTest() {
-        val v = testView ?: return
+    private fun runTest(v: TestOut) {
         if (testThread?.isAlive == true) return
         testCancel = false
         testRan = true
@@ -1109,9 +1216,27 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) boardPad.name(e.keyCode)?.let { DsForeverScreen.current?.signInPress(it) }
             return true
         }
+        // the bottom screen's Stream settings over the waiting screen holds the pad: every press to it, none to the PC or our readers
+        if (bandHolds() && ((gamepad && StreamPad.isPadKey(e.keyCode)) || e.keyCode == KeyEvent.KEYCODE_BACK)) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0)
+                (if (e.keyCode == KeyEvent.KEYCODE_BACK) "PAD2" else bandPadNames.name(e.keyCode))?.let { SetupBridge.streamPad?.invoke(it) }
+            return true
+        }
         if (gamepad) PadFeed.key(e)                          // DS Forever's own readers: a copy of every press, as in Local
         com.jrees.wowcompanion.PadDiag.key(e, gamepad, if (screen == Screen.STREAMING) "stream" else "stream's own screens")   // #116
         val down = e.action == KeyEvent.ACTION_DOWN
+        // Desktop stopped (a server error, an outdated PC game) and the curtain says why: A is its Retry, nothing reaches the PC
+        // Desktop updates the PC game and the curtain shows its bar: B is its Cancel, nothing reaches the PC
+        if (gamepad && cancelShown()) {
+            if (down && e.repeatCount == 0 && (e.keyCode == KeyEvent.KEYCODE_BUTTON_B || e.keyCode == KeyEvent.KEYCODE_BACK)) patchCancel()
+            if (StreamPad.isPadKey(e.keyCode) || e.keyCode == KeyEvent.KEYCODE_BACK) return true
+        }
+        if (gamepad && (screen == Screen.STREAMING || screen == Screen.CONNECTING) && retryShown()) {
+            if (down && e.repeatCount == 0 && e.keyCode == KeyEvent.KEYCODE_BUTTON_A) wowRetry("A")
+            // B still leaves the connecting screen; on the stream every pad key stays here
+            val leaves = screen == Screen.CONNECTING && (e.keyCode == KeyEvent.KEYCODE_BUTTON_B || e.keyCode == KeyEvent.KEYCODE_BACK)
+            if (StreamPad.isPadKey(e.keyCode) && !leaves) return true
+        }
         if (screen != Screen.STREAMING) {
             if (down && e.repeatCount == 0 && overlayKey(e.keyCode)) return true
             return gamepad || e.keyCode == KeyEvent.KEYCODE_BACK      // nothing reaches the PC from our own screens
@@ -1124,6 +1249,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             return true
         }
         return false
+    }
+
+    /** the bottom screen's Stream settings holds the pad now; on the change the PC's pad lets go (no press stays down there) */
+    private fun bandHolds(): Boolean {
+        val h = SetupBridge.streamPadHolds()
+        if (h != padForBand) {
+            padForBand = h
+            if (h && keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
+        }
+        return h
     }
 
     private fun overlayKey(code: Int): Boolean = when (screen) {
@@ -1147,6 +1282,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (boardUp) {
             boardPad.axes(hx, hy, maxOf(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE)),
                 maxOf(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))).forEach { DsForeverScreen.current?.signInPress(it) }
+            return true
+        }
+        if (bandHolds()) {                                   // the hat as the D-pad for the bottom screen's Stream settings
+            bandPadNames.axes(hx, hy, 0f, 0f).forEach { SetupBridge.streamPad?.invoke(it) }
             return true
         }
         PadFeed.motion(e)
@@ -1221,9 +1360,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     companion object {
-        const val KEY_MANUAL_ADDR = "manual_pc_address"
-        const val MANUAL_PORT = 48210
         const val TAG = "DSFSTREAM"
+        /** the wait for /v1/info at a pairing code's address (a VPN's first packet can be slow) */
+        const val PAIR_INFO_MS = 2_500
         /** a zoomed window fills this share of the screen at most, and is magnified at most [ZOOM_MAX] x */
         const val ZOOM_FILL = 0.92f
         const val ZOOM_MAX = 3f
@@ -1235,8 +1374,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         const val RTSP_OFFSET = 21
         /** Backspaces before each box is typed (the box may hold what the player started) */
         const val CLEAR_KEYS = 16
+        /** presses closer than this are one Retry (Desktop's answer takes a moment to lift the stop) */
+        const val WOW_RETRY_GAP_MS = 4_000L
         private val SIGN_IN_LINES = setOf(StreamCurtain.SIGN_IN, StreamCurtain.NEEDS_YOU, StreamCurtain.UPDATE, StreamCurtain.CRASHED,
-            StreamCurtain.REGION_REFUSED)
+            StreamCurtain.CONNECT_FAILED)
     }
 }
 

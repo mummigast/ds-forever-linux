@@ -625,6 +625,9 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
+        // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
+        if (HomeOverlayB.owns(classOpen || overlayOpen?.invoke() == true, overlayClosedAt, android.os.SystemClock.uptimeMillis())) return
         // ClassPetKeys (the user, 2026-11-16: "B still makes a lot of sense to use here"; then "the glyph locations on this bar should
         // match where they actually are on the controller"): on a class pet wheel with an ability on B's spot (the physical button the
         // ABXY location puts B on) B is that ability's toggle - it never reaches the game and is nothing of Home's (no shrink, no close)
@@ -649,6 +652,12 @@ class HomeView(
         }
         else if (flow.close()) { changed(); onBHome?.invoke() }
     }
+
+    /** #540: the host's word that one of its overlays over Home is open now (the item / spell wheel, the pause / context radial, the bar cursor) */
+    var overlayOpen: (() -> Boolean)? = null
+    private var overlayClosedAt = 0L
+    /** #540: the host: one of those overlays closed just now (its B may reach [onB] after its own reader closed it) */
+    fun overlayClosed() { overlayClosedAt = android.os.SystemClock.uptimeMillis() }
 
     /** B took a full module or the buff list back to Home's rest while the disc showed B: the disc's press (MainActivity: strip.homePressed) */
     var onBHome: (() -> Unit)? = null
@@ -923,7 +932,7 @@ class HomeView(
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
     fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
-    /** Smart pet's B half (SmartPet; was B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
+    /** B: pet recall's rest-layout B (PetRecall; was Smart pet / B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
     fun bClosesSomething(): Boolean = flow.full != null || auraPane.open != null || typeWanted || mailOpen

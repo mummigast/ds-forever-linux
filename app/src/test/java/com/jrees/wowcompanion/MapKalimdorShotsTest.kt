@@ -188,6 +188,9 @@ class MapKalimdorShotsTest {
         art(minimapK)
         HomeSettings.init(app)
         Settings.init(app)
+        // the untracked quests' grey discs are what these cases look at: their filter switched ON here (the user, 2026-11-17: "Untracked
+        // should be toggle off by default in the filters" - off by default now; QuestLayersTest holds the default)
+        app.getSharedPreferences("mapfilters", android.content.Context.MODE_PRIVATE).edit().putBoolean(QuestLayers.Layer.OTHER.key, true).commit()
         val act = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
         val top = FrameLayout(act)
         act.setContentView(top)

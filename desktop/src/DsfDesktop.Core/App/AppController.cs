@@ -12,6 +12,7 @@ using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
 using DsfDesktop.Sunshine;
 using DsfDesktop.Wow;
+using DsfDesktop.Wow.Patch;
 
 namespace DsfDesktop.App
 {
@@ -51,8 +52,7 @@ namespace DsfDesktop.App
         public string HostProblem => Sunshine != null && Sunshine.Exited ? "exited" : HealProblem ?? Ports?.Problem ?? ScreenProblem;
         public string HostWhy => Sunshine != null && Sunshine.Exited ? "pc busy: the streaming host stopped"
             : HealProblem == ProblemNotResponding ? WhyNotResponding : HealProblem == ProblemRestarting ? WhyRestarting
-            : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem == ScreenPlan.ProblemNeedsScreen ? ScreenPlan.ThorNeedsScreen
-            : ScreenProblem == ScreenPlan.ProblemNoScreen ? ScreenPlan.ThorNoScreen : "";
+            : Ports?.Problem != null ? Ports.ThorWhy : ScreenProblem != null ? ScreenPlan.ThorNeedsScreen : "";
 
         public event Action Changed;
 
@@ -82,6 +82,9 @@ namespace DsfDesktop.App
             SaveSettings();
             Devices = new DeviceStore(paths.Devices);
             MakeStarter();
+            ConfigKeep = new WowConfigKeep(Path.Combine(paths.DataDir, "wowconfig"), WowWindow.ProcessRunning,
+                () => Stream == StreamState.Streaming || Starter.State == WowState.Starting);
+            ScreenKeep = new DisplayKeep(Path.Combine(paths.DataDir, "display_keep.json"), new VddScreen.Native());
             MakeSupervisor();
             var adbPath = DsfDesktop.Thor.AdbProcess.Locate(paths.AppDir);
             this.Thor = new DsfDesktop.Thor.ThorManager(adbPath != null ? new DsfDesktop.Thor.AdbProcess(adbPath) : null, new DsfDesktop.Thor.ReleaseFeed(), Path.Combine(paths.DataDir, "apk"));
@@ -104,6 +107,16 @@ namespace DsfDesktop.App
             running = true;
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
             LocateWow();
+            // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
+            // (the Agent asked once here; while it is at work the put-back goes on in the background, WoW not started meanwhile)
+            try
+            {
+                var pr = EnsurePatcher();
+                var r = pr?.Recover(agentWaitS: 0);
+                if (r != null) Log.I("game patch: " + r);
+                if (pr != null && pr.Unsettled) RecoverInBackground(pr);
+            }
+            catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
             StartBridge();
             StartSunshine();
             StartMdns();
@@ -374,10 +387,11 @@ namespace DsfDesktop.App
             {
                 var win = Displays.WindowsDisplays();
                 var virt = win.Where(d => d.Virtual).Select(d => d.ToString()).ToList();
-                bool sudo = SudoVda.Installed();
+                // 0.2.37: a disabled adapter has no interface; it is "installed, turned off", not "not installed"
+                var sudo = ScreenPlan.SudoVdaWord(SudoVda.Installed(), SudoVda.AdapterProblem());
                 Log.I("neighbours: hosts " + (Ports != null && Ports.Neighbours.Count > 0 ? string.Join("; ", Ports.Neighbours) : "none") +
                       "; virtual displays " + (virt.Count > 0 ? string.Join("; ", virt) : "none") +
-                      "; SudoVDA " + (sudo ? "installed" : "not installed") + "; Virtual Display Driver " + (win.Any(VddScreen.IsVdd) ? "installed" : "not installed") +
+                      "; SudoVDA " + sudo + "; Virtual Display Driver " + (win.Any(VddScreen.IsVdd) ? "installed" : "not installed") +
                       "; own screen " + (Settings.OwnScreen ? "on" : "off") +
                       "; screens " + (win.Count > 0 ? string.Join("; ", win.Where(d => !d.Virtual).Select(d => d.ToString())) : "unread"));
             }
@@ -779,7 +793,7 @@ namespace DsfDesktop.App
         string topoKey;
         List<WinDisplay> lastWin = new List<WinDisplay>();
         DateTime lastDisplayRestart = DateTime.MinValue, driversAt = DateTime.MinValue;
-        bool driverInstalled, driverUsable, displayCheckPending = true, screenOffer, screenOfferHeadless;
+        bool driverInstalled, driverUsable, driversRead, displayCheckPending = true, lookedLast;
         /// <summary>the screen worker (ScreenTick, MakeOurs, the Test's make, the start's cleanup) runs: one at a time (reviewers
         /// 2026-11-17: ScreenFactsNow and ScreenTick read and set a plain bool, so both could make ours at once)</summary>
         int screenBusyN;
@@ -825,15 +839,97 @@ namespace DsfDesktop.App
             Log.I("thor stream mode: " + thorW + "x" + thorH + "@" + thorFps);
         }
 
-        /// <summary>the install question, once: true when the window should ask it now</summary>
-        public bool TakeScreenOffer() { if (!screenOffer) return false; screenOffer = false; return true; }
+        /// <summary>SudoVDA's adapter is in Windows but disabled (SudoVda.Disabled, surveyed with the drivers)</summary>
+        bool sudoVdaDisabled;
+        /// <summary>a screen is on that is not ours (the last display tick)</summary>
+        volatile bool hasScreenNow = true;
 
-        /// <summary>the install question is for a PC with no screen on (else: for the stream's own screen)</summary>
-        public bool ScreenOfferHeadless => screenOfferHeadless;
+        /// <summary>
+        /// The window's virtual-screen section (quiet by default, the user's ruling 2026-11-18): Hidden unless "Stream on its own screen"
+        /// is on or no screen is on. Never a pop-up: the 0.2.32-0.2.36 install question (a modal box, asked once) is gone.
+        /// </summary>
+        public ScreenSetup.Panel SetupPanel => ScreenSetup.For(Settings.OwnScreen, hasScreenNow, driversRead, driverInstalled, driverUsable,
+                                                               sudoVdaDisabled, Installing);
+        /// <summary>no screen is on at this PC (the last display tick)</summary>
+        public bool Headless => !hasScreenNow;
+        /// <summary>the player's install (VddInstall) is running</summary>
+        public bool Installing { get { lock (vddWatchGate) return vddWatchAt != DateTime.MinValue; } }
+        /// <summary>the section's last result (Turn on, the test): "" = none</summary>
+        public string SetupResult { get; private set; } = "";
+        /// <summary>Turn on or the test is running</summary>
+        public bool SetupBusy => Volatile.Read(ref setupBusyN) != 0;
+        int setupBusyN;
+        /// <summary>Windows' admin prompt and the adapter's id for Turn on (the tests pass fakes: never pnputil on a test PC)</summary>
+        public IElevatedRunner Elevated = new WindowsElevatedRunner();
+        public Func<string> SudoVdaId = SudoVda.AdapterInstanceId;
 
-        /// <summary>the player said yes: the driver's own installer (Windows asks for admin); null = started. Its monitor is ours.</summary>
+        /// <summary>the window's Turn on (the player's click): pnputil /enable-device through Windows' admin prompt; null = turned on</summary>
+        public string TurnOnSudoVda()
+        {
+            if (Interlocked.CompareExchange(ref setupBusyN, 1, 0) != 0) return "busy";
+            try
+            {
+                var why = SudoVdaTurnOn.Run(SudoVdaId, Elevated);
+                SetupResult = why == null ? "SudoMaker display adapter turned on"
+                    : why == SudoVdaTurnOn.Restart ? "SudoMaker display adapter " + why : "Not turned on: " + why;
+                driversAt = DateTime.MinValue;   // looked at again at the next tick
+                displaysDirty = true;
+                Fire();
+                return why == SudoVdaTurnOn.Restart ? null : why;
+            }
+            finally { Volatile.Write(ref setupBusyN, 0); }
+        }
+
+        /// <summary>the headless check's test (the player's click): our screen made at the Thor's mode and removed once; null = passed</summary>
+        public string TestOwnScreen()
+        {
+            if (Interlocked.CompareExchange(ref setupBusyN, 1, 0) != 0) return "busy";
+            try
+            {
+                string why;
+                if (StreamLive()) why = "a stream is live";
+                else
+                {
+                    bool got = false;
+                    for (int i = 0; i < 180 && !(got = TakeScreen()); i++) Thread.Sleep(250);
+                    if (!got) why = "the screen is being made";
+                    else
+                    {
+                        try
+                        {
+                            var life = Screens;
+                            // the player's click: the tries start over (as Test connection's), so one failed test never counts
+                            // towards a Thor session's give-up
+                            life.Reset(byHand: true);
+                            if (life.Exists) why = null;   // ours is up already: it works
+                            else
+                            {
+                                why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                                if (why == null)
+                                {
+                                    var drv = life.Current?.Name;
+                                    life.Remove("the window's test");
+                                    Log.I("virtual screen: the window's test made and removed ours (" + drv + ")");
+                                }
+                            }
+                        }
+                        catch (Exception e) { why = e.Message; }
+                        finally { FreeScreen(); }
+                    }
+                }
+                SetupResult = ScreenSetup.TestLine(why);
+                Log.I("virtual screen: " + SetupResult);
+                Fire();
+                return why;
+            }
+            finally { Volatile.Write(ref setupBusyN, 0); }
+        }
+
+        /// <summary>the player's Install in the window: the driver's own installer (Windows asks for admin); null = started. Its monitor is ours.</summary>
         public string InstallVirtualScreen()
         {
+            if (Installing) return null;
+            Log.I("virtual screen: install (the player's click in the window)");
             // nothing is ours yet: the monitor the install brings is named when it appears (VddInstallWatch), so a declined admin
             // prompt leaves nothing marked ours
             var before = Displays.WindowsDisplays().Where(VddScreen.IsVdd).Select(d => d.Name).ToList();
@@ -876,12 +972,15 @@ namespace DsfDesktop.App
             }
         }
 
-        /// <summary>"Stream on its own screen" On/Off: the next tick makes or removes ours</summary>
+        /// <summary>"Stream on its own screen" On/Off (off by default, 0.2.37): the next tick makes or removes ours; on = drivers are
+        /// looked for and the window's setup shows. The player's own pick: kept across updates (AppSettings.OwnScreenChosen)</summary>
         public void SetOwnScreen(bool on)
         {
-            if (Settings.OwnScreen == on) return;
+            if (Settings.OwnScreen == on && Settings.OwnScreenChosen) return;
             Settings.OwnScreen = on;
+            Settings.OwnScreenChosen = true;
             SaveSettings();
+            if (on) driversAt = DateTime.MinValue;
             Log.I("own screen: " + (on ? "on" : "off"));
             displaysDirty = true;
         }
@@ -892,7 +991,10 @@ namespace DsfDesktop.App
             ScreenLine = line;
             ScreenProblem = problem;
             Log.I("screen: " + (line.Length > 0 ? line : "fine") + (problem != null ? " (" + problem + ")" : ""));
-            if (line.Length > 0) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = line });
+            // quiet by default (0.2.37): only a screen being made goes to the Thor's status line; a driver's absence is the window's
+            // (headless: the welcome's / "sunshine"'s problem word, the Thor's one line)
+            var thor = ScreenPlan.ThorStatus(line);
+            if (thor != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = thor });
             lastPortsKey = null;   // the host problem line follows
             Fire();
         }
@@ -967,11 +1069,26 @@ namespace DsfDesktop.App
             bool thorWants = life.ThorWants(now, thor, streaming);
             // an old screen WoW hadn't left yet (RetireOldScreen): tried again, never in a loop (OldScreen.MaxTries)
             if (now >= retireAt) { retireAt = DateTime.MaxValue; Task.Run(() => RetireOldScreen()); }
-            if (now - driversAt > TimeSpan.FromSeconds(30)) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
-            // a driver that is there but can't be used (the player's own VDD monitor): nothing to offer
-            bool offered = Settings.VirtualScreenOffered || driverInstalled;
-            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, driverUsable, thorWants, offered, (thorW, thorH, thorFps), streaming,
+            if (hasScreen != hasScreenNow) { hasScreenNow = hasScreen; Fire(); }
+            // quiet by default (the user's ruling 2026-11-18): a driver is looked for only with "Stream on its own screen" on or no
+            // screen on; a PC with a monitor and the setting off never hears about drivers
+            bool looks = ScreenPlan.Looks(Settings.OwnScreen, hasScreen);
+            if (looks && !lookedLast) driversAt = DateTime.MinValue;
+            lookedLast = looks;
+            if (looks && now - driversAt > TimeSpan.FromSeconds(30))
+            {
+                driversAt = now;
+                (driverInstalled, driverUsable) = life.Survey();
+                // Apollo's SudoVDA disabled in Windows reads as "not installed" (no active interface): it is there, so nothing is
+                // offered and the window's Turn on is the fix (read here; turned on only by the player's click)
+                bool was = sudoVdaDisabled;
+                sudoVdaDisabled = !driverUsable && SudoVda.Disabled();
+                if (sudoVdaDisabled != was) Log.I("virtual screen: SudoVDA adapter " + (sudoVdaDisabled ? "found disabled in Windows" : "no longer disabled"));
+                if (!driversRead) { driversRead = true; Fire(); }
+            }
+            // no question is asked any more (0.2.37: the window's setup offers the install), so never OfferInstall
+            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, looks && driverUsable, thorWants, offered: true, (thorW, thorH, thorFps), streaming,
                                           sunshineOnOurs: sessionOutput != null, thorHere: thor || streaming);
             switch (step)
             {
@@ -998,21 +1115,16 @@ namespace DsfDesktop.App
                     if (hasScreen) { if (ScreenLine != ScreenPlan.FallbackFailed) Say(ScreenPlan.FallbackFailed, null); }
                     else Say(ScreenPlan.NeedsVirtual, ScreenPlan.ProblemNeedsScreen);
                     break;
-                case ScreenPlan.Step.OfferInstall:
-                    Settings.VirtualScreenOffered = true;
-                    SaveSettings();
-                    screenOfferHeadless = !hasScreen;
-                    screenOffer = true;
-                    Log.I("screen: no virtual display driver" + (hasScreen ? " for the stream's own screen" : " and no screen on") + ": asking once");
-                    if (hasScreen) Say(ScreenPlan.FallbackNote, null);
-                    else Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
-                    break;
                 case ScreenPlan.Step.NeedsInstall:
-                    Say(ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen);
+                    { var (l, pr) = ScreenPlan.NoDriverLine(false, sudoVdaDisabled); Say(l, pr); }
                     break;
                 case ScreenPlan.Step.Fallback:
-                    // today's behaviour: Sunshine captures a real screen; one line says why
-                    if (ScreenLine != ScreenPlan.FallbackFailed) Say(driverUsable ? ScreenPlan.FallbackFailed : ScreenPlan.FallbackNote, null);
+                    // today's behaviour: Sunshine captures a real screen; one line says why (a disabled SudoVDA: how to enable it)
+                    if (ScreenLine != ScreenPlan.FallbackFailed)
+                    {
+                        if (driverUsable) Say(ScreenPlan.FallbackFailed, null);
+                        else { var (l, pr) = ScreenPlan.NoDriverLine(true, sudoVdaDisabled); Say(l, pr); }
+                    }
                     break;
             }
             return false;
@@ -1337,6 +1449,9 @@ namespace DsfDesktop.App
         /// back after it was missing, a client restart, a path or flavor switch; local time); null while nothing of the file is read</summary>
         DateTime? loginLogAt;
         bool loginFileSwept;
+        /// <summary>the last login.txt went unread (its 5 minutes ran out with no client: the player was signing in to Battle.net
+        /// first): the next start asks the Thor for the login again, as after a closed run</summary>
+        bool loginFileUnread;
         /// <summary>the client run the login.txt was written for: the first Wow.exe seen after the write (WowFlow.LoginRunOver); kept
         /// after the file went, until the next start asked the Thor again, the run signed in, or the Thor left</summary>
         int? loginRunPid;
@@ -1358,8 +1473,70 @@ namespace DsfDesktop.App
                 if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
                 if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
                 var why = WowLoginFile.Write(dir, email, password);
-                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; }
+                if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; loginFileUnread = false; }
                 Log.I("login file: " + (why ?? "written"));
+            }
+        }
+
+        // ---------------------------------------------------------------- settings follow (0.2.37; WowSvSync - our tables only: WoW's own sync CVars are left to the game, the user's ruling for build 1489)
+
+        /// <summary>a "sv_read" answered and its "sv_write" not yet here: a start waits a moment for it (BeforeStart)</summary>
+        DateTime? svPendingAt;
+        readonly object svGate = new object();
+        public const double SvWaitS = 6;
+
+        bool WowRunsNow() { try { return WowUp() || WowWindow.ProcessRunning(); } catch (Exception) { return true; } }
+
+        string SvAccountDir(string acctHash, out string why)
+        {
+            why = null;
+            var dir = FlavorDirOrNull;
+            if (dir == null) { why = "no WoW found"; return null; }
+            return WowSvSync.PickAccount(Path.Combine(dir, "WTF"), acctHash, gameAccountList, out why);
+        }
+
+        public Dictionary<string, object> SvRead(string acctHash)
+        {
+            lock (svGate)
+            {
+                if (WowRunsNow()) { Log.I("settings sync: WoW is running; not read"); return new Dictionary<string, object> { ["state"] = "running" }; }
+                var acct = SvAccountDir(acctHash, out var why);
+                if (acct == null) { Log.I("settings sync: nothing read (" + why + ")"); return new Dictionary<string, object> { ["state"] = "none", ["why"] = why }; }
+                svPendingAt = DateTime.UtcNow;
+                var files = WowSvSync.Read(acct);
+                Log.I("settings sync: read " + files.Count(f => f["exists"] is bool b && b) + " of our files for the Thor");
+                return new Dictionary<string, object> { ["state"] = "ok", ["acct"] = acctHash ?? "", ["files"] = files };
+            }
+        }
+
+        public Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs)
+        {
+            lock (svGate)
+            {
+                svPendingAt = null;
+                var results = new List<Dictionary<string, object>>();
+                var running = WowRunsNow();
+                var acct = running ? null : SvAccountDir(acctHash, out _);
+                foreach (var d in docs ?? new List<Dictionary<string, object>>())
+                {
+                    var v = d.Str("var");
+                    var state = running ? "running" : acct == null ? "none" : WowSvSync.Write(acct, v, d.Str("lua"), d.Long("n"), d.Str("if_hash"), DateTime.UtcNow);
+                    if (v == null || !WowSvSync.Files.ContainsKey(v)) { v = "?"; state = "refused"; }
+                    Log.I("settings sync: " + v + " " + state);
+                    results.Add(new Dictionary<string, object> { ["var"] = v, ["state"] = state });
+                }
+                return new Dictionary<string, object> { ["results"] = results };
+            }
+        }
+
+        /// <summary>just before a start: a sync under way is given a moment (its "sv_write" lands before WoW reads our files)</summary>
+        void SvBeforeStart(string flavorDir)
+        {
+            var until = DateTime.UtcNow.AddSeconds(SvWaitS);
+            while (DateTime.UtcNow < until)
+            {
+                lock (svGate) if (!svPendingAt.HasValue || (DateTime.UtcNow - svPendingAt.Value).TotalSeconds > SvWaitS) break;
+                System.Threading.Thread.Sleep(100);
             }
         }
 
@@ -1380,6 +1557,8 @@ namespace DsfDesktop.App
         /// </summary>
         void BeforeStart(LaunchPlan p)
         {
+            try { SvBeforeStart(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull); }
+            catch (Exception e) { Log.I("settings sync: " + e.GetType().Name); }
             bool ask;
             lock (loginGate)
             {
@@ -1397,8 +1576,8 @@ namespace DsfDesktop.App
                         loginFileAt = null;
                         Log.I("login file: deleted (its client closed)");
                     }
-                    ask = WowFlow.LoginAgainWanted(loginFileAt.HasValue, over, Bridge != null && Bridge.Sessions().Count > 0);
-                    if (ask) loginRunPid = null;
+                    ask = WowFlow.LoginAgainWanted(loginFileAt.HasValue, over || loginFileUnread, Bridge != null && Bridge.Sessions().Count > 0);
+                    if (ask) { loginRunPid = null; loginFileUnread = false; }
                 }
                 catch (Exception e) { Log.I("before start: " + e.GetType().Name); return; }
             }
@@ -1425,7 +1604,7 @@ namespace DsfDesktop.App
                 if (!loginFileSwept) { loginFileSwept = true; if (!loginFileAt.HasValue) WowLoginFile.Delete(dir); }   // a crash's leftover
                 var thorHere = Bridge != null && Bridge.Sessions().Count > 0;
                 // the Thor left: nothing to ask again, and its game account is not kept (an account name)
-                if (!thorHere) { loginRunPid = null; gameAccountList = null; }
+                if (!thorHere) { loginRunPid = null; gameAccountList = null; loginFileUnread = false; }
                 int? pidNow = null;
                 if (loginFileAt.HasValue || loginRunPid.HasValue)
                     using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
@@ -1454,6 +1633,8 @@ namespace DsfDesktop.App
                 if (why == null) return;
                 WowLoginFile.Delete(dir);
                 loginFileAt = null;
+                // no client ever came for it (Battle.net's sign-in first): the next start asks the Thor again
+                loginFileUnread = thorHere && !pidNow.HasValue && !loginRunPid.HasValue;
                 Log.I("login file: deleted (" + why + ")");
             }
             catch (Exception e) { Log.I("login file: " + e.GetType().Name); }
@@ -1491,6 +1672,7 @@ namespace DsfDesktop.App
                     }
                     else SetStream(StreamState.Unknown);
                     try { DisplayTick(); } catch (Exception e) { Log.I("display tick: " + e.Message); }
+                    try { KeepTick(); } catch (Exception e) { Log.I("keep tick: " + e.Message); }
                     CheckCapture();
                 }
             }
@@ -1498,6 +1680,7 @@ namespace DsfDesktop.App
             // every 2 s, beside CheckCapture's tick (outside its try: a serverinfo that throws doesn't skip it)
             if (tickN % 2 == 1) try { CheckInput(); } catch (Exception e) { Log.I("input check: " + e.Message); }
             try { Starter.Tick(); } catch (Exception) { }
+            try { ConfigKeep?.Tick(); } catch (Exception) { }
             try { WowTick(); } catch (Exception e) { Log.I("wow tick: " + e.Message); }
             if (ThorWatching && DateTime.UtcNow - thorPolledAt > TimeSpan.FromSeconds(3) && !Thor.Busy)
             {
@@ -1552,7 +1735,9 @@ namespace DsfDesktop.App
                 var s = WowInfo();
                 bool ok = SignedIn(LastScreen) && WowWindow.IsForeground();
                 s["ok"] = ok;
-                if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText : Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet");
+                if (!ok) s["why"] = Supervisor.NeedsYou ? WowFlow.NeedsYouText
+                    : WowFlow.StopText(Supervisor.StoppedFor) ?? StopNow()
+                    ?? (Starter.State == WowState.Starting ? "starting WoW" : (Starter.Why ?? "WoW isn't signed in yet"));
                 return s;
             }
             CheckCapture();
@@ -1565,6 +1750,21 @@ namespace DsfDesktop.App
         // ---------------------------------------------------------------- starting WoW, and the monitor Sunshine captures
 
         public WowStarter Starter { get; private set; }
+        /// <summary>the player's own controller settings, put back once a DS Forever session is over (WowConfigKeep)</summary>
+        WowConfigKeep ConfigKeep;
+        /// <summary>the PC monitor's own mode, put back after a stream if Sunshine's revert didn't (DisplayKeep)</summary>
+        DisplayKeep ScreenKeep;
+
+        /// <summary>after a stream, the player's own settings back: the monitor's mode (every 2 s), WoW's controller and window lines</summary>
+        void KeepTick()
+        {
+            var streaming = Stream == StreamState.Streaming;
+            var list = SunshineDisplays();
+            var cap = sessionOutput == null && list.Count > 0 ? list.FirstOrDefault(d => d.DisplayName == Displays.Captured(list, CurrentOutput)) : null;
+            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, MatchStreamNow);
+            var dir = FlavorDirOrNull;
+            if (streaming && dir != null) ConfigKeep?.RecordWindow(Path.Combine(dir, "WTF", "Config.wtf"));
+        }
 
         /// <summary>the USB install of DS Forever on the Thor (the Thor card)</summary>
         public DsfDesktop.Thor.ThorManager Thor { get; private set; }
@@ -1583,7 +1783,7 @@ namespace DsfDesktop.App
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: p => { BeforeStart(p); return WowStarter.StartProcess(p); });
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);
@@ -1628,16 +1828,22 @@ namespace DsfDesktop.App
         {
             var p = WowWindow.FindAny(FlavorDirOrNull);
             if (p == null) return WowScreen.None;
-            try
+            try { return ScreenOf(p, useLog: true); }
+            finally { p.Dispose(); }
+        }
+
+        /// <summary>the screen of THIS client process (the patch's close asks it of the very process it closes); [useLog] = the log
+        /// and the documents are this process's folder's (Desktop follows it), else its connections only</summary>
+        WowScreen ScreenOf(System.Diagnostics.Process p, bool useLog)
+        {
             {
                 double up = 0;
                 bool thisRun = false;
-                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; thisRun = WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
+                try { var started = p.StartTime; up = (DateTime.Now - started).TotalSeconds; thisRun = useLog && WowFlow.LogIsThisRun(loginLogAt, started); } catch (Exception) { }
                 var (game, auth) = WowProbe.Connections(p.Id);
                 double? docAge = thisRun && clientDocAt.HasValue ? (DateTime.UtcNow - clientDocAt.Value).TotalSeconds : (double?)null;
                 lock (loginLog) return WowFlow.Classify(true, up, game, auth, thisRun ? loginLog : null, docAge);
             }
-            finally { p.Dispose(); }
         }
 
         public BnetState BnetNow()
@@ -1681,7 +1887,7 @@ namespace DsfDesktop.App
         {
             var sv = Supervisor;
             if (sv == null) return null;
-            bool wanted = LastBnet == BnetState.SignInNeeded || sv.Crash != null || sv.NeedsYou;
+            bool wanted = WowFlow.BnetSignInPending(LastBnet, LastScreen) || sv.Crash != null || sv.NeedsYou;
             if (!wanted) return null;
             var b = WowProbe.Bnet();
             var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
@@ -1750,6 +1956,14 @@ namespace DsfDesktop.App
                         if (WowProbe.FatalErrorShown(p.Id)) { Log.I("WoW crashed: closing its crash window (pid " + p.Id + ")"); p.Kill(); p.WaitForExit(5000); }
             }
             catch (Exception) { }
+            // never Battle.net while the self-patcher puts the old client back or is about to (a first start that crashed): its Agent
+            // would work on the folder beside the put-back (the 0.2.36 review)
+            var pp = patcher;
+            if (pp != null && (pp.Busy || pp.Unsettled || pp.AwaitingLogin != null))
+            {
+                Log.I("WoW crashed: Battle.net left alone (the game update puts the old client back first)");
+                return;
+            }
             var b = WowProbe.Bnet();
             if (!b.Running) { WowProbe.StartBattleNet(WowLaunch.FindBattleNet()); return; }
             var h = b.Login != IntPtr.Zero ? b.Login : WowProbe.BnetMain();
@@ -1795,12 +2009,24 @@ namespace DsfDesktop.App
                 bnet: () => LastBnet = BnetNow(),
                 startBnet: () => WowProbe.StartBattleNet(WowLaunch.FindBattleNet()),
                 showBnetSignIn: () => WowWindow.FocusHandle(WowProbe.Bnet().Login),
-                startWow: () => { Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null; },
+                startWow: () =>
+                {
+                    // the install read again right before the start (the Agent dropped the wowf row at 06:32 on 2026-11-18): a missing
+                    // row is added back from Desktop's copy when it fits; still missing, or outdated = no start (the judge's Step 0)
+                    // never beside the self-patcher (0.2.36): it replaces the client's files
+                    // nor over an install cut short that is not put back yet (half one build, half the other)
+                    if (patcher?.Busy == true || patcher?.Unsettled == true) return "the game is being updated";
+                    var g = GameCheckNow(beforeStart: true);
+                    if (g == GameCheck.NeedsRepair) return WowFlow.RepairText;
+                    if (g == GameCheck.Outdated) return WowFlow.OutdatedText;
+                    Starter.Ensure(); return Starter.State == WowState.StartFailed ? Starter.Why : null;
+                },
                 startPending: () => Starter.State == WowState.Starting,
                 closeWow: CloseForRestart,
                 focusWow: () => { CheckCapture(); return FocusWow(); },
                 crash: CrashNow,
-                regionRefusals: () => { lock (loginLog) return loginLog.RegionRefusals; });
+                failed: () => { lock (loginLog) return loginLog.ConnectFailed; },
+                game: GameNow);
             Supervisor.Changed += (a, detail) =>
             {
                 if (a == WowAction.NeedsYou) needsYouAt = DateTime.UtcNow;
@@ -1809,24 +2035,276 @@ namespace DsfDesktop.App
                          : a == WowAction.ShowBattleNetSignIn ? "Sign in to Battle.net"
                          : a == WowAction.RestartWow ? "WoW was at its login screen: starting it again…"
                          : a == WowAction.NeedsYou ? WowFlow.NeedsYouText
+                         : a == WowAction.Stopped ? WowFlow.ConnectFailedText
+                         : a == WowAction.Outdated ? WowFlow.OutdatedText
+                         : a == WowAction.Repair ? WowFlow.RepairText
                          : a == WowAction.Crashed ? (detail == "update" ? WowFlow.UpdateText : WowFlow.CrashText) : null;
                 if (text != null) Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = text });
                 PublishWow(force: true);
             };
         }
 
+        /// <summary>Blizzard's patch server (plain HTTP on 1119, as the Thor's own updater reads it): a few seconds at most, never on
+        /// the tick (GameVersionCheck runs it in the background)</summary>
+        static readonly HttpClient Patch = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+
+        GameVersionCheck gameCheck;
+        BuildInfoKeeper rowKeeper;
+        readonly object gameGate = new object();
+
+        /// <summary>_forever_'s Wow.exe's own version (read only), null = no such exe</summary>
+        string ForeverExeVersion() =>
+            Wow != null ? BuildInfoFile.ExeVersion(Path.Combine(Wow.FlavorDir(WowFlavors.Forever), "Wow.exe")) : null;
+
+        /// <summary>the PC's WoW Forever against Blizzard's version (the user's PC 2026-11-18: 70938 installed, 70959 current, so
+        /// "no servers available"): Unknown when there is no install or no answer (offline never blocks a start); NeedsRepair when
+        /// Wow.exe is there and its .build.info row is not (0.2.35). [beforeStart] = the install read again now</summary>
+        GameCheck GameCheckNow(bool beforeStart = false)
+        {
+            lock (gameGate)
+                if (gameCheck == null)
+                {
+                    rowKeeper = new BuildInfoKeeper(() => Wow?.Root, Path.Combine(Paths.DataDir, "patch", "wowf_row.json"), "wowf");
+                    gameCheck = new GameVersionCheck(
+                        rows: () => Wow != null ? BuildInfo.Read(Wow.Root) : new List<BuildInfoRow>(),
+                        fetch: url =>
+                        {
+                            try { using (var r = Patch.GetAsync(url).Result) return r.IsSuccessStatusCode ? r.Content.ReadAsStringAsync().Result : null; }
+                            catch (Exception) { return null; }
+                        },
+                        product: "wowf",
+                        exeVersion: ForeverExeVersion,
+                        repair: v => rowKeeper.Repair(v),
+                        remember: v => rowKeeper.Remember(v));
+                }
+            return beforeStart ? gameCheck.PollNow() : gameCheck.Poll();
+        }
+
+        /// <summary>the supervisor's check (it only runs while a stream wants WoW)</summary>
+        GameCheck GameNow() => GameCheckNow();
+
+        /// <summary>the check for the "wow" message: asked only while a Thor is connected (0.2.34 asked Blizzard every 5 minutes with
+        /// no Thor at all); otherwise the last state, nothing read or asked</summary>
+        GameCheck GameForThor()
+        {
+            bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
+            if (thorHere) return GameCheckNow();
+            lock (gameGate) return gameCheck?.Peek() ?? GameCheck.Unknown;
+        }
+
+        /// <summary>why Desktop is stopped now for the Thor (a 309, an outdated or broken PC game), null = not stopped</summary>
+        string StopNow()
+        {
+            bool failed;
+            lock (loginLog) failed = loginLog.ConnectFailed;
+            if (SignedIn(LastScreen)) return null;
+            var g = GameForThor();
+            return g == GameCheck.NeedsRepair ? WowFlow.RepairText : g == GameCheck.Outdated ? WowFlow.OutdatedText
+                 : failed ? WowFlow.ConnectFailedText : null;
+        }
+
+        DateTime legacyRetryAt = DateTime.MinValue;
+
+        /// <summary>
+        /// A Thor signed in. An older one (1487: no "wow_stop" in its hello) has no Retry button and never sends "wow_retry", so after
+        /// a 309 with WoW closed it said "Starting WoW on your PC" for ever (the 0.2.34 review): its reconnect counts as its Retry
+        /// while Desktop is stopped, once per WowFlow.LegacyRetryEveryS at most. A Thor that shows the stop is never retried
+        /// for: its player presses Retry.
+        /// </summary>
+        void OnThorHello(BridgeSession s)
+        {
+            // a Thor connected: the self-patcher may try once by itself again (0.2.36: one automatic attempt per connect)
+            if (s != null) patchFlow?.Connect();
+            if (s == null || s.KnowsStop || !Settings.StartWowOnStream || Supervisor == null) return;
+            if (!WowFlow.LegacyReconnectRetries(Supervisor.StoppedFor != null || StopNow() != null, (DateTime.UtcNow - legacyRetryAt).TotalSeconds)) return;
+            legacyRetryAt = DateTime.UtcNow;
+            Log.I("bridge: an older Thor (no Retry button) reconnected while stopped: that counts as its Retry");
+            Task.Run(() => WowRetry());
+        }
+
+        /// <summary>
+        /// The Thor's Retry ("wow_retry") after a stop (the user's ruling 2026-11-18, "Stop and show it"): the server error is
+        /// answered and Blizzard's version asked again; then WoW is started, or restarted at its login screen, ONCE for this press
+        /// (WowSupervisor.Retry; its new run asks the Thor for the login again, BeforeStart). An outdated game is still not started.
+        /// </summary>
+        public void WowRetry()
+        {
+            // the self-patcher's Retry first (0.2.36): a failed or cancelled patch, or a game that still needs one, gets ONE more
+            // attempt per press; WoW starts by itself once it is done (PatchFlow's afterDone)
+            if (EnsurePatcher() != null && patchFlow.Retry()) { PublishWow(force: true); return; }
+            // one start per press: a press while the last one's restart or start is still under way is that same one (0.2.35)
+            if (Supervisor != null && Supervisor.Busy)
+            {
+                Log.I("bridge: the Thor's Retry while WoW is being started: that one counts");
+                PublishWow(force: true);
+                return;
+            }
+            Log.I("bridge: the Thor's Retry: WoW once more");
+            lock (loginLog) loginLog.ClearFailure();
+            GameCheckNow();
+            gameCheck?.Refresh();
+            needsYouAt = DateTime.MinValue;
+            if (Settings.StartWowOnStream && Supervisor != null) Supervisor.Retry();
+            PublishWow(force: true);
+        }
+
+        // ---------------------------------------------------------------- the self-patcher (0.2.36, the user's rulings 2026-11-18)
+
+        PcGamePatcher patcher;
+        PatchFlow patchFlow;
+        string patcherRoot;
+        bool loginSeen;
+
+        /// <summary>the PC game's own updater for the install found (null = no WoW Forever here); made again when the folder changes</summary>
+        PcGamePatcher EnsurePatcher()
+        {
+            lock (gameGate)
+            {
+                var root = Wow?.Root;
+                if (root == null || !Directory.Exists(Path.Combine(root, WowFlavors.Forever))) return null;
+                if (patcher != null && (patcherRoot == root || patcher.Busy)) return patcher;
+                var forever = Path.Combine(root, WowFlavors.Forever);
+                patcherRoot = root;
+                var made = new PcGamePatcher(new PatchEnv
+                {
+                    Root = root,
+                    Flavor = WowFlavors.Forever,
+                    Product = "wowf",
+                    FetchText = url =>
+                    {
+                        try { using (var r = Patch.GetAsync(url).Result) return r.IsSuccessStatusCode ? r.Content.ReadAsStringAsync().Result : null; }
+                        catch (Exception) { return null; }
+                    },
+                    WowRunning = () => WowWindow.RunningIn(forever),
+                    // the outdated client open at its login (the user's 11-18 06:20 case: no servers) is closed BY THE ATTEMPT (auto or
+                    // Retry), as the supervisor's restart closes it; a signed-in one never, nor retail, nor one whose folder can't be read
+                    // (ForeverClose: the 0.2.36 review)
+                    CloseWow = () => CloseForeverForPatch(forever),
+                    AgentBusy = () => AgentWatch.Busy(root, "wowf", DateTime.UtcNow, AgentWatch.DefaultAgentDir, out var why) ? why : null,
+                    JournalPath = Path.Combine(Paths.DataDir, "patch", "journal.json"),
+                    SavedRowPath = Path.Combine(Paths.DataDir, "patch", "wowf_row.json"),
+                    FailedBuildPath = Path.Combine(Paths.DataDir, "patch", "new_failed.json"),
+                });
+                made.Changed += () => PublishWow(force: false);
+                patchFlow = new PatchFlow(() => made.Status, why => made.Start(why), () => made.Cancel(), GameForThor, AfterPatch,
+                                          autoStart: why => made.Start(why, auto: true));
+                patcher = made;
+                return patcher;
+            }
+        }
+
+        /// <summary>a patch is done: the game read again, then WoW started ONCE (as the Thor's Retry starts it)</summary>
+        void AfterPatch()
+        {
+            Log.I("game patch: done: WoW once on the new build");
+            gameCheck?.Refresh();
+            needsYouAt = DateTime.MinValue;
+            if (Settings.StartWowOnStream && Supervisor != null && Bridge != null && Bridge.Sessions().Count > 0) Supervisor.Retry();
+            PublishWow(force: true);
+        }
+
+        /// <summary>every tick: the patch by itself when the game needs one (once per connect), and its first start watched: a good
+        /// login removes the backup (one backup until then, the user's ruling); a crash brings the old client back</summary>
+        void PatchTick(bool thorHere)
+        {
+            var p = EnsurePatcher();
+            if (p == null) return;
+            // never by itself while WoW is signed in (the servers took that client: nothing to close it for, and its failure would sit
+            // under the player's login later)
+            patchFlow.Tick(thorHere && Settings.StartWowOnStream && !SignedIn(LastScreen));
+            // a failed or cancelled attempt is not shown any more once the game is current by another route (the 0.2.36 review: the
+            // stale "Update failed ... Retry (A)" over WoW's login); a new client's failed first start stays until a press
+            var ps = p.Status;
+            if ((ps.State == PatchState.Failed || ps.State == PatchState.Cancelled) && ps.Code != "new_failed" && GameForThor() == GameCheck.Current) p.Reset();
+            // the first start watched only while Desktop follows WoW Forever (a retail login is not the patched client's)
+            bool forever = Flavor == WowFlavors.Forever;
+            bool signedIn = forever && SignedIn(LastScreen);
+            if (signedIn && !loginSeen && !p.Busy && p.AwaitingLogin != null) Task.Run(() => p.GoodLogin(ForeverExeVersion()));
+            loginSeen = signedIn;
+            // a crash on the first start: the old client back once the crashed one is gone (RestoreOld waits for it); asked again
+            // while it stays (one at a time), so a client still closing never leaves the new build in place
+            if (p.Unsettled && !p.Busy && !WowWindow.RunningIn(Path.Combine(patcherRoot, WowFlavors.Forever))) RecoverInBackground(p);
+            bool crashed = forever && Supervisor?.Crash != null;
+            if (crashed && !p.Busy && p.AwaitingLogin != null && Interlocked.CompareExchange(ref restoring, 1, 0) == 0)
+                Task.Run(() =>
+                {
+                    try { if (p.RestoreOld("WoW " + Supervisor?.Crash + " on its first start")) { gameCheck?.Refresh(); PublishWow(force: true); } }
+                    finally { Interlocked.Exchange(ref restoring, 0); }
+                });
+        }
+
+        int restoring;
+
+        /// <summary>an install cut short put back off the tick (it waits for Blizzard's updater); one at a time; busy meanwhile</summary>
+        void RecoverInBackground(PcGamePatcher p)
+        {
+            if (Interlocked.CompareExchange(ref restoring, 1, 0) != 0) return;
+            Task.Run(() =>
+            {
+                try { var r = p.Recover(); if (r != null) Log.I("game patch: " + r); gameCheck?.Refresh(); PublishWow(force: true); }
+                catch (Exception e) { Log.I("game patch: recovery: " + e.Message); }
+                finally { Interlocked.Exchange(ref restoring, 0); }
+            });
+        }
+
+        /// <summary>the self-patcher's close (env.CloseWow): only the client running from [foreverDir] (ForeverClose)</summary>
+        string CloseForeverForPatch(string foreverDir)
+        {
+            var procs = new Dictionary<int, System.Diagnostics.Process>();
+            try
+            {
+                return ForeverClose.Run(foreverDir,
+                    list: () =>
+                    {
+                        var l = new List<WowProc>();
+                        foreach (var n in new[] { "Wow", "WowB", "WowT", "WowClassic", "WowClassicB", "WowClassicT" })
+                        {
+                            System.Diagnostics.Process[] ps;
+                            try { ps = System.Diagnostics.Process.GetProcessesByName(n); } catch (Exception) { continue; }
+                            foreach (var x in ps)
+                            {
+                                string path = null;
+                                try { path = x.MainModule?.FileName; } catch (Exception) { }
+                                procs[x.Id] = x;
+                                l.Add(new WowProc { Pid = x.Id, Path = path });
+                            }
+                        }
+                        return l;
+                    },
+                    signedIn: pid => procs.TryGetValue(pid, out var x) && SignedIn(ScreenOf(x, useLog: Flavor == WowFlavors.Forever)),
+                    closeWindow: pid => { if (procs.TryGetValue(pid, out var x)) x.CloseMainWindow(); },
+                    waitExit: (pid, ms) => !procs.TryGetValue(pid, out var x) || x.WaitForExit(ms),
+                    kill: pid =>
+                    {
+                        if (!procs.TryGetValue(pid, out var x)) return true;
+                        try { x.Kill(); return true; } catch (Exception e) { Log.I("game patch: couldn't end WoW: " + e.Message); return false; }
+                    });
+            }
+            finally { foreach (var x in procs.Values) x.Dispose(); }
+        }
+
+        /// <summary>the Thor's Cancel (B) on the game update's bar ("pc_patch_cancel")</summary>
+        public void PatchCancel()
+        {
+            bool asked = EnsurePatcher() != null && patchFlow.Cancel();
+            Log.I("bridge: the Thor's Cancel on the game update" + (asked ? "" : ": nothing to cancel"));
+            PublishWow(force: true);
+        }
+
         /// <summary>the game and Battle.net for the Thor (the "wow" message, the welcome's wow): its curtain lifts on charselect / world + focused</summary>
         public Dictionary<string, object> WowInfo()
         {
             string err;
-            bool regionRefused;
-            lock (loginLog) { err = loginLog.Error; regionRefused = loginLog.RegionRefused; }
+            bool connectFailed;
+            lock (loginLog) { err = loginLog.Error; connectFailed = loginLog.ConnectFailed; }
             var d = new Dictionary<string, object>
             {
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State),
                 ["screen"] = WowFlow.Word(LastScreen),
                 ["focused"] = WowWindow.IsForeground(),
-                ["bnet"] = WowFlow.Word(BnetState.Unknown),
+                // the PC's Battle.net again (0.2.8 to 0.2.32 said "unknown" always, so the Thor never showed its sign-in window):
+                // "signin_needed" + "show" = the Thor shows Battle.net's window alone and types the saved login into it
+                ["bnet"] = WowFlow.ThorBnet(LastBnet, LastScreen),
                 ["needs_you"] = Supervisor?.NeedsYou ?? false,
             };
             if (Supervisor?.Crash != null) d["crash"] = Supervisor.Crash;
@@ -1834,9 +2312,39 @@ namespace DsfDesktop.App
             if (show != null) d["show"] = show;
             if (Starter.Why != null) d["why"] = Starter.Why;
             if (err != null) d["login_error"] = err;
-            // WoW's region screen waits after a refused region: the Thor says "Region refused: pick another region"; the player picks
-            // on WoW's own screen (Desktop never picks or saves one)
-            if (regionRefused) d["region"] = "refused";
+            // a 309 (LoginLog.ConnectFailed): the Thor says one neutral line, "WoW can't reach its servers"; the player picks a region
+            // again on WoW's own screen (Desktop never picks or saves one). Never "region" "refused" any more (0.2.31 and 0.2.32): the
+            // log cannot tell a refused district from an unreachable realm, and the user's 309 was no region error (2026-11-17)
+            if (connectFailed)
+            {
+                d["connect"] = "failed";
+                // WoW's own code with it: the screen switch after the error clears login_error, this stays until Retry
+                d["connect_code"] = LoginLog.ConnectFailedCode;
+            }
+            // the PC game older than Blizzard's (the user's ruling 2026-11-18): WoW is not started; the Thor says the two versions.
+            // Asked only while a Thor is connected (0.2.35)
+            var g = GameForThor();
+            if ((g == GameCheck.Outdated || g == GameCheck.NeedsRepair) && gameCheck != null)
+            {
+                d["pc_game"] = g == GameCheck.Outdated ? "outdated" : "repair";
+                d["game_installed"] = gameCheck.Installed ?? "";
+                d["game_current"] = gameCheck.Current ?? "";
+            }
+            // 0.2.34: Desktop stopped and waits for the Thor's Retry ("wow_retry"): a server error or an outdated (0.2.35: or broken)
+            // game while WoW is not signed in. 0.2.35: the words an older Thor (1487) shows too (WowFlow.StopWords)
+            WowFlow.StopWords(d, connectFailed, g, SignedIn(LastScreen));
+            // the self-patcher (0.2.36): the Thor's bar, its rows and Cancel (B) / Retry (A); an older Thor (no bar) hears its line as "why"
+            var ps = patcher?.Status;
+            var pw = PatchFlow.Words(ps, starting: Starter.State == WowState.Starting || LastScreen == WowScreen.Starting);
+            if (pw != null)
+            {
+                d["pc_patch"] = pw;
+                d["why"] = PatchFlow.Line(ps);
+                // while it patches (and the new client loads) WoW IS being started: "starting", never "start_failed" (an older Thor,
+                // 1487, put "WoW didn't start: ... sign in on the PC" in its status line for that, rewritten every 500 ms; it says
+                // "Starting WoW on your PC" now, without the bar). A failed or cancelled patch stays a stop
+                if (ps.Busy || ps.State == PatchState.Done) d["state"] = WowStarter.Word(WowState.Starting);
+            }
             return WithInput(d);
         }
 
@@ -1849,14 +2357,14 @@ namespace DsfDesktop.App
             if (Supervisor.Crash != null && LastScreen != WowScreen.None)
                 using (var p = WowWindow.FindAny(FlavorDirOrNull))
                     if (p != null && p.Id != crashedPid && !WowProbe.FatalErrorShown(p.Id)) Supervisor.CrashOver();
-            // WoW closed itself after a refused region pick (309), maybe after the supervisor had already put it in front and stopped:
-            // a Thor still wants it, so it starts again at WoW's own region screen (the user's pick 2026-11-17: "it should be changable")
-            bool regionRefused;
-            lock (loginLog) regionRefused = loginLog.RegionRefused;
-            if (!Supervisor.Active && LastScreen == WowScreen.None && regionRefused && Settings.StartWowOnStream
-                && Bridge != null && Bridge.Sessions().Count > 0 && Supervisor.RegionRetryPending)
-                Want("its client closed after a refused region");
-            else if (Supervisor.Active) Supervisor.Step();
+            // a 309 (LoginLog.ConnectFailed) starts nothing any more (the user's ruling 2026-11-18, "Stop and show it": 0.2.33
+            // restarted WoW every ~20 s while Blizzard said "no servers available"): the Thor shows it with a Retry (WowRetry). While a
+            // Thor is here the PC game is checked against Blizzard's version too (WowInfo says it; the supervisor never starts an
+            // outdated game)
+            bool thorHere = Bridge != null && Bridge.Sessions().Count > 0;
+            if (thorHere) GameCheckNow();
+            PatchTick(thorHere);
+            if (Supervisor.Active) Supervisor.Step();
             FocusRetry();
             PublishWow(force: false);
         }
@@ -1870,6 +2378,8 @@ namespace DsfDesktop.App
         void FocusRetry()
         {
             if (Bridge == null || Bridge.Sessions().Count == 0 || LastScreen == WowScreen.None) { focusTries = 0; return; }
+            // Battle.net's sign-in is the player's step (the Thor shows that window alone): WoW is never pulled over it
+            if (WowFlow.BnetSignInPending(LastBnet, LastScreen)) return;
             if (!WowFlow.FocusRetryWanted(LastScreen, WowWindow.IsForeground(), focusTries, DateTime.UtcNow >= nextFocus)) return;
             if (Interlocked.CompareExchange(ref focusBusy, 1, 0) != 0) return;
             focusTries++;
@@ -1880,7 +2390,8 @@ namespace DsfDesktop.App
         void PublishWow(bool force)
         {
             var w = WowInfo();
-            var key = string.Join("|", w.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + kv.Value));
+            // a nested value (pc_patch) by its JSON: its progress is a change
+            var key = string.Join("|", w.OrderBy(kv => kv.Key).Select(kv => kv.Key + "=" + (kv.Value is Dictionary<string, object> nd ? Json.Write(nd) : kv.Value)));
             if (!force && key == lastWowKey) return;
             lastWowKey = key;
             var msg = new Dictionary<string, object> { ["t"] = "wow" };
@@ -2034,6 +2545,7 @@ namespace DsfDesktop.App
                     Bridge = new BridgeServer(this, cert, Settings.BridgePort + i, Loopback ? IPAddress.Loopback : IPAddress.Any);
                     Bridge.SessionsChanged += Fire;
                     Bridge.ThorConnected += () => RequestUpdateCheck("a Thor connected");
+                    Bridge.ThorHello += OnThorHello;
                     Bridge.ThorAddonSet += OnThorAddonSet;
                     Bridge.Start();
                     BridgeStatus = "listening on port " + Bridge.Port;
@@ -2080,7 +2592,8 @@ namespace DsfDesktop.App
             ["uniqueid"] = SunshineId,
             // why streaming can't work on this PC ("ports_taken" | "not_listening" | "exited" | "restarting" | "not_responding" |
             // "needs_screen" | "no_screen"; "" = fine) and the Thor's line for it; an older Thor ignores both
-            ["problem"] = HostProblem ?? "",
+            // (0.2.37: every headless screen problem goes as "needs_screen", the Thor's one line: set it up in Desktop)
+            ["problem"] = ScreenPlan.ThorWord(HostProblem) ?? "",
             ["why"] = HostWhy,
             // the Thor holds its stream start while this is said (verifier 2026-11-17: its stream started with the bridge, before
             // ours was made, so the first stream of each session stayed on the real screen): "screen" | "starting" | "" = go
@@ -2114,11 +2627,13 @@ namespace DsfDesktop.App
         {
             var life = Screens;
             var now = DateTime.UtcNow;
-            if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             var win = lastWin.Count > 0 ? lastWin : Displays.WindowsDisplays();
             bool hasScreen = Displays.HasScreen(win, life.GdiName);
+            // quiet by default (0.2.37): a monitor on and "Stream on its own screen" off = nothing is made, no driver looked for
+            if (!ScreenPlan.Looks(Settings.OwnScreen, hasScreen)) return false;
+            if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             // a pure look (reviewers 2026-11-17: Decide adopted a leftover and wrote the mode ours was made for)
-            var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, Settings.VirtualScreenOffered || driverInstalled,
+            var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, offered: true,
                                       (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null, thorHere: true);
             return step == ScreenPlan.Step.MakeOurs;
         }
@@ -2191,6 +2706,56 @@ namespace DsfDesktop.App
             return v4;
         }
 
+        /// <summary>
+        /// The addresses the pairing code carries (<see cref="PairAddress"/>): the home network's IPv4 on the interface with a default
+        /// gateway (not a Hyper-V / WSL / VirtualBox switch, which have none; else the first home-network address), then the first
+        /// Tailscale IPv4. Empty when the bridge listens on loopback only.
+        /// </summary>
+        public static List<IPAddress> PairAddresses()
+        {
+            var res = new List<IPAddress>();
+            if (Loopback) return res;
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback ||
+                        ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) continue;
+                    var ip = ni.GetIPProperties();
+                    if (!ip.GatewayAddresses.Any(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any))) continue;
+                    var a = ip.UnicastAddresses.Select(u => u.Address)
+                        .FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && IsLan(x.GetAddressBytes()));
+                    if (a != null) { res.Add(a); break; }
+                }
+            }
+            catch (Exception) { }
+            if (res.Count == 0 && LanAddresses().FirstOrDefault() is string lan && IPAddress.TryParse(lan, out var la)) res.Add(la);
+            var ts = TailscaleAddresses().OfType<string>().Select(s => IPAddress.TryParse(s, out var t) ? t : null)
+                .FirstOrDefault(t => t != null && t.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            if (ts != null) res.Add(ts);
+            return res;
+        }
+
+        string pairTail = "";
+        DateTime pairTailUtc = DateTime.MinValue;
+
+        /// <summary>the pairing code as the window shows it: the secret + the PC's addresses (looked up again every 5 s: a new
+        /// DHCP lease or Tailscale going up shows in the next code line)</summary>
+        public string PairCodeDisplay
+        {
+            get
+            {
+                var now = DateTime.UtcNow;
+                if (now - pairTailUtc > TimeSpan.FromSeconds(5))
+                {
+                    try { pairTail = PairAddress.Encode(PairAddresses(), Bridge?.Port ?? PairAddress.DefaultBridgePort); } catch (Exception) { pairTail = ""; }
+                    pairTailUtc = now;
+                }
+                return PairAddress.Display(Codes.Current, pairTail);
+            }
+        }
+
         /// <summary>Tailscale's ranges: 100.64.0.0/10 and fd7a:115c:a1e0::/48</summary>
         public static bool IsTailscale(byte[] b) =>
             (b.Length == 4 && b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
@@ -2218,7 +2783,7 @@ namespace DsfDesktop.App
                 // running / starting / stopped / start_failed (+ why): "Starting WoW on your PC..." on the Thor
                 ["state"] = WowStarter.Word(WowUp() ? WowState.Running : Starter.State), ["why"] = Starter.Why,
                 // where it is and what Battle.net needs (0.2.1): the Thor keeps its curtain until charselect / world + focused
-                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.Word(BnetState.Unknown), ["needs_you"] = Supervisor?.NeedsYou ?? false,
+                ["screen"] = WowFlow.Word(LastScreen), ["bnet"] = WowFlow.ThorBnet(LastBnet, LastScreen), ["needs_you"] = Supervisor?.NeedsYou ?? false,
             }),
             ["pairing_open"] = !Codes.Locked,
         };

@@ -91,8 +91,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         val b = bmps.size().toLong()
         if (b <= 0L) return@Runnable
         bmps.evictAll()
-        MemWatch.note(MapRoomLetGo.line(b))
+        MemWatch.note(MapRoomLetGo.line(b, letGoAfter))
     }
+    /** the wait the last close armed ([MapRoomLetGo.afterMs]) */
+    @Volatile private var letGoAfter = MapRoomLetGo.AFTER_MS
     /** the pictures held now, bytes (the tests; MemWatch's "worldroom") */
     val pictureBytes: Long get() = bmps.size().toLong()
     /** pictures being read / made now (the tests) */
@@ -408,7 +410,9 @@ class WorldMapRoomView(context: Context) : View(context) {
         val info = model.maps[id] ?: return
         val base = bmp("$id/base")
         if (base == null) {
-            if (id == canvas) { pFill.color = Color.rgb(196, 168, 116); c.drawRect(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom), pFill) }
+            // (Home's backdrop: none - its own stand-in lies under the painting until the picture lands, MapView.drawPaintedStandIn; a
+            // parchment square there was the world with no land, the review of 5f9835a1)
+            if (id == canvas && !painting) { pFill.color = Color.rgb(196, 168, 116); c.drawRect(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom), pFill) }
             return
         }
         dst.set(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom))
@@ -590,7 +594,7 @@ class WorldMapRoomView(context: Context) : View(context) {
      * (the art set is not built or not read yet, the zone has no place in it, the Map room itself is on screen): Home keeps its own
      * ground. Main thread, from Home's onDraw.
      */
-    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean {
+    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View, under: ((RectF) -> Unit)? = null): Boolean {
         if (!artReady || roomOn || painting || backdropPaused || !model.maps.containsKey(zone)) return false
         if (zr.width() <= 0f || zr.height() <= 0f || clip.width() <= 0f || clip.height() <= 0f) return false
         val cv = model.canvasFor(zone)
@@ -616,6 +620,16 @@ class WorldMapRoomView(context: Context) : View(context) {
             // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea, Home's map too): the continent is the one under Home's view (its middle)
             ccx = panX; ccy = panY
             relayer()                                        // a continent seen whole and less: the world's canvas (as the room)
+            // (review of 5f9835a1: the world's painting was first asked for on the frame the view reached the world - parchment, no land,
+            // until it was decoded; again on each zoom-out after a zoom-in let it go): a continent seen at under 1.5 x its frame - a press
+            // or two from the world - asks for the world's picture ahead
+            if (zoom < 1.5f && model.isLand(canvas)) model.parentOf(canvas)?.takeIf { w -> model.assignsOf(w).isNotEmpty() && !seamless(w) }
+                ?.let { w -> bmp("$w/base") }
+            if (under != null) {
+                // the canvas's own frame on the screen, cut to the field (Home's stand-in under the painting: MapView.drawPaintedStandIn)
+                underR.set(sxc(UNIT_R.left), syc(UNIT_R.top), sxc(UNIT_R.right), syc(UNIT_R.bottom))
+                if (underR.intersect(clip)) under(underR)
+            }
             c.save(); c.clipRect(clip)
             drawArt(c)
             c.restore()
@@ -627,6 +641,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         return true
     }
 
+    private val underR = RectF()
     /** the canvas Home's last backdrop was drawn on (the tests: a continent, or the world) */
     var backdropCanvas = 0
         private set
@@ -648,6 +663,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     /** Home's map module's way to this room's art (CompanionHost hands it to MapView) */
     val homeArt: MapView.WorldArt = object : MapView.WorldArt {
         override fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View) = paintBackdrop(c, zone, zr, clip, client)
+        override fun paintUnder(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View, under: (RectF) -> Unit) =
+            paintBackdrop(c, zone, zr, clip, client, under)
         override fun root(zone: Int) = backdropRoot(zone)
         override fun done() = backdropDone()
         override fun release() = backdropRelease()
@@ -1551,7 +1568,9 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     fun onHidden() {
         // memory relief 2: the pictures go [MapRoomLetGo.AFTER_MS] after the room is left (unless it is opened again before)
-        roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, MapRoomLetGo.AFTER_MS)
+        // test build 1489 (#56): with the game running they go right after the room closes ([MapRoomLetGo.afterMs])
+        letGoAfter = MapRoomLetGo.afterMs(runCatching { PlayGate.gameActiveNow() }.getOrDefault(false))
+        roomOn = false; letGoClock.removeCallbacks(letGoLater); letGoClock.postDelayed(letGoLater, letGoAfter)
         held = false
         closePsMenu(); stepChoice.close()                    // pm1: the add-on told the Polestar menu is closed
         holdAsk.hidden(); removeCallbacks(holdTick)     // the let-go itself is the hand-over's (touchedOut)
@@ -3183,8 +3202,16 @@ class WorldMapRoomView(context: Context) : View(context) {
 object MapRoomLetGo {
     /** how long after the room is left its pictures go */
     const val AFTER_MS = 60_000L
+    /**
+     * Test build 1489 (the user's pick 2026-11-18, #56: "release the Map room's pictures right after it closes"): the 1.0.33 / 1.0.34
+     * reports' "worldroom" with the game up reached 55 MB (72 in older ones) for the minute after a close. With the game running
+     * ([gameActive]) they go [GAME_AFTER_MS] after the close (a bounce straight back in keeps them); with it closed, the minute.
+     */
+    const val GAME_AFTER_MS = 2_000L
+    fun afterMs(gameActive: Boolean): Long = if (gameActive) GAME_AFTER_MS else AFTER_MS
     /** "map pictures let go (43 MB): the Map room left 60 s ago" */
-    fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
+    fun line(bytes: Long, afterMs: Long = AFTER_MS): String =
+        "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${afterMs / 1000} s ago"
     /** Home's map module zoomed out on the same pictures (2026-11-17): "map pictures let go (12 MB): Home's map closed 60 s ago" /
      *  "... Home's map closed (lighter memory)" (the 8 / 12 GB models and Lighter mode: at once) */
     fun zoneLine(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map back on its zone"

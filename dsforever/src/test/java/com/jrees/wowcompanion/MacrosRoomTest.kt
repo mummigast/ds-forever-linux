@@ -100,6 +100,21 @@ class MacrosRoomTest {
         assertFalse(st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit"}}""").ym)
     }
 
+    /** Spells s16 X = REMOVE (the user, 2026-11-18: "in the macro menu I need a button to delete a line, maybe just on the X glyph"): the
+     *  focused line's hint (xr), the line asking (rem), More's Insert below and the line it goes under */
+    @Test fun xRemoveAndInsertBelow() {
+        val h = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"l2","xr":true}}""")
+        assertTrue(h.xRemove); assertNull(h.remLine)
+        val a = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"l2","rem":2}}""")
+        assertEquals(2, a.remLine); assertFalse(a.xRemove)
+        val m = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","pop":{"k":"more","cur":"r1","cols":1,"base":0,
+            "rows":[{"o":"ins","l":3},{"o":"pre"},{"o":"del"}]}}}""")
+        assertEquals("Insert below", MacrosModel.moreWord("ins"))
+        assertEquals(3, MacrosModel.insertUnder(m.pop))
+        assertNull(MacrosModel.insertUnder(m.pop!!.copy(cur = "r2")))
+        assertNull(MacrosModel.insertUnder(null))
+    }
+
     /** (s13, an older add-on's + Spell/Item list) its rows' lines, kept for a document from before s14 */
     @Test fun theOlderPickListStillReads() {
         val p = st("""{"type": "macros", "m": {"ready": true, "mode": "pick", "view": "pick", "pick": {"rows": [{"t": "s", "n": "Lightning Bolt",
@@ -173,6 +188,20 @@ class MacrosRoomTest {
         assertEquals("heal", pr.key); assertEquals(2, pr.strips.size); assertTrue(pr.armed); assertEquals("help", pr.picks[0].second)
         assertEquals(listOf("heal", "fof"), ps.tiles.map { it.key }); assertEquals(listOf(136052, 136048), ps.tiles[1].icons)
         assertEquals("Heal, else me", MacrosModel.presetWord("heal")); assertEquals("Friend or foe", MacrosModel.presetWord("fof"))
+    }
+
+    /** Spells s17 BLANK (the user, 2026-11-18: "I need a blank template option on macros to just start a fresh new blank template"): the
+     *  first tile is Blank (the default icon, no lines); after it an empty macro's editor carries no tiles: name, icon, + Line, More */
+    @Test fun blankIsTheFirstTileAndLeavesABlankEditor() {
+        val e = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"t1","mac":{"n":"New Macro","i":134400,"lines":[]},
+            "tiles":[{"ic":[134400],"k":"blank","t":""},{"ic":[136052],"k":"heal","t":"#showtooltip"}]}}""")
+        assertEquals(listOf("blank", "heal"), e.tiles.map { it.key }); assertEquals(listOf(134400), e.tiles[0].icons); assertEquals("", e.tiles[0].text)
+        assertEquals("Blank", MacrosModel.presetWord("blank"))
+        val empty = MacrosModel.Mac("New Macro", 134400, emptyList(), 0, emptySet(), more = false)
+        assertEquals(listOf("name", "icon", "t1", "t2", "add", "more"), MacrosModel.editRows(empty, tiles = e.tiles.size))
+        val blank = st("""{"type":"macros","m":{"ready":true,"mode":"edit","view":"edit","ef":"add","mac":{"n":"New Macro","i":134400,"lines":[]},"ls":[]}}""")
+        assertTrue(blank.tiles.isEmpty()); assertEquals("add", blank.ef)
+        assertEquals(listOf("name", "icon", "add", "more"), MacrosModel.editRows(empty, tiles = blank.tiles.size))
     }
 
     @Test fun theChipsWords() {

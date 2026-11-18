@@ -90,8 +90,7 @@ namespace DsfDesktop.Wow
 
     /// <summary>
     /// Starts WoW when a stream wants it, once: while it is starting nothing starts it again; when its window appears it is
-    /// focused (the stream then shows the game); if no window comes in <see cref="Timeout"/> the state is StartFailed (the player
-    /// may be at Battle.net's sign-in on the PC). The pieces are injected so tests drive it without a game.
+    /// focused (the stream then shows the game); if no window comes in <see cref="Timeout"/> the state is StartFailed. The pieces are injected so tests drive it without a game.
     /// </summary>
     public sealed class WowStarter
     {
@@ -116,11 +115,13 @@ namespace DsfDesktop.Wow
             this.now = now ?? (() => DateTime.UtcNow);
         }
 
-        public static string StartProcess(LaunchPlan p)
+        public static string StartProcess(LaunchPlan p, WowConfigKeep keep = null)
         {
             try
             {
-                WowConfig.Ensure(Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf"));
+                var cfg = Path.Combine(p.WorkDir ?? "", "WTF", "Config.wtf");
+                keep?.RecordWindow(cfg);   // the player's window, before a session's WoW saves the stream's
+                WowConfig.Ensure(cfg, keep);
                 // through the shell: the game must not inherit Desktop's handles (2026-10-30: a crashed Wow.exe kept the bridge port 48210)
                 Process.Start(new ProcessStartInfo(p.Exe, p.Args) { WorkingDirectory = p.WorkDir, UseShellExecute = true })?.Dispose();
                 return null;
@@ -164,7 +165,8 @@ namespace DsfDesktop.Wow
                 if (up) { if (State != WowState.Running) Set(WowState.Running, null); return; }
                 if (State == WowState.Running) { Set(WowState.Stopped, null); return; }
                 if (State == WowState.Starting && now() - startedAt > Timeout)
-                    Set(WowState.StartFailed, "no WoW window after " + (int)Timeout.TotalSeconds + " s: is Battle.net waiting for you to sign in on the PC?");
+                    // never "on the PC" (the user's ruling 2026-11-18): the Thor shows Battle.net's window when it is the step
+                    Set(WowState.StartFailed, "no WoW window after " + (int)Timeout.TotalSeconds + " s");
             }
         }
 

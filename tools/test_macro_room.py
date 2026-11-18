@@ -43,8 +43,8 @@ Proven here:
 Spells s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the recipes "make no sense" and only add lines; every RECOMMENDED pick of
 design_macrobuilder: D1 a line = an action + its spell, then cases; D2 whole-macro presets on a new or empty macro, a second A replaces a
 macro with lines; D3 strips; D4 Select = Done; D5 the controller's targets first in On; D6 the companion's own macros view only):
-  e the editor's rows (name s0, icon s1, lines s2.., + Line / More s21, s22 - s15; Presets / Delete are More's rows); X = a new line
-    under, its Action list open;
+  e the editor's rows (name s0, icon s1, lines s2.., + Line / More s21, s22 - s15; Presets / Delete are More's rows); s16: More's
+    Insert below = a new line under the glow's last line, its Action list open (X was);
   g the builder: action, spell, cases ("+ Case"), Done = ONE write; an unchanged draft writes nothing; B keeps the draft; Revert; Remove's
     second A; a fight refuses Done and keeps the draft; Select = Done; the hard faults (pick, long) and the soft ones (book, bags, else);
   o presets: which tiles show (and in what order, at most 8, Mouseover last only with room), the preview's picks, ONE write, a second A
@@ -59,6 +59,11 @@ macro with lines; D3 strips; D4 Select = Done; D5 the controller's targets first
     pet classes;
   z ranks: the rank chip and pop-out, the exact subtext written (an es client's "Rango 2");
   aa the icon: Auto and the macro's spells' pictures, ONE write; ab the search: the keyboard filters, nothing written.
+Spells s16 X = REMOVE (the user, 2026-11-18: "in the macro menu I need a button to delete a line, maybe just on the X glyph"; the pick
+"X = Remove"):
+  af X on the editor's focused line asks (Cancel [B] / Remove [A], the builder's Remove's ask), A removes that line only (ONE write), B
+    cancels, the time out cancels, a finger elsewhere cancels; the hint's tap (`x`) the same; a '|' line refused; the last line / the
+    only line; a draft held follows its line (its own line gone: the draft goes); never in a fight (no hint, X and the ask's A refused);
 Spells s15 THE LOOK PASS (the user, 2026-11-16: "it needs to be a bit more visually consistent and the icon needs work for the room"; the
 pick "Full match": one A button plus Y More like Quests, Cancel / Confirm for delete / replace):
   ae the editor's buttons + Line / More (s21, s22), the builder's Done / More (s19, s17); More = a one-column pop-out (Presets / Delete;
@@ -334,7 +339,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s15"' in SRC["spells"] and 'local BV = "b67"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local SV = "s17"' in SRC["spells"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")
@@ -355,9 +360,9 @@ guarded = all(re.search(r'canWrite\(\)', fn) for fn in re.findall(r'function MR\
 check(guarded and len(re.findall(r'function MR\.(?:writeBody|setIcon|delete)\(', BLOCK)) == 3
       and 'local why = MR.canWrite()\n    if why then MR.ack(k.name, false, why)' in BLOCK,
       "a. every write is behind the one guard (the keyboard's Done, the one body write, the icon, Delete)")
-bodyCalls = re.findall(r'EditMacro\(i, nil, nil, ([a-z]+)\)', code)
+bodyCalls = re.findall(r'EditMacro\(i, nil, icon, ([a-z]+)\)', code)   # s17: the body write carries Blank's icon (nil otherwise)
 check(bodyCalls == ["nb"] and code.count("MR.writeBody(") >= 6,
-      "a. s14: every line change (Done, Remove, Move, a preset, a typed line) goes through MR.writeBody's ONE EditMacro",
+      "a. s14: every line change (Done, Remove, Move, a preset, s17 Blank, a typed line) goes through MR.writeBody's ONE EditMacro",
       (bodyCalls, code.count("MR.writeBody(")))
 check(re.search(r'SetCVar|C_CVar\.Set', code) is None and 'GetCVar("SoftTargetFriend")' in code,
       "a. s14: the soft-friend CVar is READ only (never written)")
@@ -547,10 +552,11 @@ L.execute('MLOG = {}')
 kbd_done(L, "/wave hello")
 check(L.eval('mbody("Zulu")') == "/wave hello\n/say hi\n/run print(|cff)" and len(mlog(L)) == 1 and mlog(L)[0].startswith('edit 1 nil'),
       "e. Done: EditMacro(i, nil, nil, body) (the body-only form)", (L.eval('mbody("Zulu")'), mlog(L)))
-press(L, "PAD3")
+check(mdoc(L).get('xr') is True and mdoc(L).get('ef') == 'l1', "e. (s16) the glow on line 1: its X Remove hint (xr)", mdoc(L).get('xr'))
+more(L, 'ins')
 d = mdoc(L)
 check(d.get('mode') == 'build' and (d.get('b') or {}).get('ln') is None and d['b'].get('at') == 2 and (d['b'].get('pop') or {}).get('k') == 'cmd',
-      "e. X on line 1: a NEW line under it, in the builder, its Action list open", d.get('b'))
+      "e. (s16) More > Insert below (the glow was on line 1): a NEW line under it, in the builder, its Action list open", d.get('b'))
 check(pick_row(L, lambda r: r.get('k') == 'chat') and mdoc(L).get('kbd', {}).get('name') == 'macline',
       "e. Action: Chat line -> the keyboard (a typed line)", mdoc(L).get('kbd'))
 kbd_done(L, "/sit")
@@ -574,10 +580,10 @@ press(L, "PADDRIGHT")
 check(mdoc(L).get('ef') == 'more', "ae. ... the row's end (no Presets / Delete buttons any more)")
 press(L, "PAD1")
 p = popd(L)
-check(p.get('k') == 'more' and p.get('cols') == 1 and [r.get('o') for r in p.get('rows')] == ['pre', 'del'] and p.get('base') == 0,
-      "ae. A on More: one column, Presets and Delete (cells s0..)", p)
-press(L, "PADDDOWN")
-check(popd(L).get('cur') == 'r2', "ae. Down in More: Delete", popd(L).get('cur'))
+check(p.get('k') == 'more' and p.get('cols') == 1 and [(r.get('o'), r.get('l')) for r in p.get('rows')] == [('ins', 3), ('pre', None), ('del', None)]
+      and p.get('base') == 0, "ae. A on More: one column, Insert below (s16: under line 3, the glow's last line), Presets and Delete (cells s0..)", p)
+press(L, "PADDDOWN"); press(L, "PADDDOWN")
+check(popd(L).get('cur') == 'r3', "ae. Down in More: Delete", popd(L).get('cur'))
 press(L, "PAD2")
 check(not mdoc(L).get('pop') and mdoc(L).get('ef') == 'more' and mlog(L) == [], "ae. B: More closes; nothing done")
 press(L, "PADDLEFT")
@@ -841,7 +847,7 @@ check(L.eval('WowCompanionSpellsDB.stickBy["Korvash-Realm"]["1:9"].n') == 'Bravo
 tap(L, 22)
 check(mdoc(L).get('ef') == 'more' and mdoc(L).get('efc') == 22, "h. the More button (s22)", mdoc(L).get('ef'))
 L.execute('MLOG = {}')
-press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PADDDOWN"); press(L, "PAD1")   # s16: Insert below, Presets, Delete
 d = mdoc(L)
 check(d.get('del') is True and mlog(L) == [] and not d.get('pop') and d.get('mode') == 'edit', "h. More > Delete ASKS (nothing deleted)",
       (d.get('del'), mlog(L)))
@@ -850,7 +856,7 @@ check(mdoc(L).get('del') is True and mdoc(L).get('mode') == 'edit' and not mdoc(
       "ae. while it asks: Up, Y and X do nothing")
 press(L, "PAD2")
 check(not mdoc(L).get('del') and mdoc(L).get('mode') == 'edit', "ae. B: the ask cancelled (still in the editor)")
-press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PAD1")
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PADDDOWN"); press(L, "PAD1")   # s16: Insert below, Presets, Delete
 L.execute('advance(6.5)')
 check(not mdoc(L).get('del'), "h. not confirmed within 6 s: the ask goes")
 more(L, 'del')
@@ -1072,13 +1078,15 @@ L = opened([("Alpha", ""), ("Beta", "/wave")], CHAR)
 press(L, "PAD1")
 d = mdoc(L)
 tk = [t.get('k') for t in d.get('tiles') or []]
-check(tk == ['heal', 'fof', 'focus', 'atk', 'mo'],
-      "o. a Shaman's tiles in the table's order: Heal, Friend or foe, Set focus, Attack + spell ...", tk)
+check(tk == ['blank', 'heal', 'fof', 'focus', 'atk', 'mo'],
+      "o. a Shaman's tiles in the table's order: (s17) Blank FIRST, Heal, Friend or foe, Set focus, Attack + spell ...", tk)
 check('int' not in tk and 'petatk' not in tk and 'form' not in tk and 'trink' not in tk,
       "o. no interrupt in the book, no pet, no forms, no trinket with a use: those tiles are not shown", tk)
 check('seq' not in tk, "o. one harmful spell only: no Sequence (2+ needed)", tk)
 check(tk[-1] == 'mo' and len(tk) <= 8, "o. Mouseover heal LAST (room left), at most 8", tk)
-t0 = d['tiles'][0]
+tb = d['tiles'][0]
+check(tb.get('k') == 'blank' and tb.get('t') == '' and tb.get('ic') == [134400], "o. (s17) Blank: no lines, the default icon's picture", tb)
+t0 = d['tiles'][tk.index('heal')]
 check(t0.get('t') == '#showtooltip\n/cast [help,nodead][@player] Healing Wave' and t0.get('ic') == [130331],
       "o. Heal, else me: '#showtooltip' + '[help,nodead][@player]', the book's helpful spell picked", t0)
 atk = d['tiles'][tk.index('atk')]
@@ -1102,7 +1110,7 @@ press(L, "PAD2"); press(L, "PADDRIGHT"); press(L, "PAD1")
 check(mdoc(L).get('mac', {}).get('n') == 'Beta' and mdoc(L).get('tiles') is None, "o. Beta (a line): no tiles in its editor")
 more(L, 'pre')
 check(mdoc(L).get('mode') == 'pre' and len(mdoc(L).get('tiles') or []) >= 4, "o. More > Presets: the tiles view")
-tap(L, 2); tap(L, "a")
+tap(L, [t.get('k') for t in mdoc(L).get('tiles')].index('focus')); tap(L, "a")
 check(mdoc(L).get('mode') == 'ps' and mdoc(L)['ps']['k'] == 'focus', "o. Set focus's preview", mdoc(L).get('ps'))
 L.execute('MLOG = {}')
 sel(L)
@@ -1124,7 +1132,7 @@ check(mdoc(L).get('mode') == 'grid', "o. B: the grid")
 L = opened([("Alpha", "")], CHAR, macros='BOOK = { 403, 8042 }; WORN[13] = 9001; NFORMS = 1; CLASS = "DRUID"')
 press(L, "PAD1")
 tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
-check(tk == ['int', 'focus', 'atk', 'seq', 'form', 'trink'], "o. Lightning Bolt + Earth Shock, a Druid with a form, a trinket with a use: "
+check(tk == ['blank', 'int', 'focus', 'atk', 'seq', 'form', 'trink'], "o. (s17 Blank first) Lightning Bolt + Earth Shock, a Druid with a form, a trinket with a use: "
       "Focus interrupt (Earth Shock), Set focus, Attack, Sequence, Leave form, Trinket; no heal tiles", tk)
 tiles = {t['k']: t for t in mdoc(L)['tiles']}
 check(tiles['int']['t'] == '/stopcasting\n/cast [@focus,harm,nodead][] Earth Shock', "o. Focus interrupt: /stopcasting then the focus' interrupt, a plain else")
@@ -1136,6 +1144,56 @@ press(L, "PAD1")
 tk = [t.get('k') for t in mdoc(L).get('tiles') or []]
 check('petatk' in tk, "o. a Hunter: Pet attack + spell", tk)
 check(clean(L) == {}, "o. clean", clean(L))
+
+# ================================================================ o2. (s17) BLANK (the user, 2026-11-18: "I need a blank template option on
+# macros to just start a fresh new blank template"): Blank first; on an empty macro A on it writes nothing and the editor goes blank (no
+# tiles, the glow on + Line, More offers Presets); on a macro with lines its Done asks Replace, the A = ONE EditMacro (no lines, the default icon)
+L = opened([("Alpha", ""), ("Beta", "/wave\n/cheer")], CHAR)
+press(L, "PAD1")
+d = mdoc(L)
+check(d.get('mac', {}).get('n') == 'Alpha' and (d.get('tiles') or [{}])[0].get('k') == 'blank', "o2. Alpha (empty): Blank the first tile", d.get('tiles'))
+L.execute('MLOG = {}')
+L.execute(COMBAT_ON)
+tap(L, 2); tap(L, "a")
+check(mdoc(L).get('note') == 'combat' and mlog(L) == [] and mdoc(L).get('tiles'), "o2. Blank in a fight: refused 'combat', the tiles stay",
+      mdoc(L).get('note'))
+L.execute(COMBAT_OFF)
+tap(L, 2); tap(L, "a")
+d = mdoc(L)
+check(mlog(L) == [] and d.get('mode') == 'edit' and not d.get('tiles') and d.get('ls') == [] and d.get('ef') == 'add',
+      "o2. Blank on an empty macro: nothing written, no tiles, no lines, the glow on + Line", (mlog(L), d.get('mode'), d.get('ef')))
+more(L, 'pre')
+check(mdoc(L).get('mode') == 'pre' and (mdoc(L).get('tiles') or [{}])[0].get('k') == 'blank', "o2. a blank macro's More: Presets again")
+press(L, "PAD2")
+check(mdoc(L).get('mode') == 'edit' and not mdoc(L).get('tiles'), "o2. B from Presets: still blank")
+# a custom icon on an empty macro: Blank puts the default back (ONE EditMacro, no body)
+L.execute('GENM[1].icon = 136048')
+L.execute('MLOG = {}')
+more(L, 'pre')
+tap(L, 0); tap(L, "a", allow=True)
+check(mlog(L) == ['edit %d nil nil' % L.eval('GetMacroIndexByName("Alpha")')] and L.eval('(select(2, GetMacroInfo(GetMacroIndexByName("Alpha"))))') == 134400,
+      "o2. Blank on an empty macro with its own icon: ONE write, the icon only, back to the default", mlog(L))
+press(L, "PAD2")
+# Beta (lines): More > Presets > Blank: its preview, Done ASKS, the ask's A empties it (default icon, the name kept)
+L.execute('GENM[2].icon = 136048')
+press(L, "PADDRIGHT"); press(L, "PAD1")
+check(mdoc(L).get('mac', {}).get('n') == 'Beta', "o2. Beta's editor", mdoc(L).get('mac'))
+more(L, 'pre')
+tap(L, 0); tap(L, "a")
+check(mdoc(L).get('mode') == 'ps' and mdoc(L)['ps']['k'] == 'blank' and mdoc(L)['ps'].get('t') == '', "o2. Blank's preview: no lines",
+      mdoc(L).get('ps'))
+L.execute('MLOG = {}')
+sel(L)
+check(mlog(L) == [] and (mdoc(L).get('ps') or {}).get('arm') is True, "o2. Done on a macro with lines: it asks (Cancel / Replace)", mlog(L))
+L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+bi = L.eval('GetMacroIndexByName("Beta")')
+d = mdoc(L)
+check(mlog(L) == ['edit %d nil ' % bi] and L.eval('mbody("Beta")') == '' and L.eval('(select(2, GetMacroInfo(GetMacroIndexByName("Beta"))))') == 134400
+      and d.get('mode') == 'edit' and d.get('mac', {}).get('n') == 'Beta' and not d.get('tiles') and d.get('ef') == 'add',
+      "o2. the ask's A: ONE EditMacro - no lines, the default icon, the name kept; the blank editor", (mlog(L), d.get('ef')))
+check(L.eval('OUTSIDE and #OUTSIDE') == 0, "o2. every write inside the player's own press")
+press(L, "PAD2")
+check(clean(L) == {}, "o2. clean", clean(L))
 
 # ================================================================ p. (review) the `wx` cell before the game's macro UI loaded
 L = opened(GEN, CHAR)
@@ -1693,8 +1751,8 @@ sel(L)
 check(mlog(L) == ['edit 1 nil /cast [help] !Healing Wave; Lightning Bolt\n/cast  [mod:shift]Lightning Shield'],
       "ad. ... Done: ONE write, the line composed; the other line untouched", mlog(L))
 # a fight: Done refused as "combat" BEFORE any fault (the design's 7), the draft kept; a preset's Done likewise
-press(L, "PAD3")
-check(bdoc(L).get('h') == 'pick', "ad. X: a new line, no spell yet ('pick')", bdoc(L).get('h'))
+more(L, 'ins')
+check(bdoc(L).get('h') == 'pick', "ad. More > Insert below (s16; was X): a new line, no spell yet ('pick')", bdoc(L).get('h'))
 press(L, "PAD2")
 L.execute('MLOG = {}; ' + COMBAT_ON)
 sel(L, allow=False)
@@ -1757,6 +1815,132 @@ press(L, "PAD2"); press(L, "PAD2")
 check(L.eval('MRx.parse("/cast [@Ä,harm|x] Bolt").kind') == 'lock' and L.eval('MRx.parse("/cast [@a b,nodead] X").kind') == 'cmd',
       "ad. ('|' still locks a line; a spaced name still reads)")
 check(clean(L) == {}, "ad. clean", clean(L))
+
+# ================================================================ af. (s16) X = Remove in the editor's line list (the user, 2026-11-18:
+# "in the macro menu I need a button to delete a line, maybe just on the X glyph"; the pick "X = Remove"): X on the focused line ASKS
+# (the builder's Remove's ask: Cancel [B] / Remove [A]), A removes that line only (ONE write), B cancels; never in a fight
+
+
+def pa(L):
+    """the ask's A (the capture's press, inside an allowed write)"""
+    L.execute('ALLOW = true'); press(L, "PAD1"); L.execute('ALLOW = false')
+
+
+L = opened([("Alpha", "/wave\n/dance\n/cheer\n/run print(|cff)")], CHAR)
+press(L, "PAD1")
+check('xr' not in mdoc(L) and mdoc(L).get('ef') == 'name', "af. on the name: no X Remove hint", mdoc(L).get('xr'))
+press(L, "PADDDOWN"); press(L, "PADDDOWN")
+check(mdoc(L).get('ef') == 'l2' and mdoc(L).get('xr') is True, "af. the glow on line 2: its X Remove hint (xr)", (mdoc(L).get('ef'), mdoc(L).get('xr')))
+L.execute('MLOG = {}')
+press(L, "PAD3")
+d = mdoc(L)
+check(d.get('rem') == 2 and mlog(L) == [] and d.get('mode') == 'edit' and not d.get('pop') and 'xr' not in d and not d.get('del')
+      and L.eval('mbody("Alpha")') == "/wave\n/dance\n/cheer\n/run print(|cff)",
+      "af. X on line 2: it ASKS (rem = 2), nothing written, no hint while it asks", (d.get('rem'), mlog(L)))
+press(L, "PADDDOWN"); press(L, "PAD4"); press(L, "PAD3"); sel(L, allow=False)
+d = mdoc(L)
+check(d.get('rem') == 2 and d.get('ef') == 'l2' and d.get('mode') == 'edit' and not d.get('pop') and mlog(L) == [],
+      "af. while it asks: the D-pad, Y, X and Select do nothing", (d.get('rem'), d.get('ef'), d.get('mode')))
+press(L, "PAD2")
+d = mdoc(L)
+check('rem' not in d and d.get('mode') == 'edit' and d.get('ef') == 'l2' and mlog(L) == [] and d.get('xr') is True
+      and L.eval('mbody("Alpha")') == "/wave\n/dance\n/cheer\n/run print(|cff)",
+      "af. B: the ask cancelled, nothing written, still in the editor on line 2", (d.get('rem'), d.get('mode'), d.get('ef')))
+press(L, "PAD3")
+L.execute('advance(6.5)')
+check('rem' not in mdoc(L) and mlog(L) == [], "af. not confirmed within 6 s: the ask goes")
+press(L, "PAD3")
+tap(L, 2)
+check('rem' not in mdoc(L) and mdoc(L).get('ef') == 'l1' and mlog(L) == [], "af. a finger elsewhere cancels the ask (then selects there)",
+      mdoc(L).get('ef'))
+press(L, "PADDDOWN"); press(L, "PAD3"); pa(L)
+d = mdoc(L)
+check(mlog(L) == ['edit 1 nil /wave\n/cheer\n/run print(|cff)'] and d.get('mode') == 'edit' and 'rem' not in d,
+      "af. the ask's A: that line ONLY removed, ONE write", mlog(L))
+check(d.get('ef') == 'l2' and d['mac']['lines'][1] == '/cheer', "af. the glow stays in its place (the next line, /cheer)", d.get('ef'))
+L.execute('MLOG = {}')
+tap(L, "x")
+check(mdoc(L).get('rem') == 2 and mlog(L) == [], "af. a finger on the hint (the row's x): the same ask", mdoc(L).get('rem'))
+tap(L, "a", allow=True)
+check(mlog(L) == ['edit 1 nil /wave\n/run print(|cff)'] and mdoc(L).get('ef') == 'l2', "af. ... the ask's Remove tapped: ONE write", mlog(L))
+L.execute('MLOG = {}')
+d = mdoc(L)
+check('xr' not in d and d.get('ef') == 'l2', "af. a '|' line under the glow: no X Remove hint", d.get('xr'))
+press(L, "PAD3")
+check(mdoc(L).get('note') == 'locked' and 'rem' not in mdoc(L) and mlog(L) == [], "af. X on the '|' line: refused 'locked', no ask",
+      mdoc(L).get('note'))
+check(clean(L) == {}, "af. clean", clean(L))
+
+# the last line of the list, then the macro's only line
+L = opened([("Alpha", "/wave\n/dance")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN"); press(L, "PADDDOWN")
+L.execute('MLOG = {}')
+press(L, "PAD3"); pa(L)
+check(mlog(L) == ['edit 1 nil /wave'] and mdoc(L).get('ef') == 'l1', "af. the last line removed: the glow on the new last line",
+      (mlog(L), mdoc(L).get('ef')))
+L.execute('MLOG = {}')
+press(L, "PAD3"); pa(L)
+d = mdoc(L)
+check(mlog(L) == ['edit 1 nil '] and L.eval('mbody("Alpha")') == '' and d.get('mode') == 'edit' and d.get('ef') == 'add'
+      and len(d.get('tiles') or []) > 0 and 'xr' not in d,
+      "af. the only line removed: an empty macro (its preset tiles), the glow on + Line", (mlog(L), d.get('ef')))
+check(clean(L) == {}, "af. clean (the last lines)", clean(L))
+
+# an unsaved line (the builder's draft, kept by B) follows the lines
+L = opened([("Alpha", "/cast Lightning Bolt\n/cast Healing Wave\n/cast Lightning Bolt\n/wave")], CHAR, macros='BOOK = { 403, 331 }')
+press(L, "PAD1")
+for _ in range(5):
+    press(L, "PADDDOWN")
+check(mdoc(L).get('ef') == 'add', "af. (+ Line)", mdoc(L).get('ef'))
+press(L, "PAD1"); press(L, "PAD2"); press(L, "PAD2")
+check(mdoc(L).get('dr') == {'at': 5} and mdoc(L).get('mode') == 'edit', "af. a new line's draft held (B twice: at 5)", mdoc(L).get('dr'))
+for _ in range(4):
+    press(L, "PADDUP")
+check(mdoc(L).get('ef') == 'l1', "af. (line 1)", mdoc(L).get('ef'))
+L.execute('MLOG = {}')
+press(L, "PAD3"); pa(L)
+check(mlog(L) == ['edit 1 nil /cast Healing Wave\n/cast Lightning Bolt\n/wave'] and mdoc(L).get('dr') == {'at': 4},
+      "af. a line above a new line's draft removed: the draft still goes at the end (at 4)", mdoc(L).get('dr'))
+for _ in range(3):
+    press(L, "PADDDOWN")
+press(L, "PAD1")
+check(mdoc(L).get('mode') == 'build' and bdoc(L).get('at') == 4 and not bdoc(L).get('pop'), "af. ... + Line (Draft): that draft again",
+      bdoc(L).get('at'))
+L.execute('MRx.st.draft = nil'); press(L, "PAD2")
+press(L, "PADDUP"); press(L, "PADDUP"); press(L, "PAD1"); chip(L, 'keep')
+check(bdoc(L).get('ln') == 2 and bdoc(L).get('dr') is True, "af. line 2 changed in the builder (a draft)", bdoc(L).get('t'))
+press(L, "PAD2")
+check(mdoc(L).get('dr') == {'n': 2} and mdoc(L).get('ef') == 'l2', "af. B: line 2's draft held", mdoc(L).get('dr'))
+press(L, "PADDUP")
+L.execute('MLOG = {}')
+press(L, "PAD3"); pa(L)
+check(mlog(L) == ['edit 1 nil /cast Lightning Bolt\n/wave'] and mdoc(L).get('dr') == {'n': 1}, "af. the line above it removed: the draft follows (line 1)",
+      mdoc(L).get('dr'))
+press(L, "PAD1")
+check(bdoc(L).get('ln') == 1 and bdoc(L).get('dr') is True, "af. ... A on it: the same draft, still changed", bdoc(L).get('t'))
+press(L, "PAD2")
+L.execute('MLOG = {}')
+press(L, "PAD3"); pa(L)
+check(mlog(L) == ['edit 1 nil /wave'] and 'dr' not in mdoc(L), "af. the draft's own line removed: the draft goes with it", mdoc(L).get('dr'))
+check(clean(L) == {}, "af. clean (the drafts)", clean(L))
+
+# never in a fight
+L = opened([("Alpha", "/wave\n/dance")], CHAR)
+press(L, "PAD1"); press(L, "PADDDOWN")
+L.execute('MLOG = {}; ' + COMBAT_ON)
+check('xr' not in mdoc(L) and mdoc(L).get('ef') == 'l1', "af. in a fight: no X Remove hint", mdoc(L).get('xr'))
+press(L, "PAD3")
+check(mdoc(L).get('note') == 'combat' and 'rem' not in mdoc(L) and mlog(L) == [], "af. X in a fight: refused 'combat', no ask",
+      mdoc(L).get('note'))
+L.execute(COMBAT_OFF)
+press(L, "PAD3")
+check(mdoc(L).get('rem') == 1, "af. out of it: X asks", mdoc(L).get('rem'))
+L.execute(COMBAT_ON)
+pa(L)
+check(mdoc(L).get('note') == 'combat' and mlog(L) == [] and L.eval('mbody("Alpha")') == '/wave\n/dance' and 'rem' not in mdoc(L),
+      "af. a fight started while it asked: the A refused 'combat', nothing written", (mdoc(L).get('note'), mlog(L)))
+L.execute(COMBAT_OFF)
+check(clean(L) == {}, "af. clean (the fight)", clean(L))
 
 # ================================================================ the documents for the room's off-device render (MacrosShotsTest)
 DUMP = os.environ.get("MACRO_DUMP")
@@ -1824,22 +2008,32 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PAD1")
     dump(LB, "kbd")
     tap(LB, "kx")
-    # a new line: X, its Action list open
-    press(LB, "PAD3"); dump(LB, "build_new"); press(LB, "PAD2"); press(LB, "PAD2")
+    # s16: the focused line's X Remove hint, its ask (Cancel / Remove); More with Insert below; a new line (Insert below), its Action list
+    dump(LB, "edit_xremove")
+    press(LB, "PAD3"); dump(LB, "edit_remove_ask"); press(LB, "PAD2")
+    tap(LB, 22); tap(LB, "a"); dump(LB, "edit_more_insert")
+    tap(LB, "a"); dump(LB, "build_new"); press(LB, "PAD2"); press(LB, "PAD2")
     LB.execute('MRx.st.draft = nil')
     # s15: the editor's More open, Delete's ask; a stored line's Remove asking in the builder
     tap(LB, 22); tap(LB, "a"); dump(LB, "edit_more")
-    press(LB, "PADDDOWN"); press(LB, "PAD1"); dump(LB, "edit_delete"); press(LB, "PAD2")
+    press(LB, "PADDDOWN"); press(LB, "PADDDOWN"); press(LB, "PAD1"); dump(LB, "edit_delete"); press(LB, "PAD2")
     press(LB, "PADDUP"); press(LB, "PADDUP"); press(LB, "PAD1"); more(LB, 'rem'); dump(LB, "build_remove"); press(LB, "PAD2"); press(LB, "PAD2")
     # an empty macro's preset tiles, a preset's preview, the presets view, the rank pop-out, the icon
     LE = opened([("New Macro", "")], [], macros='BOOK = { 403, 331, 324, 8042 }; WORN[13] = 9001')
     LE.execute(ICONS); LE.execute('iconize()')
     press(LE, "PAD1"); press(LE, "PADDDOWN")
     dump(LE, "edit_empty")
-    press(LE, "PAD1")
+    press(LE, "PADDRIGHT"); press(LE, "PAD1")                          # (s17: Blank is the first tile; Heal the second)
     dump(LE, "preset")
     press(LE, "PAD2"); press(LE, "PADDUP"); press(LE, "PADDRIGHT"); press(LE, "PAD1")
     dump(LE, "icon")
+    # s17 BLANK: A on the first tile of an empty macro - the blank editor (no tiles, the glow on + Line)
+    LK = opened([("New Macro", "")], [], macros='BOOK = { 403, 331, 324, 8042 }; WORN[13] = 9001')
+    LK.execute(ICONS); LK.execute('iconize()')
+    press(LK, "PAD1"); press(LK, "PADDDOWN")
+    dump(LK, "edit_empty_blank_focus")
+    press(LK, "PAD1")
+    dump(LK, "edit_blank")
     LR = opened([("Alpha", "/cast Healing Wave(Rank 2)")], [], macros=RANKBOOK.replace("Rango", "Rank"))
     LR.execute(ICONS)
     press(LR, "PAD1"); press(LR, "PADDDOWN"); press(LR, "PAD1"); chip(LR, 'rank')
@@ -1848,8 +2042,11 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     LP.execute(ICONS)
     press(LP, "PAD1"); more(LP, 'pre')
     dump(LP, "presets")
-    tap(LP, 0); tap(LP, "a"); sel(LP)
+    tap(LP, 1); tap(LP, "a"); sel(LP)
     dump(LP, "preset_replace")
+    press(LP, "PAD2"); press(LP, "PAD2")
+    tap(LP, 0); tap(LP, "a"); dump(LP, "preset_blank")               # s17: Blank's preview on a macro with lines, then its ask
+    sel(LP); dump(LP, "preset_blank_replace")
     L2 = opened(SHOT, [])
     L2.execute(ICONS); L2.execute('iconize()')
     press(L2, "PADDRIGHT"); press(L2, "PAD3")

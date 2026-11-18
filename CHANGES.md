@@ -1,6 +1,17 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.34 (upstream add-on set 402). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.35 (upstream add-on set 404). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## 2026-11-18: DS Forever 1.0.35, add-on set 411
+
+- **Merged DS Forever 1.0.35.** It carries this edition's HUD memory and switch backoff (PRs #532 and #533) in upstream's own
+  form, so the edition's copies are gone: the add-on keeps the HUD switches, layout and cast bar per character, and the app sends
+  one "restore" tap at connect (a WoW started on the PC alone keeps its normal UI); each switch counts its own answers and a
+  stuck one gets one retry every 30 s.
+- **Pairing over a VPN:** the PC address button is replaced by upstream's **Other network** code. `dsf-bridge code` (and the
+  helper's log) now show it under the 6-digit code; type both on the Thor.
+- Also from 1.0.35: crash fixes, stream settings on the bottom screen, settings sync safety, low-memory work; indoor maps build
+  while the local game is closed (streaming: while the app is open and not streaming, as before).
 
 ## 2026-11-18: DS Forever 1.0.34, add-on set 410
 
