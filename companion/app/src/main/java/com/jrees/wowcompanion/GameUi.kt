@@ -826,7 +826,7 @@ object GameUi {
                     val part = next!!.first
                     if (s.n != swTapN || part != swPart) swMiss = 0
                     if (swMiss >= MISS_MAX && part !in swParked) { swParked.add(part); swParkedAt = now; swMiss = 0 }
-                    else if (s.n != swTapN || part != swPart || now - swTapAt > (if (swMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) {
+                    else if (s.n != swTapN || part != swPart || now - swTapAt > (if (swMiss >= MISS_MAX || part in swParked) MISS_SLOW_MS else 1500L)) {
                         if (s.n == swTapN && part == swPart) swMiss++
                         swPart = part
                         swTapN = s.n; swTapAt = now
