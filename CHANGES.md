@@ -11,7 +11,7 @@ Newest first. Based on DS Forever 1.0.34 (upstream add-on set 402). What differs
   layout editor were affected).
 - The pairing screen fits the Thor's top screen (Stream quality, PC address and Back beside the keypad).
 - No "Save your Battle.net login" button: the PC signs in.
-- Known: the XP bar switch does nothing yet; Damage meter and Cooldown Manager are untested.
+- Known: the XP bar switch does nothing yet; the Damage meter is untested.
 
 ## 2026-11-18: add-on set 407
 

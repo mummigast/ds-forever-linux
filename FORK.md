@@ -82,7 +82,7 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
 ## Untested
 
 Built and passing the off-device tests, but **not yet tried in the game**. Reports welcome.
-- The pet frame and party frame switches; 1.0.34's Damage meter and Cooldown Manager switches.
+- The pet frame and party frame switches; 1.0.34's Damage meter switch.
 - The friendly-nameplate and other switches whose column keys are punctuation (`-`, `=`, `[`, `]`): they may not arrive on non-US
   keyboard layouts.
 - Layout row by keys (RIGHT RIGHT + column): minimap, chat and tracker toggles (added 2026-11-18).
@@ -90,7 +90,7 @@ Built and passing the off-device tests, but **not yet tried in the game**. Repor
 - Bags, spells and other secure rows still go as clicks (no keys yet).
 
 Tested on the Thor (2026-11-17/18): quests (pick, accept, reward), Sell junk, Repair, buy and sell, player and target frames,
-nameplates, Reload UI, 1.0.34's Edit layout (move + Save) and Buffs switch, an instant relog with the layout kept, per-character settings, Normal game UI on/off.
+nameplates, Reload UI, 1.0.34's Edit layout (move + Save), Buffs and Cooldown Manager switches, an instant relog with the layout kept, per-character settings, Normal game UI on/off.
 
 ## Thor setup
 
