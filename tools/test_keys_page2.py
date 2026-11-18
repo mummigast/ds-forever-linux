@@ -30,6 +30,8 @@ L.execute('''
 local pad = WowCompanion.pad
 pad.clearKeys()
 SetOverrideBinding(CreateFrame("Frame"), false, "CTRL-SHIFT-PAGEDOWN", "COMBATLOGPAGEDOWN")   -- as in the live game
+LAYHIT = {}
+pad.secureRow("lay", 40, function() end, function(col) LAYHIT[#LAYHIT + 1] = col end)   -- a stand-in for Hub's layout row (no actions)
 pad.bindKeys()
 FIRED = {}
 for name, r in pairs(pad.rows) do
@@ -77,6 +79,21 @@ L.execute('NOW = NOW + 1')
 press('INSERT', cols[5])
 got = fired()
 check(got == ['qact:5'], "8: qact (INSERT) unchanged", got)
+
+check(rows.get('lay') == 'LEFT LEFT', "9: the plain secure row lay is published as LEFT LEFT", rows)
+L.execute('NOW = NOW + 1')
+press('LEFT', 'LEFT', cols[38])
+check(L.eval('#LAYHIT') == 1 and L.eval('LAYHIT[1]') == 38, "10: LEFT LEFT + column runs lay's onClick", L.eval('#LAYHIT'))
+L.execute('NOW = NOW + 1')
+press('LEFT', cols[4])
+got = fired()
+check(got == ['padtab:4'] and L.eval('#LAYHIT') == 1, "11: one LEFT is still padtab", got)
+L.execute('local b = WowCompanion.pad.rows.lay.cells[7]; b:SetAttribute("type", "macro"); NOW = NOW + 1')
+press('LEFT', 'LEFT', cols[7])
+check(L.eval('#LAYHIT') == 1, "12: a lay cell WITH a secure action is never pressed by a key", L.eval('#LAYHIT'))
+L.execute('WowCompanion.pad.tenant[WowCompanion.pad.rows.lay.row] = "someoneelse"; NOW = NOW + 1')
+press('LEFT', 'LEFT', cols[9])
+check(L.eval('#LAYHIT') == 1, "13: not pressed while another row holds lay's row", L.eval('#LAYHIT'))
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

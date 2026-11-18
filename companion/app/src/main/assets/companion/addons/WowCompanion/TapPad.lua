@@ -457,7 +457,11 @@ local KEY_ROWS = { "INSERT", "HOME", "END", "PAGEUP", "PAGEDOWN", "UP", "DOWN", 
 local KEY_SPARE = { "keytest" }
 -- Linux Streaming Edition (2026-11-18, Thor test: the minimap toggle still clicked): no row key is left, so a row key pressed TWICE picks a
 -- second row ("page 2"): CTRL-SHIFT RIGHT, RIGHT, column = the "ui" row (layout: minimap, chat, tracker). Both presses come in one line.
-local KEY_PAGE2 = { RIGHT = "ui" }
+local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay" }
+-- Linux Streaming Edition (2026-11-18, the 1.0.34 merge: Edit layout, the meters, Buffs / XP bar went as clicks and strayed): secure rows
+-- whose cells carry NO secure action (init sets nothing; the press only runs the row's own Lua onClick), so a key may press them as a
+-- click on the cell would: only while the row is on its (shared) row, never a cell with an action, the same once-per-tap guard
+local KEY_SECURE_PLAIN = { lay = true }
 local KEY_PAGE2_GAP = 0.3   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
 local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "uisw" }   -- Linux Streaming Edition 11-18: uisw takes keytest's RIGHT (PAGEDOWN is bound in the live game)   -- = KEY_ROWS, by name
 local KEY_COLS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
@@ -505,7 +509,7 @@ local function onKey(_, button, down)
     if rname then
         local p2 = KEY_PAGE2[k]
         local pp = keys.pending
-        if p2 and pp and pp.k == k and not pp.page2 and t - pp.at <= KEY_PAGE2_GAP and pad.rows[p2] and not pad.rows[p2].secure then
+        if p2 and pp and pp.k == k and not pp.page2 and t - pp.at <= KEY_PAGE2_GAP and pad.rows[p2] and (not pad.rows[p2].secure or KEY_SECURE_PLAIN[p2]) then
             keys.pending = { name = p2, at = t, k = k, page2 = true }
             if tracing() then trace({ k = k, row = p2 }) end
             return
@@ -520,6 +524,21 @@ local function onKey(_, button, down)
     if col == nil then return keyBad("unknown key", k) end
     if not p or t - p.at > KEY_PICK_TTL then return keyBad("no row", k) end
     local r = pad.rows[p.name]
+    if r and r.secure then
+        if not KEY_SECURE_PLAIN[p.name] then return keyBad("secure row", p.name) end
+        if not onRow(r) then return keyBad("row not held", p.name) end
+        local sb = col < (r.n or 0) and r.cells and r.cells[col]
+        if not sb or type(r.onClick) ~= "function" then return keyBad("no cell", p.name .. ":" .. col) end
+        if hasAction(sb, "LeftButton") then return keyBad("secure action", p.name .. ":" .. col) end
+        local ts = clock()
+        if sb.pressedAt and ts - sb.pressedAt < REPEAT then return end
+        sb.pressedAt = ts
+        flash(sb)
+        keys.n = keys.n + 1
+        if tracing() then trace({ k = k, row = p.name, col = col }) end
+        pcall(r.onClick, col)
+        return
+    end
     local btn = r and not r.secure and r.cells and r.cells[col]
     if not btn then return keyBad("no cell", p.name .. ":" .. col) end
     keys.n = keys.n + 1
@@ -653,7 +672,7 @@ local function keysDescribe()
     end
     for k, p2 in pairs(KEY_PAGE2) do
         local r, owner = pad.rows[p2], keys.rowOf[k]
-        if owner and rows[owner] and r and not r.secure and fits(r.row) and not rows[p2] then rows[p2] = k .. " " .. k end
+        if owner and rows[owner] and r and (not r.secure or KEY_SECURE_PLAIN[p2]) and fits(r.row) and not rows[p2] then rows[p2] = k .. " " .. k end
     end
     local cols = {}
     for col = 0, COLS - 1 do
