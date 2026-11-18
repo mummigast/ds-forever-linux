@@ -77,12 +77,23 @@ internal class PairingView(ctx: Context, private val onPair: (String) -> Unit, p
         }
         addView(boxRow)
         // the touch pad: 1-9, then delete / 0 / pair
-        for (r in 0 until 3) addView(StreamLook.row(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
+        // Linux Streaming Edition (2026-11-18, Thor: "the PC Address button was just a thin line"): the panel was ~500 dp tall on a
+        // ~410 dp top screen, so the bottom row was squeezed flat. The quality / PC address / back buttons now stand in a column
+        // beside the pad (the screen is wide), and the panel fits.
+        val pad = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (r in 0 until 3) pad.addView(StreamLook.row(ctx, *Array(3) { c -> digitKey(ctx, r * 3 + c + 1) }))
+        pad.addView(StreamLook.row(ctx, StreamLook.button(ctx, "Delete") { if (!busy) { entry.backspace(); refresh() } }, digitKey(ctx, 0),
             StreamLook.button(ctx, "Pair  (A)") { submit() }))
+        val side = LinearLayout(ctx).apply { orientation = VERTICAL; gravity = Gravity.CENTER }
+        for (b in listOf(StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, StreamLook.button(ctx, "PC address…") { if (!busy) onAddress() },
+                StreamLook.button(ctx, "Back (B)") { onBack() }))
+            side.addView(b, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                setMargins(StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f), StreamLook.dp(ctx, 8f), StreamLook.dp(ctx, 6f)) })
+        val body = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        body.addView(pad)
+        body.addView(side, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { leftMargin = StreamLook.dp(ctx, 24f) })
+        addView(body)
         addView(message)
-        addView(StreamLook.row(ctx, StreamLook.button(ctx, "Stream quality (Y)") { onQuality() }, /* Linux Edition */ StreamLook.button(ctx, "PC address…") { if (!busy) onAddress() },
-            StreamLook.button(ctx, "Back (B)") { onBack() }))
         refresh()
     }
 
