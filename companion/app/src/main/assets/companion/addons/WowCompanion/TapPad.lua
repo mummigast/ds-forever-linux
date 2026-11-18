@@ -454,8 +454,8 @@ end
 local KEY_MOD_NAMES = "CTRL-SHIFT"           -- the game's order for a chord without Alt
 local KEY_MODS = KEY_MOD_NAMES .. "-"
 local KEY_ROWS = { "INSERT", "HOME", "END", "PAGEUP", "PAGEDOWN", "UP", "DOWN", "LEFT", "RIGHT" }
-local KEY_SPARE = { "uisw" }   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
-local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "keytest" }   -- = KEY_ROWS, by name
+local KEY_SPARE = { "keytest" }   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
+local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "uisw" }   -- Linux Streaming Edition 11-18: uisw takes keytest's RIGHT (PAGEDOWN is bound in the live game)   -- = KEY_ROWS, by name
 local KEY_COLS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
                    "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "MINUS", "EQUALS", "[", "]" }
 -- keys that mean something to Windows, Wine, the launcher or the controller: never bound, never published
