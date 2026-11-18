@@ -42,6 +42,9 @@ object SetupBridge {
     @Volatile var exitStream: (() -> Unit)? = null
     /** the stream's Stream quality page on the top screen, while a stream runs */
     @Volatile var openStreamSettings: (() -> Unit)? = null
+    /** Linux Streaming Edition (2026-11-18): the start screen's Menu > Stream settings - the stream screen opens on its quality page
+     *  and connects when that page closes */
+    @Volatile var qualityFirst = false
     @Volatile var exitGame: (() -> Unit)? = null
     /** the out-of-date folder's pop-up was OK'd: not again this run (the red check line stays) */
     @Volatile var staleOk = false

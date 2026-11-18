@@ -66,7 +66,8 @@ object StartMenu {
         UiKit.button(c, menuButton, "X", StartView.GLYPH_B, down(CLOSE))
         hits += RectF(menuButton) to CLOSE
         if (noLogin) {
-            put(RectF(inL, y, inR, y + bh), "Report issue", REPORT, true)
+            put(half(false), "Report issue", REPORT, true)
+            put(half(true), "Stream settings", STREAM, true)        // Linux Streaming Edition: before a stream too (qualityFirst)
         } else {
         val auto = half(false)
         UiKit.check(c, auto.left + CHECK / 2f, auto.centerY(), CHECK, autoLogin())
@@ -221,7 +222,9 @@ object StartMenu {
                 if (at - forgetArmedAt < FORGET_ARM_MS) { forgetArmedAt = -FORGET_ARM_MS; onForgetLogin?.invoke() } else forgetArmedAt = at
             }
             CHANGE -> { open = false; onChangeLogin?.invoke() }
-            STREAM -> { open = false; SetupBridge.openStreamSettings?.invoke() }
+            STREAM -> { open = false
+                val now = SetupBridge.openStreamSettings
+                if (now != null) now() else { SetupBridge.qualityFirst = true; ModeBridge.pick(StartMode.Mode.STREAM) } }
             RESTART -> { open = false; onRestart?.invoke() }
             SWITCH -> { open = false; onSwitch?.invoke() }
             REPORT -> { open = false; onReport?.invoke() }

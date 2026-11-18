@@ -270,8 +270,15 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         discovery = Discovery(activity, preferSubnet = { NetProbe.subnet(activity) }) { pcs -> seenPcs = pcs; found = withManual(pcs); onFound() }.also { it.start() }
         watchNetwork()
         if (!MoonBridge.loaded) { problem("Streaming isn't in this build", "This DS Forever was built without Moonlight's core.", auto = false); return }
-        if (host == null) show(Screen.PAIRING) else { show(Screen.CONNECTING); status.show("Connecting to ${host!!.name}…", "", "", withButtons = false); connect() }
+        if (host == null) { SetupBridge.qualityFirst = false; show(Screen.PAIRING) }
+        else if (SetupBridge.qualityFirst) {
+            // Linux Streaming Edition: the start screen's Menu > Stream settings - the quality page first, the connect when it closes
+            SetupBridge.qualityFirst = false; connectAfterQuality = true
+            show(Screen.CONNECTING); status.show("Connecting to ${host!!.name}…", "", "", withButtons = false); openQuality()
+        }
+        else { show(Screen.CONNECTING); status.show("Connecting to ${host!!.name}…", "", "", withButtons = false); connect() }
     }
+    private var connectAfterQuality = false
 
     /** it went (back to the chooser, or the activity is gone): the stream, discovery and the bridge stop; the mode is Local again */
     fun closed() {
@@ -904,6 +911,11 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     /** a change made while streaming applies now: the stream connects again (the game on the PC keeps running) */
     private fun qualityDone() {
+        if (connectAfterQuality) {
+            connectAfterQuality = false; testRan = false
+            val h = host
+            if (h != null && session == null) { show(Screen.CONNECTING); status.show("Connecting to ${h.name}…", "", "", withButtons = false); connect(); return }
+        }
         val tested = testRan
         testRan = false
         if (beforeQuality == Screen.STREAMING && quality != qualityAtOpen && session != null) {
