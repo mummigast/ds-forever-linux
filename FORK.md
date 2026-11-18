@@ -76,12 +76,13 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
 - **Chat commands typed in the app's chat** (`/reload`, `/wcui ...`) are not sent: that button is a secure click, which keys can't
   press yet. Turn on *Normal game UI* and type them in the game's own chat window. Plain chat works from the app.
 - **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
+- **XP bar switch** (new in 1.0.34) does nothing yet (Thor, 2026-11-18).
 - Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled).
 
 ## Untested
 
 Built and passing the off-device tests, but **not yet tried in the game**. Reports welcome.
-- The pet frame and party frame switches.
+- The pet frame and party frame switches; 1.0.34's Damage meter and Cooldown Manager switches.
 - The friendly-nameplate and other switches whose column keys are punctuation (`-`, `=`, `[`, `]`): they may not arrive on non-US
   keyboard layouts.
 - Layout row by keys (RIGHT RIGHT + column): minimap, chat and tracker toggles (added 2026-11-18).
@@ -89,7 +90,7 @@ Built and passing the off-device tests, but **not yet tried in the game**. Repor
 - Bags, spells and other secure rows still go as clicks (no keys yet).
 
 Tested on the Thor (2026-11-17/18): quests (pick, accept, reward), Sell junk, Repair, buy and sell, player and target frames,
-nameplates, Reload UI, an instant relog with the layout kept, per-character settings, Normal game UI on/off.
+nameplates, Reload UI, 1.0.34's Edit layout (move + Save) and Buffs switch, an instant relog with the layout kept, per-character settings, Normal game UI on/off.
 
 ## Thor setup
 

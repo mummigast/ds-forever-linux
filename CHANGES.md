@@ -1,6 +1,17 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.33 (add-on set 399). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.34 (upstream add-on set 402). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## 2026-11-18: DS Forever 1.0.34, add-on set 410
+
+- **Merged DS Forever 1.0.34**: Edit layout (move and save the top-screen pieces), the Buffs / XP bar / Damage meter / Cooldown
+  Manager switches, Smart pet (replaces this edition's pet-follow memory), map and stream fixes from upstream.
+- Edit layout and those switches work while streaming: their hidden row is pressed by keyboard shortcuts too.
+- Shortcut columns no longer use punctuation keys, which never arrived on non-US keyboard layouts (friendly nameplates and the
+  layout editor were affected).
+- The pairing screen fits the Thor's top screen (Stream quality, PC address and Back beside the keypad).
+- No "Save your Battle.net login" button: the PC signs in.
+- Known: the XP bar switch does nothing yet; Damage meter and Cooldown Manager are untested.
 
 ## 2026-11-18: add-on set 407
 
