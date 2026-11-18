@@ -24,7 +24,8 @@ object TapKeys {
     const val MODS = "CTRL-SHIFT"
     val ROW_KEYS = setOf("INSERT", "HOME", "END", "PAGEUP", "PAGEDOWN", "UP", "DOWN", "LEFT", "RIGHT")
     val COL_KEYS: Set<String> = (('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() } +
-        listOf("MINUS", "EQUALS", "[", "]")).toSet()
+        listOf("MINUS", "EQUALS", "[", "]") +
+        listOf("INSERT", "HOME", "END", "PAGEUP")).toSet()   // Linux Streaming Edition 11-18: columns 36-39 as layout-safe keys (TapPad KEY_COLX)
     /** what Windows / Wine / the launcher treat as system keys (with any Alt or Meta, every F-key, the numpad, the controller) */
     private val SYSTEM = setOf("ESCAPE", "ESC", "TAB", "ENTER", "RETURN", "SPACE", "BACKSPACE", "DELETE", "PRINTSCREEN", "SCROLLLOCK",
         "PAUSE", "NUMLOCK", "CAPSLOCK", "LWIN", "RWIN", "APPS", "MENU", "ALT", "LALT", "RALT")

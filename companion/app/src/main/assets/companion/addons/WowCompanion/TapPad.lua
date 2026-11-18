@@ -462,6 +462,10 @@ local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay" }
 -- whose cells carry NO secure action (init sets nothing; the press only runs the row's own Lua onClick), so a key may press them as a
 -- click on the cell would: only while the row is on its (shared) row, never a cell with an action, the same once-per-tap guard
 local KEY_SECURE_PLAIN = { lay = true }
+-- Linux Streaming Edition (2026-11-18, Thor trace: LEFT LEFT arrived, the column "[" never did; the letters always do): the punctuation
+-- columns 36-39 (MINUS EQUALS [ ]) depend on the keyboard layout (Swedish here), so they go as navigation row keys instead. A row key
+-- arriving while a pick is fresh (within KEY_PAGE2_GAP) is that column; RIGHT / LEFT (the page-2 keys) are never columns.
+local KEY_COLX = { INSERT = 36, HOME = 37, END = 38, PAGEUP = 39 }
 local KEY_PAGE2_GAP = 0.3   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
 local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "uisw" }   -- Linux Streaming Edition 11-18: uisw takes keytest's RIGHT (PAGEDOWN is bound in the live game)   -- = KEY_ROWS, by name
 local KEY_COLS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
@@ -506,6 +510,8 @@ local function onKey(_, button, down)
     local k = type(button) == "string" and button or nil
     local t = clock()
     local rname = k and keys.rowOf[k]
+    local colx = k and KEY_COLX[k]
+    if rname and colx and keys.pending and t - keys.pending.at <= KEY_PAGE2_GAP then rname = nil end   -- a column (above)
     if rname then
         local p2 = KEY_PAGE2[k]
         local pp = keys.pending
@@ -518,7 +524,7 @@ local function onKey(_, button, down)
         if tracing() then trace({ k = k, row = rname }) end
         return
     end
-    local col = k and keys.colOf[k]
+    local col = k and (keys.colOf[k] or colx)
     local p = keys.pending
     keys.pending = nil
     if col == nil then return keyBad("unknown key", k) end
@@ -595,8 +601,8 @@ function pad.bindKeys()
     end
     if not keys.colsDone then
         for col = 0, COLS - 1 do
-            local k = KEY_COLS[col + 1]
-            if keyFree(k) and keyBind(k) then keys.colOf[k], keys.colKey[col] = col, k end
+            local k = (col < 36) and KEY_COLS[col + 1] or nil      -- 36-39: KEY_COLX (no punctuation keys bound)
+            if k and keyFree(k) and keyBind(k) then keys.colOf[k], keys.colKey[col] = col, k end
         end
         keys.colsDone = true
     end
@@ -679,6 +685,7 @@ local function keysDescribe()
         local k = keys.colKey[col]
         cols[col + 1] = (k and keySafe(KEY_MOD_NAMES, k)) and k or ""
     end
+    for k, col in pairs(KEY_COLX) do cols[col + 1] = keys.rowOf[k] and k or "" end
     return { mods = KEY_MOD_NAMES, ttl = KEY_PICK_TTL, rows = rows, cols = cols, s = keys.session }
 end
 
