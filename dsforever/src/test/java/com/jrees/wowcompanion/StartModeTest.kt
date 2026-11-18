@@ -20,7 +20,6 @@ import org.junit.Test
  * chooser; only a shortcut's dsf.mode skips it; nothing is remembered.
  */
 class StartModeTest {
-    init { StartMode.STREAM_ONLY = false }   // the upstream chooser behaviour; the Linux edition default is tested in StreamOnlyTest
     @Test fun parsesTheShortcutExtra() {
         assertEquals(Mode.LOCAL, StartMode.parse("local"))
         assertEquals(Mode.STREAM, StartMode.parse(" STREAM "))
