@@ -680,8 +680,12 @@ async def tail_loop():
             await broadcast(msgs)
         await asyncio.sleep(0.05 if msgs else 0.2)   # quick while docs flow, light when idle
 
+# a WoW the Thor used is closed after this long with no Thor connected (swiping the app away leaves it running); 0 = never
+IDLE_CLOSE_S = int(float(os.environ.get("DSF_IDLE_CLOSE_MIN", "10")) * 60)
+
 async def wow_loop():
     last = None
+    thor_seen, alone_since = False, None             # idle close: a Thor used this WoW run; since when none is connected
     texts = {"none": "WoW isn't running on your PC", "starting": "Starting WoW on your PC…", "login": "WoW is at its login screen",
              "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
@@ -689,6 +693,19 @@ async def wow_loop():
             w = await asyncio.to_thread(wow_now)
         except Exception as e:
             log("WoW check:", e); await asyncio.sleep(5); continue
+        now = time.monotonic()
+        if not w["running"]:
+            thor_seen, alone_since = False, None
+        elif sessions:
+            thor_seen, alone_since = True, None
+        elif thor_seen and alone_since is None:
+            alone_since = now
+        if wow_linux.idle_close_due(w["running"], thor_seen, alone_since, now, IDLE_CLOSE_S) and STEAM_PREFIX:
+            log(f"No Thor for {IDLE_CLOSE_S // 60} min: closing WoW and Battle.net")
+            n = await asyncio.to_thread(close_prefix, *STEAM_PREFIX)
+            log(f"closed {n} process(es)")
+            thor_seen, alone_since = False, None
+            await asyncio.sleep(2); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
         if key != last:
             if sessions and w["running"] and (last is None or last[0] != "running"):

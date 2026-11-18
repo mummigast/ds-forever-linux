@@ -304,3 +304,9 @@ def focus_window():
         except (OSError, subprocess.SubprocessError):
             pass
         os.unlink(path)
+
+
+def idle_close_due(running, thor_seen, alone_since, now, idle_s):
+    """True when WoW should be closed: it runs, a Thor used it this run, and no Thor has been connected for idle_s seconds
+    (0 = never). A WoW started on the PC alone (no Thor seen since it started) is never closed."""
+    return bool(idle_s and running and thor_seen and alone_since is not None and now - alone_since >= idle_s)
