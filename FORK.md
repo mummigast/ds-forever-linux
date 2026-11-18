@@ -46,6 +46,12 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | The character is taken from a replayed document until a live one comes (a Thor joining a running game never learned it, so no per-character switch was sent) | `companion/.../CompanionHost.kt`, `GameUi.kt` |
 | A switch the game never answers is parked after 3 tries so the rest still go | `companion/.../GameUi.kt` |
 | The Linux PC helper (replaces DS Forever Desktop); it installs the add-ons from this repository, so they match the app built from the same checkout | `linux-helper/` |
+| **Keyboard shortcuts instead of clicks** (the key channel, off upstream, is on): CTRL-SHIFT + row key + column key presses the add-ons' hidden buttons without WoW's cursor, so quests, vendor (Sell junk, Repair), and the top-screen switches work with a WoW window open | `TapBridge.kt` (`KEYS_ON`), `TapKeys.kt`, `WowCompanion/TapPad.lua` |
+| Live-game key fixes: CTRL-SHIFT-PAGEDOWN is bound in WoW, so the HUD switch row takes the test row's RIGHT; with no row key left, a row key pressed **twice** picks a second row (RIGHT RIGHT + column = the layout row: minimap, chat, tracker) | `TapPad.lua` (`KEY_HOT`, `KEY_PAGE2`), `TapKeys.kt` |
+| **HUD switches, layout and cast bar remembered per character** by the add-on and put back at login: a relog no longer replays ~20 taps | `WowCompanionHub/Hub.lua` (hub58, hub59) |
+| **Fewer taps after login**: the Start button's mode and B's pet follow are derived or kept by the add-ons instead of told by the app | `WowCompanionQuests/Quests.lua`, `WowCompanionSpells` |
+| **Normal game UI** switch (Settings > Top screen > Game windows): minimap, chat, tracker and cast bar back in one tap; `/wcui reset` typed in the game's chat brings back the whole UI | `GameUi.kt`, `GameUiSection.kt`, `Hub.lua` |
+| The app never downloads a game client onto the device (no automatic update for the local game) | `StartMode.kt` (`STREAM_ONLY`), `WoWForeverScreen.kt` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
@@ -67,10 +73,23 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
 
 ## Known problems
 
-- **Clicks while a WoW window is open** (vendor, game menu, settings): WoW then shows its controller cursor, the app's
-  clicks land in the middle of the screen instead of on the add-ons' hidden buttons, and buttons such as *Sell junk*
-  answer "no answer from the game". In the game world without a window, clicks work. Being worked on.
+- **Chat commands typed in the app's chat** (`/reload`, `/wcui ...`) are not sent: that button is a secure click, which keys can't
+  press yet. Turn on *Normal game UI* and type them in the game's own chat window. Plain chat works from the app.
+- **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
 - Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled).
+
+## Untested
+
+Built and passing the off-device tests, but **not yet tried in the game**. Reports welcome.
+- The pet frame and party frame switches.
+- The friendly-nameplate and other switches whose column keys are punctuation (`-`, `=`, `[`, `]`): they may not arrive on non-US
+  keyboard layouts.
+- Layout row by keys (RIGHT RIGHT + column): minimap, chat and tracker toggles (added 2026-11-18).
+- B's pet follow kept per character (Hunter / Warlock).
+- Bags, spells and other secure rows still go as clicks (no keys yet).
+
+Tested on the Thor (2026-11-17/18): quests (pick, accept, reward), Sell junk, Repair, buy and sell, player and target frames,
+nameplates, Reload UI, an instant relog with the layout kept, per-character settings, Normal game UI on/off.
 
 ## Thor setup
 

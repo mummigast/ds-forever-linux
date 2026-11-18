@@ -11,8 +11,8 @@
 > - **No APKs here.** Build it yourself (`./linux-build.sh`); see [FORK.md](FORK.md).
 >
 > **Known problems**
-> - Bottom-screen buttons that act while a WoW window is open (for example *Sell junk* at a vendor, the game menu,
->   settings) don't work yet: the click lands in the middle of the screen. Use WoW's own buttons there for now.
+> - Chat commands (`/reload`, ...) typed in the app's chat aren't sent: turn on *Normal game UI* and use the game's chat.
+> - Some switches are untested in game (pet and party frames among them): see *Untested* in [FORK.md](FORK.md).
 > - Right after connecting, the camera may turn by itself until the right stick is moved.
 >
 > What this fork changes, what it leaves out, licences and the Linux build: [FORK.md](FORK.md). The helper:
