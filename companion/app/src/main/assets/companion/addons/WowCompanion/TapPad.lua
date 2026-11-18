@@ -454,7 +454,11 @@ end
 local KEY_MOD_NAMES = "CTRL-SHIFT"           -- the game's order for a chord without Alt
 local KEY_MODS = KEY_MOD_NAMES .. "-"
 local KEY_ROWS = { "INSERT", "HOME", "END", "PAGEUP", "PAGEDOWN", "UP", "DOWN", "LEFT", "RIGHT" }
-local KEY_SPARE = { "keytest" }   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
+local KEY_SPARE = { "keytest" }
+-- Linux Streaming Edition (2026-11-18, Thor test: the minimap toggle still clicked): no row key is left, so a row key pressed TWICE picks a
+-- second row ("page 2"): CTRL-SHIFT RIGHT, RIGHT, column = the "ui" row (layout: minimap, chat, tracker). Both presses come in one line.
+local KEY_PAGE2 = { RIGHT = "ui" }
+local KEY_PAGE2_GAP = 0.3   -- Linux Streaming Edition: rows that take a secure row's unused key (see the keyed rows below)
 local KEY_HOT = { "qact", "qpick", "ipick", "iact", "chq", "pause", "spick", "padtab", "uisw" }   -- Linux Streaming Edition 11-18: uisw takes keytest's RIGHT (PAGEDOWN is bound in the live game)   -- = KEY_ROWS, by name
 local KEY_COLS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",
                    "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "MINUS", "EQUALS", "[", "]" }
@@ -499,7 +503,14 @@ local function onKey(_, button, down)
     local t = clock()
     local rname = k and keys.rowOf[k]
     if rname then
-        keys.pending = { name = rname, at = t }
+        local p2 = KEY_PAGE2[k]
+        local pp = keys.pending
+        if p2 and pp and pp.k == k and not pp.page2 and t - pp.at <= KEY_PAGE2_GAP and pad.rows[p2] and not pad.rows[p2].secure then
+            keys.pending = { name = p2, at = t, k = k, page2 = true }
+            if tracing() then trace({ k = k, row = p2 }) end
+            return
+        end
+        keys.pending = { name = rname, at = t, k = k }
         if tracing() then trace({ k = k, row = rname }) end
         return
     end
@@ -639,6 +650,10 @@ local function keysDescribe()
     for name, k in pairs(keys.keyOf) do
         local r = pad.rows[name]
         if r and fits(r.row) and keySafe(KEY_MOD_NAMES, k) then rows[name] = k end
+    end
+    for k, p2 in pairs(KEY_PAGE2) do
+        local r, owner = pad.rows[p2], keys.rowOf[k]
+        if owner and rows[owner] and r and not r.secure and fits(r.row) and not rows[p2] then rows[p2] = k .. " " .. k end
     end
     local cols = {}
     for col = 0, COLS - 1 do

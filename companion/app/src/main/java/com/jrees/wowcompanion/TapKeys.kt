@@ -53,7 +53,10 @@ object TapKeys {
         val cols = keys.optJSONArray("cols") ?: return null
         if (col < 0 || col >= cols.length()) return null
         val ck = cols.optString(col)
-        if (rk !in ROW_KEYS || ck !in COL_KEYS || systemChord(MODS, rk) || systemChord(MODS, ck)) return null
+        // Linux Streaming Edition 11-18: a "page 2" row publishes its row key twice ("RIGHT RIGHT"), both sent before the column key
+        val rks = rk.split(' ')
+        if (rks.size !in 1..2 || rks.toSet().size != 1) return null
+        if (rks.any { it !in ROW_KEYS || systemChord(MODS, it) } || ck !in COL_KEYS || systemChord(MODS, ck)) return null
         return rk to ck
     }
 
