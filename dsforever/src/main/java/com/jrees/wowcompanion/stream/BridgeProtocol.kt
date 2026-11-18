@@ -23,7 +23,9 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
                  val show: List<Float> = emptyList(),
                  /** issues #304 / #357: why the taps can't reach WoW on the PC: "elevated" (run as administrator) | "not_filling" (WoW's
                   *  window doesn't fill the streamed monitor); "" = fine, or an older Desktop */
-                 val input: String = "") {
+                 val input: String = "",
+                 /** Desktop 0.2.31: the game refused the region picked on its own region screen (309) and waits there for another pick */
+                 val regionRefused: Boolean = false) {
     /** signed in: at character select or in the world */
     val signedIn get() = screen == "charselect" || screen == "world"
 
@@ -31,7 +33,8 @@ data class PcWow(val state: String = "", val why: String = "", val screen: Strin
         fun of(o: JSONObject?): PcWow? = o?.let {
             PcWow(it.optString("state"), it.optString("why"), it.optString("screen"),
                 if (it.has("focused")) it.optBoolean("focused") else null, it.optString("bnet"), it.optBoolean("needs_you"),
-                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"))
+                it.optString("login_error"), it.optString("crash"), rect(it.optString("show")), it.optString("input"),
+                it.optString("region") == "refused")
         }
 
         /** "x,y,w,h" (shares of the screen) -> 4 floats; anything else -> empty */
@@ -59,7 +62,10 @@ sealed class BridgeMsg {
                         *  "" = fine) and its line for the Thor ("pc busy: another Sunshine"); empty from an older Desktop */
                        val sunProblem: String = "", val sunWhy: String = "",
                        /** issue #414: Desktop's clock when it sent this, on the documents' `gt` scale ([PcClock]); -1 from an older Desktop */
-                       val gtNow: Long = -1L) : BridgeMsg()
+                       val gtNow: Long = -1L,
+                       /** Desktop 0.2.32: what the stream's start waits for ("screen" = its own virtual screen being made, "starting" = its
+                        *  streaming host starting; "" = go, or an older Desktop) */
+                       val sunWait: String = "") : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -73,6 +79,12 @@ sealed class BridgeMsg {
     data class Log(val event: String) : BridgeMsg()
     data class BacklogEnd(val count: Int) : BridgeMsg()
     data class Stream(val state: String) : BridgeMsg()
+    /** Desktop 0.2.32: its Sunshine's ports and reason again ("sunshine": it moved to a new base; "host_check_result": the answer to
+     *  [BridgeProtocol.hostCheck], [state] ok | restarting | failed | streaming, "" for a plain "sunshine") */
+    data class Sunshine(val state: String, val httpPort: Int, val httpsPort: Int, val problem: String, val why: String, val answer: Boolean,
+                        /** as [Welcome.sunWait] */ val wait: String = "") : BridgeMsg() {
+        val report get() = StreamPorts.Report(true, httpPort, httpsPort)
+    }
     /** Desktop's answer to [BridgeProtocol.bnetReady]: [form] = Battle.net's sign-in in front and found; null = do not type */
     data class BnetReady(val form: BnetFormAt?, val why: String) : BridgeMsg()
     data class FocusResult(val ok: Boolean, val why: String, val state: String = "", val pc: PcWow? = null) : BridgeMsg()
@@ -81,7 +93,18 @@ sealed class BridgeMsg {
                       val httpPort: Int, val httpsPort: Int) : BridgeMsg()
     data class PairError(val error: String, val attemptsLeft: Int) : BridgeMsg()
     data class PairStream(val ok: Boolean, val error: String) : BridgeMsg()
+    /** Desktop 0.2.32's answer to [BridgeProtocol.pcTest]: its own checks in order ([steps]: id, state pass|fail|skip|not_run, line,
+     *  fix), the screen a stream gets ([screen] own | real | none, its top rate [screenHz], 0 = unknown) and the ViGEmBus word [pad] */
+    data class PcTest(val steps: List<PcStep>, val screen: String, val screenLine: String, val screenHz: Int, val pad: String) : BridgeMsg() {
+        data class PcStep(val id: String, val state: String, val line: String, val fix: String)
+        /** the first failed step, null = none */
+        val failed get() = steps.firstOrNull { it.state == "fail" }
+        /** one line per step for the report ("ports ok (all 6 ready)") */
+        val lines get() = steps.map { "${it.id} ${if (it.state == "fail") "FAILED" else it.state}" + (if (it.line.isNotEmpty()) " (${it.line})" else "") }
+    }
     object Unpaired : BridgeMsg()
+    /** Desktop 0.2.31 starts WoW again after a client of the last login.txt closed itself: send the saved login once more */
+    object LoginAgain : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
 
@@ -115,12 +138,34 @@ object BridgeProtocol {
     }
 
     fun focus(): String = JSONObject().put("t", "focus").toString()
+    /** the stream's mode (Desktop 0.2.31): a PC with no screen on makes its virtual screen at it */
+    fun streamMode(w: Int, h: Int, fps: Int): String = JSONObject().put("t", "stream_mode").put("w", w).put("h", h).put("fps", fps).toString()
     /** 2026-11-04 (the stream test: the PC ran add-on set 239 against the Thor's 251, "a TOOON of Lua errors"): Desktop installs its
      *  bundled add-on set into the PC game (it only did at its own start or a button); it answers {"t":"addons", ..., "result"} */
     fun addonsInstall(): String = JSONObject().put("t", "addons_install").toString()
     fun bnetReady(): String = JSONObject().put("t", "bnet_ready").toString()
-    /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged */
-    fun loginFile(email: String, password: String): String = JSONObject().put("t", "login_file").put("email", email).put("password", password).toString()
+    /** Desktop 0.2.32: RTSP timed out twice with HTTP fine: check (and heal) the streaming host; answered by host_check_result */
+    fun hostCheck(): String = JSONObject().put("t", "host_check").toString()
+    /** Desktop 0.2.32: the PC's half of Test connection (ports, RTSP, encoder, screen, controller); answered by pc_test_result */
+    fun pcTest(): String = JSONObject().put("t", "pc_test").toString()
+    /** Desktop 0.2.32: the player's Retry by hand: Desktop's own virtual screen starts its tries over (it gives up after 3) */
+    fun screenRetry(): String = JSONObject().put("t", "screen_retry").toString()
+    /**
+     * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
+     * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick
+     * ([com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList]), null = none here. An account name: never logged.
+     */
+    data class GameAccount(val ask: Boolean, val list: String? = null)
+
+    /** the saved login for WoW's login.txt on the PC: only down the pinned wss connection, never logged; with the game account to
+     *  remember on the PC ([GameAccount]: "ask" never carries one) */
+    fun loginFile(email: String, password: String, account: GameAccount? = null): String =
+        JSONObject().put("t", "login_file").put("email", email).put("password", password).apply {
+            if (account != null) {
+                put("game_account", if (account.ask) "ask" else "remember")
+                if (!account.ask && !account.list.isNullOrEmpty()) put("account_list", account.list)
+            }
+        }.toString()
 
     /** "x,y" (shares) -> a point; anything else -> null */
     fun point(s: String): Pair<Float, Float>? {
@@ -144,7 +189,7 @@ object BridgeProtocol {
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
-                o.optLong("gt_now", -1L))
+                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty())
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
@@ -157,6 +202,9 @@ object BridgeProtocol {
             "reset" -> BridgeMsg.Log("restart")
             "backlog_end" -> BridgeMsg.BacklogEnd(o.optInt("count", 0))
             "stream" -> BridgeMsg.Stream(o.optString("state"))
+            "sunshine", "host_check_result" -> BridgeMsg.Sunshine(o.optString("state"), sun?.optInt("http_port", 0) ?: 0,
+                sun?.optInt("https_port", 0) ?: 0, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(), t == "host_check_result",
+                sun?.optString("wait").orEmpty())
             "bnet_ready_result" -> {
                 val pass = point(o.optString("password")); val button = point(o.optString("button"))
                 BridgeMsg.BnetReady(if (o.optBoolean("ok") && pass != null && button != null) BnetFormAt(point(o.optString("email")), pass, button) else null,
@@ -170,6 +218,11 @@ object BridgeProtocol {
             "pair_error" -> BridgeMsg.PairError(o.err(), o.optInt("attempts_left", -1))
             "pair_stream" -> BridgeMsg.PairStream(o.optBoolean("ok"), o.optString("error"))
             "unpaired" -> BridgeMsg.Unpaired
+            "pc_test_result" -> BridgeMsg.PcTest((o.optJSONArray("steps") ?: JSONArray()).let { a ->
+                (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+                    BridgeMsg.PcTest.PcStep(it.optString("id"), it.optString("state"), it.optString("line"), it.optString("fix")) }
+            }, o.optString("screen"), o.optString("screen_line"), o.optInt("screen_hz", 0), o.optString("pad"))
+            "login_again" -> BridgeMsg.LoginAgain
             else -> BridgeMsg.Unknown(t)
         }
     }

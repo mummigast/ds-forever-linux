@@ -60,19 +60,7 @@ L, errs = boot()
 w = start_words(L)
 check(w and w[-1] == "rooms", "a3: never asked -> 'rooms' (Quests' default, as the app expects)", w)
 
-# (b) B's pet follow kept and restored
-L, errs = boot()
-check(pf_on(L) is not True, "b0: first login, nothing kept: pf.on not set", pf_on(L))
-L.execute('WowCompanion.padMap.petFollowB(true)')
-kept = L.eval('WowCompanionSpellsDB.petFollowB and WowCompanionSpellsDB.petFollowB["%s"]' % KEY)
-check(kept is True, "b1: the app's word ON is kept per character", kept)
-L2, errs = boot('{ petFollowB = { ["%s"] = true } }' % KEY)
-check(pf_on(L2) is True, "b2: next login: pf.on restored by itself (no tell needed)", pf_on(L2))
-L3, errs = boot('{ petFollowB = { ["Someone-Else"] = true } }')
-check(pf_on(L3) is not True, "b3: another character's word is not restored", pf_on(L3))
-L2.execute('WowCompanion.padMap.petFollowB(false)')
-cleared = L2.eval('WowCompanionSpellsDB.petFollowB["%s"]' % KEY)
-check(cleared is None, "b4: the word OFF clears the kept entry", cleared)
+# (b) B's pet follow memory: dropped at the 1.0.34 merge (2026-11-18); upstream's Smart pet replaced petFollowB
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

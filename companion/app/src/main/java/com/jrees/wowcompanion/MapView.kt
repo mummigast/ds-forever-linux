@@ -46,6 +46,12 @@ class MapView(context: Context) : View(context) {
     // SMALL_TILES_MAX on screen (a continent): none, the grid
     private val QUARTER_TILES_MAX = 80
     private val SMALL_TILES_MAX = 320
+    // Terrain style zoomed out: at most this many TerrainOverview pictures a continent per frame (the level keeps it near the screen's)
+    private val TERRAIN_TILES_MAX = 400
+    // the water (the user, 2026-11-17: "I dont love it being one shade of teal. Can we give the water depth?"): every terrain picture's
+    // water is repainted by its distance to land when it is decoded (WaterDepth); the sea where no ADT is is the continent's depth field's
+    // own picture over WaterDepth.DEEP. No filter at draw time
+    private val seaDst = RectF()
 
     // ZOOM. In WoW the minimap is just the world map zoomed in with the same markers on it,
     // so this is one map with a zoom level rather than two different views. zoom 1 = whole
@@ -81,7 +87,7 @@ class MapView(context: Context) : View(context) {
                 autoZoom = false        // you have taken the wheel; double-tap gives it back
                 zoomEase = Float.NaN
                 focusRestoreZoom = Float.NaN
-                zoom = (zoom * d.scaleFactor).coerceIn(1.0f, ZOOM_MAX)
+                zoom = (zoom * d.scaleFactor).coerceIn(zoomFloor, ZOOM_MAX)
                 autoZoomCur = zoom
                 postInvalidate(); return true
             }
@@ -117,6 +123,7 @@ class MapView(context: Context) : View(context) {
                 postInvalidate(); return true
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (fieldTouchHeld) { fieldTouchHeld = false; onFieldTouch?.invoke() }
                 // The field is 3:2, not square, so a pixel of drag is a DIFFERENT amount of map
                 // in x than in y. Dividing both by one number made the map slide diagonally
                 // when you dragged straight.
@@ -142,8 +149,8 @@ class MapView(context: Context) : View(context) {
                     // so the two halves differ)
                     val hx = if (lastHalfX > 0f) lastHalfX else 0.5f / zoom
                     val hy = if (lastHalfY > 0f) lastHalfY else 0.5f / zoom
-                    panX = (panX + dx * 2f * hx / lastFieldW).coerceIn(0f, 1f)
-                    panY = (panY + dy * 2f * hy / lastFieldH).coerceIn(0f, 1f)
+                    panX = (panX + dx * 2f * hx / lastFieldW).coerceIn(rootBounds.left, rootBounds.right)
+                    panY = (panY + dy * 2f * hy / lastFieldH).coerceIn(rootBounds.top, rootBounds.bottom)
                     postInvalidate()
                 }
                 return true
@@ -1707,7 +1714,7 @@ class MapView(context: Context) : View(context) {
                 // They used to leave the auto-framer on, which put its own zoom back within a second, so
                 // the buttons seemed to do nothing while the label said "auto" (seen on UI Art's emulator)
                 !hostZoomHidden && btnIn.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom * 1.6f).coerceAtMost(ZOOM_MAX); autoZoomCur = zoom; postInvalidate(); return true }
-                !hostZoomHidden && btnOut.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom / 1.6f).coerceAtLeast(1f); autoZoomCur = zoom; postInvalidate(); return true }
+                !hostZoomHidden && btnOut.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; zoom = (zoom / 1.6f).coerceAtLeast(zoomFloor); autoZoomCur = zoom; postInvalidate(); return true }
                 btnFilter.contains(e.x, e.y) -> { touchOwner = OWN_CONTROL; filterOpen = true; syncB(); postInvalidate(); return true }
                 spine.indexOfFirst { it.contains(e.x, e.y) } >= 0 -> {
                     // Tap a slab to PIN that storey; tap the pinned one again to hand control
@@ -1722,6 +1729,11 @@ class MapView(context: Context) : View(context) {
                     postInvalidate(); return true
                 }
             }
+            // the map's own field (Home's module: the map controls page, the user 2026-11-17: "tapping in the map area should also change
+            // it to the map controls"); the touch goes on as before (a pan, a pinch, a bubble's focus). A touch on an untracked quest's
+            // disc waits: its tap shows the quest in the list (the Quests page), a pan from it is the field's after all (onScroll)
+            fieldTouchHeld = untrackedUnder(e.x, e.y)
+            if (!fieldTouchHeld) onFieldTouch?.invoke()
         }
         scaleDetector.onTouchEvent(e)
         tapDetector.onTouchEvent(e)
@@ -2394,6 +2406,7 @@ class MapView(context: Context) : View(context) {
      */
     private fun maybeRecentre(px: Double, py: Double) {
         if (followPlayer || recentreFrom != null || px.isNaN() || py.isNaN()) return
+        if (controls) return                                  // Home's map controls: the sticks hold the view (it recentres after)
         if (System.currentTimeMillis() - lastDragAt < DRAG_GRACE_MS) return
         val dx = px.toFloat() - panAnchorX
         val dy = py.toFloat() - panAnchorY
@@ -3798,7 +3811,8 @@ class MapView(context: Context) : View(context) {
         // ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item-started
         // quest with the item in the bags reads "Use <item>" with its icon, and Y's glyph once PadMap has armed it on Y (m132)
         val card = if (ct.merged && base != null)
-            UiKit.QuestCard(ct.title, base.level, psBlue, ct.lines, turnIn = base.turnIn, number = base.number, focused = true)
+            UiKit.QuestCard(ct.title, base.level, psBlue, ct.lines, turnIn = base.turnIn, number = base.number, focused = true,
+                item = base.item)
         else if (st.useItem)
             UiKit.QuestCard(st.title ?: st.useLine(), 0, psBlue, listOf(st.useLine() to false), focused = psHolds(),
                 useIcon = st.itemIcon, useGlyph = if (psHolds() && qitemArmed == st.itemId) glyph("y") else null)
@@ -4050,6 +4064,7 @@ class MapView(context: Context) : View(context) {
     private var portrait: JSONObject? = null                      // the quests document's `me`: name, class file, class word
     private var ownHeaders: List<String> = emptyList()         // the log headers that are the player's class or professions
     private val openTabs = HashMap<String, Boolean>()
+    private var revealRow = 0                                  // a row the next layout brings into view (its tab's header with it when that fits)
     private var revealTab = 0                                  // a tab just opened: the next layout brings its section into view          // the tabs the player opened (all closed until then)
     private var listWhere: String? = null                      // the zone and subzone the tabs were sorted for
     private fun listKeys(): List<Int> = MapList.stops(items)
@@ -4080,6 +4095,30 @@ class MapView(context: Context) : View(context) {
         // expanding down off screen"): the list's next layout makes room for it (drawTracker)
         if (openTabs[z] == true) revealTab = key
         invalidate()
+    }
+
+    /** a quest of the log the tracker does not hold (once the tracker is known) */
+    private fun untrackedQuest(id: Int): Boolean = trackedKnown && id > 0 && !trackedNo.containsKey(id) && questById[id] != null
+
+    /**
+     * AN UNTRACKED QUEST'S DISC OPENS IT IN THE LIST (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the
+     * left menu so its confusing on that its not tracked"): its tab opens, the list's cursor goes onto its row (brought into view, its
+     * tab's header with it when that fits), its panel opens, and the host shows the list ([onListWanted]: Home's Quests page). The
+     * row wears the grey disc and "Untracked" ([cardFor]). Merged with the light blue row: that row.
+     */
+    private fun revealInList(id: Int) {
+        selectRow(id)
+        openPanel(id)
+        onListWanted?.invoke()
+        invalidate()
+    }
+
+    /** the list's cursor onto quest [id]'s row (its tab opened when it is untracked; merged with the light blue row: that row), in view */
+    private fun selectRow(id: Int) {
+        if (psMerged() == id) { cursor.touched(MapList.POLESTAR, listKeys()); revealRow = MapList.POLESTAR; return }
+        val z = untrackedLog.firstOrNull { it.optInt("id", 0) == id }?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER }
+        if (z != null && openTabs[z] != true) { openTabs[z] = true; rebuildItems() }
+        cursor.touched(id, listKeys()); revealRow = id
     }
 
     /**
@@ -4242,8 +4281,29 @@ class MapView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { onAbandonConfirm?.invoke(id) }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        override fun track(id: Int, on: Boolean) = panelTrack(id, on)
+        override fun glyphs(): Boolean = held || padHints
+        // the list's cursor on this untracked quest's own row: a tracked row keeps A Focus / X Untrack / Y Open, the other rows their own
+        override fun padOnQuest(id: Int): Boolean = cursor.shown && cursor.sel == id && !trackedNo.containsKey(id)
     })
     private var panelId: Int get() = qp.id; set(v) { qp.id = v }
+
+    /**
+     * THE PANEL'S TRACK / UNTRACK (A; the user, 2026-11-17: "A for track"): the game's tracker only (QuestPad's watch / unwatch, as the
+     * list's X), shown at once ([trackNow]). The panel stays on its quest, so the list's cursor, when it was on it, goes with it to its
+     * new place (up into the tracked quests, or down into its tab, opened) instead of holding the place as the list's own X does.
+     */
+    private fun panelTrack(id: Int, on: Boolean) {
+        val send = if (on) onTrackQuest else onUntrackQuest
+        if (send == null) { note(if (on) "Track is not on the tap pad yet" else "Untrack is not on the tap pad yet"); return }
+        val onIt = cursor.shown && PolestarMerge.key(cursor.sel, psMerged()) == id
+        val before = listKeys()
+        val beforeAt = items.indexOfFirst { it.key == id && it !is MapList.Item.Section }
+        send(id)
+        trackNow(id, on, false, before, beforeAt)
+        if (onIt) selectRow(id)
+        invalidate()
+    }
     private var armedId: Int get() = qp.armedId; set(v) { qp.armedId = v }
     private var panelScroll: Float get() = qp.scroll; set(v) { qp.scroll = v }
     private var panelContentH: Float get() = qp.contentH; set(v) { qp.contentH = v }
@@ -4255,14 +4315,16 @@ class MapView(context: Context) : View(context) {
 
     /** the open quest panel, for the host: Home's buff / debuff pane leaves this box to it (the panel lies above the buffs) */
     fun panelOpen(): Boolean = panelId != 0
+    /** the service filter is open (Select / View): its keys are its own (Home's map controls page routes them through [hostKey]) */
+    fun filterShown(): Boolean = filterOpen
     fun panelCover(): RectF? = if (panelId != 0 && !panelBox.isEmpty) RectF(panelBox) else null
 
     // ---- THE CURSOR IN THE QUEST BOX (the user's correction, 2026-10-17: "Right d pad was not literally supposed to show quest areas, I
     // meant that the cursor would move over onto the quest box to scroll the text or press buttons or whatever"). With the panel open
     // the cursor is on the LIST ([panelFocus] -1: the list moves as always, the panel showing the quest under it) until Right takes it
-    // INTO the box: 0 its text (Up / Down scroll it; Down at its end goes to the buttons), 1.. its buttons (Left / Right between them,
-    // A presses one, Up back to the text). Left from the text or the first button, or B, steps back out to the list; B on the list
-    // closes the panel.
+    // INTO the box: 0 its text (Up / Down scroll it). Left or B steps back out to the list; B on the list closes the panel. The buttons
+    // are pressed by their own glyphs (2026-11-17: Track A, Share X, Abandon Y; QuestPanel.key) from the text, or from the list with the
+    // cursor on the panel's own untracked row (any other row keeps the list's A / X / Y); no longer walked to.
     private var panelFocus: Int get() = qp.focus; set(v) { qp.focus = v }
     private fun panelKey(k: String): Boolean = qp.key(k)
     private fun panelAct(act: String) = qp.act(act)
@@ -4379,11 +4441,7 @@ class MapView(context: Context) : View(context) {
         pathTmp.reset(); pathTmp.moveTo(x0, y0)
         var i = 0
         while (i + 1 < p.size) { pathTmp.lineTo(sx(p[i]), sy(p[i + 1])); i += 2 }
-        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
-        pPath.pathEffect = null
+        drawRouteDots(c, pathTmp, 1f, android.os.SystemClock.elapsedRealtime())
         postInvalidateOnAnimation()
         return true
     }
@@ -5140,12 +5198,49 @@ class MapView(context: Context) : View(context) {
     private fun drawStretch(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, dim: Float, unchecked: Boolean = false) {
         pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(x1, y1)
         if (unchecked) { drawUnchecked(c, dim); return }
-        val phase = -(android.os.SystemClock.elapsedRealtime() / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-        c.drawPath(pathTmp, pPath)
+        drawRouteDots(c, pathTmp, dim, android.os.SystemClock.elapsedRealtime())
+    }
+
+    // ---- THE ROUTE'S DOTS AND ARROWS (feat/route-arrows; the user, 2026-11-17: "on the mini map every 5 dots I want a blue arrow so
+    // that its consistent"): every route's gold dots ([RouteArrows]: 16 px apart, 24 px a second toward the goal), every 5th one the
+    // compass's light blue chevron (Trail.lua cp43) turned along the route at that point, moving with the dots
+    private val pArrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+    }
+    private val arrowMeasure = PathMeasure()
+    private val arrowPos = FloatArray(2)
+    private val arrowTan = FloatArray(2)
+    private val arrowPath = Path()
+
+    /** [path]'s dots and arrows at [a] of their strength (0..1), the pattern where it stands at [tMs] */
+    private fun drawRouteDots(c: Canvas, path: Path, a: Float, tMs: Long) {
+        pPath.pathEffect = DashPathEffect(RouteArrows.DASH, RouteArrows.phase(tMs))
+        pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a).toInt(), 0, 0, 0); c.drawPath(path, pPath)
+        pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
+        c.drawPath(path, pPath)
         pPath.pathEffect = null
+        arrowMeasure.setPath(path, false)
+        val first = RouteArrows.firstArrow(tMs)
+        do {
+            val len = arrowMeasure.length
+            var s = first - RouteArrows.PERIOD                             // (walked in place: no array per contour per frame)
+            while (true) {
+                s += RouteArrows.PERIOD
+                if (s > len) break
+                if (!arrowMeasure.getPosTan(s, arrowPos, arrowTan)) continue
+                val fx = arrowTan[0]; val fy = arrowTan[1]                 // along the route (toward the goal)
+                val nx = -fy; val ny = fx
+                val x = arrowPos[0]; val y = arrowPos[1]
+                arrowPath.reset()
+                arrowPath.moveTo(x - fx * RouteArrows.BEHIND + nx * RouteArrows.HALF_W, y - fy * RouteArrows.BEHIND + ny * RouteArrows.HALF_W)
+                arrowPath.lineTo(x + fx * RouteArrows.AHEAD, y + fy * RouteArrows.AHEAD)
+                arrowPath.lineTo(x - fx * RouteArrows.BEHIND - nx * RouteArrows.HALF_W, y - fy * RouteArrows.BEHIND - ny * RouteArrows.HALF_W)
+                pArrow.strokeWidth = RouteArrows.RIM; pArrow.color = Color.argb((217 * a).toInt(), 0, 0, 0); c.drawPath(arrowPath, pArrow)
+                pArrow.strokeWidth = RouteArrows.W
+                pArrow.color = Color.argb((255 * a).toInt(), Color.red(psBlue), Color.green(psBlue), Color.blue(psBlue))
+                c.drawPath(arrowPath, pArrow)
+            }
+        } while (arrowMeasure.nextContour())
     }
 
     /** an UNCHECKED stretch ([pathTmp]; the user's "Point straight at it"): thin long dashes, pale - never the safe way's moving dots */
@@ -5238,12 +5333,7 @@ class MapView(context: Context) : View(context) {
             }
         }
         if (!any) return false
-        val age = android.os.SystemClock.elapsedRealtime()
-        val phase = -(age / 1000f * 24f) % 16f
-        pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-        pPath.strokeWidth = 9f; pPath.color = Color.argb(160, 0, 0, 0); c.drawPath(pathTmp, pPath)
-        pPath.strokeWidth = 6f; pPath.color = cGold; c.drawPath(pathTmp, pPath)
-        pPath.pathEffect = null
+        drawRouteDots(c, pathTmp, 1f, android.os.SystemClock.elapsedRealtime())
         // ps2 (the user, 2026-11-11: "I dont like the red dots"): no red danger dots and no "crosses hostile ground" note on Polestar's
         // path any more; the Map room's opt-in "Danger areas" filter still shows hostile ground
         postInvalidateOnAnimation()
@@ -5372,14 +5462,9 @@ class MapView(context: Context) : View(context) {
         val age = now - pathAt
         val a = min(1f, age / 300f)
         if (len >= 40f) {
-            // the dots: 16 px apart, moving 24 px a second toward the goal (a dash path's phase runs against the path, hence minus)
-            val phase = -(age / 1000f * 24f) % 16f
+            // the dots: 16 px apart, moving 24 px a second toward the goal, every 5th a blue arrow ([drawRouteDots])
             pathTmp.reset(); pathTmp.moveTo(x0, y0); pathTmp.lineTo(ex, ey)
-            pPath.pathEffect = DashPathEffect(floatArrayOf(0.1f, 16f), phase)
-            pPath.strokeWidth = 9f; pPath.color = Color.argb((160 * a * dim).toInt(), 0, 0, 0); c.drawPath(pathTmp, pPath)
-            pPath.strokeWidth = 6f; pPath.color = Color.argb((255 * a * dim).toInt(), Color.red(cGold), Color.green(cGold), Color.blue(cGold))
-            c.drawPath(pathTmp, pPath)
-            pPath.pathEffect = null
+            drawRouteDots(c, pathTmp, a * dim, age)
         }
         // at the edge: an arrow on along the way (not for the focused quest: the game's own rim arrow already points there)
         if (!inside && qid != shownFocus()) {
@@ -5412,6 +5497,403 @@ class MapView(context: Context) : View(context) {
     private val pLabelBack = Paint(Paint.ANTI_ALIAS_FLAG)
     private val labelBox = RectF()
 
+    // ---- HOME'S MAP CONTROLS (the user, 2026-11-17: "when opening the map, pressing to the right should open some map controls ...
+    // tapping in the map area should also change it to the map controls. when using map controls it should function just like the map
+    // room with the sticks. we need to change the map to show a High fidelity version of the whole map in that home map, so that we can
+    // zoom out to see everything and zoom back in"). Home's open module has three pages (HomeMapPages); on the middle one, [controls],
+    // this map takes the Map room's sticks through the room's own driver (MapStickDriver): the left stick moves the game's cursor
+    // (MapReticle: the golden lines and the reticle) and the view follows it at the edges, the right stick zooms (in toward the cursor),
+    // LB / RB step the zoom; A on a quest's bubble under the cursor focuses it, as its touch does. Zoomed out past the zone the Map
+    // room's art takes over from the minimap tiles ([worldArt]: the world map, the continents' stitched pictures), down to the whole
+    // world; every mark stays on this zone's 0..1 through the one projection, so the player's arrow, the focused quest, Polestar's
+    // marks and the pins stay where they are at every zoom. Without the art (not built yet) the zoom stops at the zone, as before.
+
+    /** the Map room's art under this map when zoomed out (the host: WorldMapRoomView's paintBackdrop / backdropRoot / backdropDone) */
+    interface WorldArt {
+        /** paint the art with map [zone]'s 0..1 at [zr] inside [clip]; false = nothing painted (this map keeps its own ground) */
+        fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean
+        /** map [zone]'s place on its root (the world, else its continent) as left, top, right, bottom of that root, or null */
+        fun root(zone: Int): FloatArray?
+        /** the map stopped asking (Home's module closed): the art's memory rules take over */
+        fun done()
+        /** the map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now; a zoom-out reads them again */
+        fun release()
+        /** Terrain style: each continent on map [zone]'s root as [game continent, au, bu, av, bv] (u = au + bu * worldY, v = av + bv *
+         *  worldX in [zone]'s 0..1), or null (no art set read) */
+        fun places(zone: Int): List<DoubleArray>? = null
+        /** Terrain style: picture [key] from the room's one cache, else made by [make] off the UI thread ([client] redrawn); null meanwhile */
+        fun picture(key: String, client: View, make: () -> Bitmap?): Bitmap? = null
+        /** picture [key] if the cache holds it (nothing asked) */
+        fun peek(key: String): Bitmap? = null
+        /** the game continent whose box on map [zone]'s root (the world) holds the first of [at] (points in [zone]'s 0..1) that lies in
+         *  one (the smallest box wins: an island in a continent's), [SEA] (on the world, but in no box: the sea between), or null (no art
+         *  set, a root with no continents) */
+        fun aim(zone: Int, at: List<FloatArray>): Int? = null
+        companion object { const val SEA = -1 }
+    }
+    var worldArt: WorldArt? = null
+    /** a touch on the open map's field (not the list, a button or a pop-out): Home's map controls page */
+    var onFieldTouch: (() -> Unit)? = null
+    /** a touch went down on an untracked quest's disc: the field's touch (the controls page) waits for a pan */
+    private var fieldTouchHeld = false
+    /** the bubble nearest ([x], [y]) within its touch is an untracked quest's (the tap test's own rule) */
+    private fun untrackedUnder(x: Float, y: Float): Boolean {
+        if (compact || onFocusQuest == null) return false
+        var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
+        for (i in 0 until bubbleN) {
+            val dx = bubbleXY[2 * i] - x; val dy = bubbleXY[2 * i + 1] - y
+            val d = dx * dx + dy * dy
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best >= 0 && untrackedQuest(bubbleQ[best])
+    }
+    /** an untracked quest's disc was picked: it is shown in the list (Home's module goes to its Quests page) */
+    var onListWanted: (() -> Unit)? = null
+    /** the tests: the list's first drawn row and how many fit */
+    fun listWindow(): IntArray = intArrayOf(listFirst, listFits)
+    /** the tests: the list's rows (their keys, in order) and the selection */
+    fun listItemKeys(): List<Int> = items.map { it.key }
+    fun listSel(): Int = if (cursor.shown) cursor.sel else 0
+    /**
+     * Home's buffs page is on (HomeMapPages.BUFFS; the user, 2026-11-17: "when toggling over to buffs the cursor reappears on polestar
+     * which is misleading"): the list's cursor, its bubble's ring and its hints are not drawn, as on the controls page; the selection is
+     * kept, so the quests page shows it again where it was. The controls line says only B (back to the quests).
+     */
+    var buffsPage = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** the tests: the list's selected row was drawn with its cursor this frame; which controls line was drawn ("list", "controls",
+     *  "buffs", or "" before any) */
+    var listSelDrawn = false
+        private set
+    /** the tests: untracked quests' discs drawn this frame */
+    var untrackedDrawn = 0
+        private set
+    /** the tests: each quest's disc drawn this frame, its solid part across in px (UiKit.lastDiscPx), and how many discs it had */
+    val discDrawn = HashMap<Int, Float>()
+    val discCount = HashMap<Int, Int>()
+    private fun discSeen(qid: Int) { discDrawn[qid] = UiKit.lastDiscPx; discCount[qid] = (discCount[qid] ?: 0) + 1 }
+    var hintsDrawn = ""
+        private set
+    /** the list is not the page (the controls or the buffs): its cursor is not drawn */
+    private fun listAway() = controls || buffsPage
+
+    /** the controls line names Right's buffs page (the aura pane has a stop) */
+    var controlsBuffs = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the map controls page is on: the sticks are the map's, the list's cursor is not drawn */
+    var controls = false
+        set(v) {
+            if (field == v) return
+            field = v
+            if (v) {
+                // the cursor starts on the player's arrow while it is in view, else in the view's middle (the room's placeCursorStart)
+                val m = map
+                val px = m?.optDouble("x", Double.NaN) ?: Double.NaN
+                val py = m?.optDouble("y", Double.NaN) ?: Double.NaN
+                val inView = !px.isNaN() && !py.isNaN() && lastHalfX > 0f &&
+                    abs(px.toFloat() - lastViewCx) <= lastHalfX && abs(py.toFloat() - lastViewCy) <= lastHalfY
+                curU = if (inView) px.toFloat() else lastViewCx
+                curV = if (inView) py.toFloat() else lastViewCy
+                cursorShownAt = System.currentTimeMillis()
+                sticks.start()
+            } else {
+                sticks.stop()
+                // what the sticks left is a pan: walking recentres, as after a drag (the 10-07 ruling for this module)
+                if (!followPlayer) map?.let {
+                    panAnchorX = it.optDouble("x", panX.toDouble()).toFloat()
+                    panAnchorY = it.optDouble("y", panY.toDouble()).toFloat()
+                    lastDragAt = System.currentTimeMillis()
+                }
+            }
+            invalidate()
+        }
+    /** the cursor in this zone's 0..1 (past it when zoomed out) */
+    private var curU = 0.5f
+    private var curV = 0.5f
+    private var cursorShownAt = 0L
+    /** the zoom this frame may go down to: the whole root (world) with the art, else the zone (1) */
+    private var zoomFloor = 1f
+    /** the root's bounds in this zone's 0..1 (left, top, right, bottom): the pan's and the cursor's room */
+    private val rootBounds = RectF(0f, 0f, 1f, 1f)
+    /** the art painted this frame (the tiles then fade over it) */
+    private var worldDrew = false
+    /** the art was asked for since the module opened ([worldDone] tells the art when it closes) */
+    private var worldAsked = false
+    private val worldZr = RectF()
+    private val worldClip = RectF()
+
+    private val sticks = MapStickDriver(this, WorldMapRoomView.CURSOR_PX_S, object : MapStickDriver.Host {
+        override fun sticksLive() = controls && isShown && !compact && !morphOn && !filterOpen && panelId == 0 && !pmenu.open
+        override fun overMarker() = bubbleUnderCursor() >= 0
+        override fun moveCursor(dx: Float, dy: Float) = controlsMove(dx, dy)
+        override fun zoomBy(f: Float, dtS: Float) = controlsZoom(f, min(1f, dtS * 3f))
+    })
+
+    /** the view as it shows now becomes the pan: the sticks took the wheel (as a drag / a pinch does; double-tap gives it back) */
+    private fun takeWheel() {
+        if (followPlayer || autoZoom || recentreFrom != null) {
+            panX = lastViewCx; panY = lastViewCy
+            followPlayer = false; recentreFrom = null
+        }
+        autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN; autoZoomCur = zoom
+        camAncX = Float.NaN
+    }
+
+    /** one frame's cursor move ([dx], [dy] screen px): the cursor across the map, the view following it near the edges (the room's follow) */
+    internal fun controlsMove(dx: Float, dy: Float) {
+        if (lastFieldW <= 0f || lastFieldH <= 0f || lastHalfX <= 0f || lastHalfY <= 0f) return
+        takeWheel()
+        curU = (curU + dx * 2f * lastHalfX / lastFieldW).coerceIn(rootBounds.left, rootBounds.right)
+        curV = (curV + dy * 2f * lastHalfY / lastFieldH).coerceIn(rootBounds.top, rootBounds.bottom)
+        keepCursorInView()
+        invalidate()
+    }
+
+    /** the view follows the cursor: it stays inside the part of the field the list and the controls line leave, 7.5% in (the room's 85%) */
+    private fun keepCursorInView() {
+        val fw = lastFieldW; val fh = lastFieldH
+        if (fw <= 0f || fh <= 0f || lastHalfX <= 0f || lastHalfY <= 0f) return
+        val ppuX = fw / (2f * lastHalfX); val ppuY = fh / (2f * lastHalfY)
+        val visL = lastTrackPx; val visR = fw
+        val visT = 0f; val visB = fh - (if (hintsOn()) HINT_BAND else 0f)
+        val mx = (visR - visL) * 0.075f; val my = (visB - visT) * 0.075f
+        // the cursor's spot on the field: the view's middle sits half the list's strip right of the field's (onDraw's cxView)
+        val cx = fw / 2f + lastTrackPx / 2f + (curU - panX) * ppuX
+        val cy = fh / 2f + (curV - panY) * ppuY
+        if (cx < visL + mx) panX -= (visL + mx - cx) / ppuX else if (cx > visR - mx) panX += (cx - (visR - mx)) / ppuX
+        if (cy < visT + my) panY -= (visT + my - cy) / ppuY else if (cy > visB - my) panY += (cy - (visB - my)) / ppuY
+        panX = panX.coerceIn(rootBounds.left, rootBounds.right); panY = panY.coerceIn(rootBounds.top, rootBounds.bottom)
+    }
+
+    /** one frame's zoom by [f] (> 1 = in), [k] of the way toward the cursor when zooming in (the room's stick zoom) */
+    internal fun controlsZoom(f: Float, k: Float) {
+        takeWheel()
+        zoom = (zoom * f).coerceIn(zoomFloor, ZOOM_MAX); autoZoomCur = zoom
+        if (f > 1f) { panX += (curU - panX) * k; panY += (curV - panY) * k }
+        keepCursorInView()
+        invalidate()
+    }
+
+    /** a key on the controls page (Home routes the page's moves; Select / View and the filter's keys go through [hostKey]) */
+    fun controlsKey(k: String) {
+        when (k) {
+            "PADLSHOULDER", "PADRSHOULDER" -> {
+                takeWheel()
+                zoom = (if (k == "PADRSHOULDER") zoom * 1.6f else zoom / 1.6f).coerceIn(zoomFloor, ZOOM_MAX); autoZoomCur = zoom
+                keepCursorInView()
+            }
+            // A: the quest's bubble under the cursor, as its touch (select + focus); nothing else under it does anything
+            "PAD1" -> bubbleUnderCursor().takeIf { it >= 0 }?.let { touchQuest(bubbleQ[it], null) }
+        }
+        invalidate()
+    }
+
+    /** the bubble under the cursor (an index into this frame's bubbles), -1 = none */
+    private fun bubbleUnderCursor(): Int {
+        if (!controls || onFocusQuest == null || cursorX.isNaN()) return -1
+        var best = -1; var bestD = BUBBLE_HIT * BUBBLE_HIT
+        for (i in 0 until bubbleN) {
+            val dx = bubbleXY[2 * i] - cursorX; val dy = bubbleXY[2 * i + 1] - cursorY
+            val d = dx * dx + dy * dy
+            if (d <= bestD) { bestD = d; best = i }
+        }
+        return best
+    }
+    /** the cursor on the screen, this frame (onDraw) */
+    private var cursorX = Float.NaN
+    private var cursorY = Float.NaN
+
+    /** the tests: the cursor (zone 0..1), the zoom and its floor, the art painted this frame (1 / 0), the sticks read (1 / 0) */
+    fun controlsState(): FloatArray = floatArrayOf(curU, curV, zoom, zoomFloor, if (worldDrew) 1f else 0f, if (sticks.running) 1f else 0f,
+        if (terrainDrew) 1f else 0f)
+
+    /** Home's module closed: the art is told (its memory rules), the sticks stop */
+    fun worldDone() {
+        controls = false
+        worldAsked = false; worldArt?.done()               // always: a zoom-in already let the pictures go, but a low-memory pause ends here
+        // the next opening starts on the module's own framing, not out on the world (its art is let go now)
+        if (zoom < 0.999f) {
+            zoom = 1f; autoZoomCur = 1f; autoZoom = true; followPlayer = true; recentreFrom = null; camAncX = Float.NaN
+            zoomEase = Float.NaN; focusRestoreZoom = Float.NaN
+        }
+    }
+
+    /** Settings > Performance > Home map: full detail (by the Thor model unless set): off = no art, no zoom past the zone */
+    var worldFull: () -> Boolean = { runCatching { Settings.homeMapFull }.getOrDefault(false) }
+    /**
+     * Settings > Performance > Map style when zoomed out (the user, 2026-11-17: "on the high fidelity map, I dont think that I want the
+     * transition to the map overlay, it would be really great if we just kept it as high fidelity there or made it an option toggle"):
+     * true = Terrain (the default): past the zone the minimap's own terrain goes on all the way out, at lower levels (TerrainOverview);
+     * false = Painted (the Map room's art fades in, as 1.0.34's test build). Terrain needs the minimap step's index for this zone's
+     * continent; without it the painted art stands in. Home's map only: the Map room's parchment is the game's world map (its identity).
+     */
+    var worldTerrain: () -> Boolean = { runCatching { Settings.homeMapTerrain }.getOrDefault(true) }
+    /** the terrain was drawn this frame (the tests) */
+    private var terrainDrew = false
+    /** the setting turned off while the art was in use: it is let go at once, as on a close */
+    private var worldWasFull = false
+    private fun worldFull(): Boolean {
+        val on = worldFull.invoke()
+        if (worldWasFull && !on && worldAsked) { worldAsked = false; worldArt?.done() }
+        worldWasFull = on
+        return on
+    }
+
+    private val pTerrain = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val terrainDst = RectF()
+    private val terrainSrc = Rect()
+
+    /**
+     * Terrain style zoomed out past the zone: the deep sea, then each continent of the root's terrain (TerrainOverview's levels, through
+     * the Map room's one cache) at its place - this zone's continent through this map's own rect (as the close tiles: no seam), the others
+     * through their world assignments ([WorldArt.places]). A level not made yet shows the coarser one the cache holds, cut to its part.
+     * The close tiles draw over it as before. False = nothing could be placed (the painted art stands in).
+     */
+    private fun drawTerrainOut(c: Canvas, wa: WorldArt, mapId: Int, rT: PoiStore.Rect, left: Float, top: Float, fw: Float, fh: Float,
+                               cxView: Float, cyView: Float, halfX: Float, halfY: Float): Boolean {
+        val places = wa.places(mapId) ?: return false
+        // (review 2, 2026-11-17: zoomed in just off the other continent's coast the minimap's own water - near-black, (0, 4, 8) - and the
+        // deep sea filled 92% of the field: the black screen again. Now every picture's water is repainted by depth when it is made, and
+        // the sea is WaterDepth's navy-teal, never black)
+        if (TerrainOverview.dir == null) TerrainOverview.dir = context.cacheDir
+        val conts = ArrayList<DoubleArray>(places.size + 1)
+        // this zone's continent by its own rect: u = (left - wy) / width, v = (top - wx) / height; its box (the world's) from its place
+        val own = places.firstOrNull { it.size >= 9 && it[0].toInt() == rT.continent }
+        conts.add(doubleArrayOf(rT.continent.toDouble(), rT.left / rT.width, -1.0 / rT.width, rT.top / rT.height, -1.0 / rT.height) +
+            (own?.copyOfRange(5, 9) ?: DoubleArray(0)))
+        for (p in places) if (p.size >= 5 && p[0].toInt() != rT.continent && p[2] != 0.0 && p[4] != 0.0) conts.add(p)
+        // the largest land first, the smallest over it (an island inside a continent's frame: feat/map-skyborn's "smallest box wins"); a
+        // land's size by its yards (|1 / bu| x |1 / bv| of its map's ADT grid is the same scale for all: the world's yards)
+        val size = HashMap<Int, Int>()
+        for (p in conts) size[p[0].toInt()] = TerrainOverview.index()?.get(p[0].toInt())?.size ?: 0
+        conts.sortByDescending { size[it[0].toInt()] ?: 0 }
+        c.save()
+        c.clipRect(left, top, left + fw, top + fh)
+        pFill.color = WaterDepth.DEEP
+        c.drawRect(left, top, left + fw, top + fh, pFill)
+        val u0 = cxView - halfX; val v0 = cyView - halfY
+        val pxU = fw / (2f * halfX); val pxV = fh / (2f * halfY)
+        fun sxU(u: Double) = (left + (u - u0) * pxU).toFloat()
+        fun syV(v: Double) = (top + (v - v0) * pxV).toFloat()
+        val adt = MinimapTiles.ADT
+        // the sea round each continent's ADTs by depth first (WaterDepth's field: a coast's gradient runs on past the last picture into
+        // the deep colour), NOT cut to its box: a box can end a few hundred yards off a coast, and the shallows' glow stopped there in a
+        // straight line (the world zoom-out); the pictures of every land then go over all the seas
+        for (p in conts) {
+            val cont = p[0].toInt()
+            if (!TerrainOverview.has(cont)) continue
+            val f = WaterDepth.field(cont, this) ?: continue
+            val sb = f.sea ?: continue
+            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
+            seaDst.set(sxU(au + bu * (32 - f.c0) * adt), syV(av + bv * (32 - f.r0) * adt),
+                sxU(au + bu * (32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt), syV(av + bv * (32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt))
+            seaDst.sort()
+            c.drawBitmap(sb, null, seaDst, pTerrain); seaPictures++
+        }
+        for (p in conts) {
+            val cont = p[0].toInt()
+            if (!TerrainOverview.has(cont)) {
+                // 2026-11-17 ("zooming in on the other continent the screen goes black"): the continent under the view, or the player's,
+                // with no terrain built on the phone yet is its own painted picture (the Map room's art, cut to its box), never the bare
+                // sea. Only those two (review: every land with no terrain - Zephras Isle has no minimap at all - put the painted pictures
+                // on every world zoom-out, +11 MB in the room's shared cache, and the island as a framed sheet on the terrain)
+                if (p.size >= 9 && (cont == terrainAim || cont == rT.continent)) {
+                    otherClip.set(maxOf(left, sxU(p[5])), maxOf(top, syV(p[6])), minOf(left + fw, sxU(p[7])), minOf(top + fh, syV(p[8])))
+                    if (otherClip.width() > 0f && otherClip.height() > 0f && wa.paint(c, mapId, worldZr, otherClip, this)) paintedConts++
+                }
+                continue
+            }
+            val au = p[1]; val bu = p[2]; val av = p[3]; val bv = p[4]
+            c.save()
+            if (p.size >= 9) c.clipRect(sxU(p[5]), syV(p[6]), sxU(p[7]), syV(p[8]))     // its box on the world
+            // an ADT's size on the screen, the level that is sharp enough for it
+            val adtPx = (adt * kotlin.math.abs(bu) * pxU).toFloat()
+            val level = TerrainOverview.level(adtPx)
+            val n = TerrainOverview.span(level)
+            // the view in this continent's world yards (wy from u, wx from v), then the ADT columns / rows, then the level's pictures
+            val wyA = (u0 - au) / bu; val wyB = (u0 + 2.0 * halfX - au) / bu
+            val wxA = (v0 - av) / bv; val wxB = (v0 + 2.0 * halfY - av) / bv
+            val colA = 32 - maxOf(wyA, wyB) / adt; val colB = 32 - minOf(wyA, wyB) / adt
+            val rowA = 32 - maxOf(wxA, wxB) / adt; val rowB = 32 - minOf(wxA, wxB) / adt
+            val oc0 = maxOf(0, floor(colA / n).toInt()); val oc1 = minOf(64 / n - 1, floor(colB / n).toInt())
+            val or0 = maxOf(0, floor(rowA / n).toInt()); val or1 = minOf(64 / n - 1, floor(rowB / n).toInt())
+            if (oc1 < oc0 || or1 < or0 || (oc1 - oc0 + 1) * (or1 - or0 + 1) > TERRAIN_TILES_MAX) { c.restore(); continue }
+            for (oc in oc0..oc1) for (or in or0..or1) {
+                if (!TerrainOverview.has(cont, level, oc, or)) continue
+                // the picture's world edges: west wy = (32 - oc*n) * adt, north wx = (32 - or*n) * adt
+                val wyW = (32 - oc * n) * adt; val wyE = (32 - (oc + 1) * n) * adt
+                val wxN = (32 - or * n) * adt; val wxS = (32 - (or + 1) * n) * adt
+                terrainDst.set(sxU(au + bu * wyW) - 0.5f, syV(av + bv * wxN) - 0.5f, sxU(au + bu * wyE) + 0.5f, syV(av + bv * wxS) + 0.5f)
+                terrainDst.sort()
+                val b = wa.picture(TerrainOverview.key(cont, level, oc, or), this) { TerrainOverview.make(cont, level, oc, or) }
+                if (b != null) { c.drawBitmap(b, null, terrainDst, pTerrain); continue }
+                // not made yet: the nearest coarser level the cache holds, its part
+                var up = level + 1
+                while (up <= TerrainOverview.LEVEL_MAX) {
+                    val k = 1 shl (up - level)
+                    val cb = wa.peek(TerrainOverview.key(cont, up, oc / k, or / k))
+                    if (cb != null) {
+                        val part = TerrainOverview.TILE / k
+                        terrainSrc.set((oc % k) * part, (or % k) * part, (oc % k) * part + part, (or % k) * part + part)
+                        c.drawBitmap(cb, terrainSrc, terrainDst, pTerrain); break
+                    }
+                    up++
+                }
+            }
+            // ANOTHER continent seen close (past level 1's own px an ADT): its own minimap tiles over its levels, as the player's
+            // continent's close tiles (which go through this map's own rect: the loop in onDraw); from its own folder only
+            if (cont != rT.continent && adtPx > TerrainOverview.TILE / 2f && MinimapTiles.has(cont)) {
+                val tc0 = maxOf(0, floor(colA).toInt()); val tc1 = minOf(63, floor(colB).toInt())
+                val tr0 = maxOf(0, floor(rowA).toInt()); val tr1 = minOf(63, floor(rowB).toInt())
+                val nT = (tc1 - tc0 + 1) * (tr1 - tr0 + 1)
+                if (tc1 >= tc0 && tr1 >= tr0 && nT in 1..SMALL_TILES_MAX) {
+                    val sample = if (nT <= QUARTER_TILES_MAX) 4 else 8
+                    val full = 2.0 * halfX / kotlin.math.abs(bu) <= TILE_MAX_YD
+                    for (row in tr0..tr1) for (col in tc0..tc1) {
+                        terrainDst.set(sxU(au + bu * (32 - col) * adt) - 0.5f, syV(av + bv * (32 - row) * adt) - 0.5f,
+                            sxU(au + bu * (31 - col) * adt) + 0.5f, syV(av + bv * (31 - row) * adt) + 0.5f)
+                        terrainDst.sort()
+                        MinimapTiles.get(cont, col, row, sample) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                        if (full) MinimapTiles.get(cont, col, row) { invalidate() }?.let { c.drawBitmap(it, null, terrainDst, pTerrain); otherTiles++ }
+                    }
+                }
+            }
+            c.restore()
+        }
+        c.restore()
+        return true
+    }
+    private val otherClip = RectF()
+    /** this frame's continent under the view (WorldArt.aim; [WorldArt.SEA], or MIN_VALUE = not known) */
+    private var terrainAim = Int.MIN_VALUE
+    /** the tests: this frame's continents painted for want of terrain, and another continent's close minimap tiles drawn */
+    var paintedConts = 0
+        private set
+    var otherTiles = 0
+        private set
+    /** the tests: this frame's depth-field sea pictures drawn (WaterDepth: the gradient past the last tile, no edge at the boxes) */
+    var seaPictures = 0
+        private set
+    /** the tests: the continent under the view is not the player's this frame (its art, not the player's close tiles) */
+    var otherContDrawn = false
+        private set
+
+    /** the art's share over the minimap tiles at zoom [z]: none at the whole zone and closer, all of it from half the zone out */
+    private fun worldShare(z: Float): Float { val t = ((1f - z) / 0.5f).coerceIn(0f, 1f); return t * t * (3f - 2f * t) }
+
+    /** this frame's zoom floor and root bounds (the full map): the whole world with the art, else the zone */
+    private fun worldFrame(mapId: Int, fw: Float, fh: Float) {
+        val r = if (mapId != 0 && worldFull()) worldArt?.root(mapId) else null
+        val rc = rect
+        if (r == null || r[2] - r[0] <= 0f || r[3] - r[1] <= 0f || fw <= 0f || fh <= 0f) { zoomFloor = 1f; rootBounds.set(0f, 0f, 1f, 1f); return }
+        val pw = r[2] - r[0]; val ph = r[3] - r[1]
+        rootBounds.set(-r[0] / pw, -r[1] / ph, (1f - r[0]) / pw, (1f - r[1]) / ph)
+        // the zone's share of the root's width / height, in this view's own x / y extents (onDraw's halfY rule)
+        val ky = if (rc != null && rc.valid) rc.width.toFloat() / rc.height.toFloat() * (fh / fw) else (1002f / 668f) * (fh / fw)
+        zoomFloor = min(1f, min(pw, ph * ky))
+    }
+
     // ---- THE CONTROLS LINE (the user, 2026-09-30: "we still need to add the one line to the bottom with the focus controlls and
     // stuff for that screen"): the kit's hints (UiKit.hints: glyph + word, as the bar's "A Open  B Back"), on a slim band along the
     // field's bottom, while the map holds the controller (the Map room's guest, or a host that says so with [padHints]). The
@@ -5437,6 +5919,7 @@ class MapView(context: Context) : View(context) {
     }
 
     private fun drawPadHints(c: Canvas, left: Float, top: Float, fw: Float, fh: Float) {
+        hintsDrawn = "list"
         val band = RectF(left, top + fh - HINT_BAND, left + fw, top + fh)
         pFill.color = Color.argb(175, 8, 6, 4)
         c.drawRect(band, pFill)
@@ -5447,14 +5930,25 @@ class MapView(context: Context) : View(context) {
         if (pmenu.open) { UiKit.hints(c, band.right - 24f, cy, glyph("up") to "Select", glyph("a") to "Choose", glyph("b") to "Back"); return }
         if (stepChoice.open) { UiKit.hints(c, band.right - 24f, cy, glyph("a") to "Select", glyph("b") to "Close"); return }
         if (panelId != 0) {
+            // the panel's buttons carry A / X / Y (the user, 2026-11-17): the line says only the moves and B
             val hp = when {
-                armedId == panelId -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Cancel")
+                armedNow() -> arrayOf(glyph("b") to "Cancel")
                 panelFocus < 0 -> arrayOf(glyph("up") to "Select", glyph("right") to "Quest box", glyph("b") to "Close")
-                panelFocus == 0 -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
-                else -> arrayOf(glyph("left") to "", glyph("right") to "Select", glyph("a") to "Press", glyph("b") to "Back")
+                else -> arrayOf(glyph("up") to "Scroll", glyph("left") to "List", glyph("b") to "Back")
             }
             UiKit.hints(c, band.right - 24f, cy, *hp); return
         }
+        // the map controls page (HomeMapPages): the sticks, A on a bubble under the cursor, the pages either side, B back to the list
+        if (controls) {
+            hintsDrawn = "controls"
+            val under = bubbleUnderCursor()
+            val act = if (under < 0) null else if (trackedKnown && !trackedNo.containsKey(bubbleQ[under])) "Open" else HomeMapPages.FOCUS_WORD
+            val hp = HomeMapPages.hints(controlsBuffs, act).map { (b, w) ->
+                (when (b) { "lstick" -> "gen_lstick"; "rstick" -> MapRoomKeys.ZOOM_GLYPH; else -> glyph(b) }) to w }
+            UiKit.hints(c, band.right - 24f, cy, *hp.toTypedArray()); return
+        }
+        // the buffs page: the list's keys are not live (its row hints would point at the Polestar row): B back to the quests only
+        if (buffsPage) { hintsDrawn = "buffs"; UiKit.hints(c, band.right - 24f, cy, glyph("b") to HomeMapPages.BACK_WORD); return }
         // only what does something on the map right now (UI Art / the user's clutter rule)
         val ids = trackedIds()
         val sel = if (cursor.shown && cursor.sel != 0 && ids.contains(cursor.sel)) cursor.sel else 0
@@ -5558,6 +6052,10 @@ class MapView(context: Context) : View(context) {
 
     /** a touch picked quest [id]: select it (highlighted at once) and focus it, as the list always did */
     private fun touchQuest(id: Int, q: JSONObject?) {
+        // an untracked quest's disc (2026-11-17): its panel, as Y on its row (focus needs it tracked: A there tracks and focuses), AND its
+        // row in the list (the user, 2026-11-17 again: "when clicking on one, it does not open to the quest in the left menu so its
+        // confusing on that its not tracked")
+        if (untrackedQuest(id)) { revealInList(id); return }
         cursor.touched(id, listKeys())
         listShow(id)
         revealSelected()
@@ -5678,7 +6176,7 @@ class MapView(context: Context) : View(context) {
             }
             is MapCursor.Do.Zoom -> {
                 autoZoom = false; zoomEase = Float.NaN; focusRestoreZoom = Float.NaN
-                zoom = if (d.out) (zoom / 1.6f).coerceAtLeast(1f) else (zoom * 1.6f).coerceAtMost(ZOOM_MAX)
+                zoom = if (d.out) (zoom / 1.6f).coerceAtLeast(zoomFloor) else (zoom * 1.6f).coerceAtMost(ZOOM_MAX)
                 autoZoomCur = zoom
             }
             MapCursor.Do.CloseFilter -> filterOpen = false
@@ -5865,7 +6363,9 @@ class MapView(context: Context) : View(context) {
         // QuestTrail's step (b-qtrail-focus): its words are the card's objective line
         if (id != 0 && id == qtFocus()) qtStep?.words?.let { w -> objs.clear(); objs.add(w to false) }
         val card = UiKit.QuestCard(e.optString("title", ""), lv ?: 0, colour, objs,
-            turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus())
+            turnIn = e.optBoolean("ready") || e.optBoolean("done"), number = trackedNo[id], focused = id != 0 && id == shownFocus(),
+            item = QuestItem.parse(e),          // q64: the quest's usable item; Home's card shows it (the list's rows do not)
+            untracked = untrackedQuest(id))     // the grey disc and "Untracked" (the user, 2026-11-17)
         cards[id] = card
         return card
     }
@@ -5893,12 +6393,52 @@ class MapView(context: Context) : View(context) {
     }
 
     /** one card's height (the selection's gaps and the gap under it are the layout's) */
-    private fun rowContentH(e: JSONObject): Float = UiKit.questCardHeight(cardFor(e))
+    private fun rowContentH(e: JSONObject): Float = cardH(cardFor(e))
 
-    /** one quest's card in [box] at type size [scale], [alpha] */
+    /** one quest's card in [box] at type size [scale], [alpha]; in the list ([scale] 1) the controls page's compact form at [listKNow] */
     private fun drawRow(c: Canvas, e: JSONObject, box: RectF, scale: Float = 1f) {
+        if (scale == 1f && listKNow > 0f) { compactCard(c, box, cardFor(e)); return }
         UiKit.questCard(c, box, cardFor(e), scale = scale)
     }
+
+    // ---- THE COMPACT LIST ON THE MAP CONTROLS PAGE (the user, 2026-11-17: "when using the actual map cursor on the home map, lets do a
+    // sort of soft space reduction on the quests so that we can see more of the map. like the 'Ready for turn in' text isnt necessary
+    // and it can be made a bit smaller visually"): while [controls] is on, the list eases over [LIST_EASE_MS] to narrower cards
+    // ([LIST_COMPACT_W] of the width), a smaller type ([LIST_COMPACT_SCALE]) and the title row only (no objective / "Ready for turn-in"
+    // line; a ready quest keeps its "?" disc, the focused one its gold bar); the map takes the width. Leaving the page eases it back.
+    private val LIST_EASE_MS = 200f
+    private val LIST_COMPACT_W = 0.62f
+    private val LIST_COMPACT_SCALE = 0.8f
+    /** the compact form's progress, linear (0 = full, 1 = compact), and this frame's eased value */
+    private var listK = 0f
+    private var listKAt = 0L
+    private var listKNow = 0f
+    /** one frame's step toward the page's form; its eased value */
+    private fun stepListK(): Float {
+        val to = if (controls && !compact) 1f else 0f
+        val now = android.os.SystemClock.uptimeMillis()
+        if (listK != to) {
+            val dt = if (listKAt == 0L) 16L else (now - listKAt).coerceIn(0L, 50L)
+            val d = dt / LIST_EASE_MS
+            listK = if (to > listK) min(to, listK + d) else max(to, listK - d)
+            postInvalidateOnAnimation()
+        }
+        listKAt = now
+        return listK * listK * (3f - 2f * listK)
+    }
+    /** the list's width on a field [fw] wide: full, or narrower on the controls page */
+    private fun trackerW(fw: Float): Float = min(TRACKER_W, fw * 0.34f) * (1f - (1f - LIST_COMPACT_W) * listKNow)
+    /** a card's height in the list: full, easing to the compact title row */
+    private fun cardH(q: UiKit.QuestCard): Float {
+        val full = UiKit.questCardHeight(q)
+        if (listKNow <= 0f) return full
+        return full + (UiKit.questCardHeight(q, LIST_COMPACT_SCALE, collapsed = true) - full) * listKNow
+    }
+    /** a card in the list's compact form at [listKNow] (its lines fade with the room the box leaves them) */
+    private fun compactCard(c: Canvas, box: RectF, q: UiKit.QuestCard) =
+        UiKit.questCard(c, box, q, scale = 1f + (LIST_COMPACT_SCALE - 1f) * listKNow, collapsed = listKNow >= 1f)
+    /** the tests: the compact form's eased progress (0 full .. 1 compact) */
+    fun listCompactK(): Float = listKNow
 
     private val ME_H = 92f                   // the portrait's row
     private val GROUP_H = 52f                // an untracked tab (the quest book's header, smaller)
@@ -5907,7 +6447,7 @@ class MapView(context: Context) : View(context) {
     /** one item's height in the list */
     private fun itemH(it: MapList.Item): Float = when (it) {
         is MapList.Item.Me -> ME_H
-        is MapList.Item.Polestar -> psCard()?.let { UiKit.questCardHeight(it) + PS_RIBBON_H } ?: 0f     // its ribbon over the card
+        is MapList.Item.Polestar -> psCard()?.let { cardH(it) + PS_RIBBON_H } ?: 0f     // its ribbon over the card
         is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> rowContentH(e) } ?: 0f
         is MapList.Item.Section -> SECTION_H
         is MapList.Item.PsHead -> PS_RIBBON_H + PS_RIBBON_OVER + 4f              // pg1: the header alone
@@ -6017,14 +6557,15 @@ class MapView(context: Context) : View(context) {
         if (items.isEmpty() || yMax - y0 < 60f) { rowPos.clear(); listScroll = Float.NaN; listGroundH = Float.NaN; return }
         // the same width onDraw keeps clear (trackPx); during Home's open / close, the full map's (so the top spot holds still)
         val fieldW = if (morphOn) (if (morphOpening) morphTo.width() else morphFrom.width()) else lastFieldW
-        val w = min(TRACKER_W, fieldW * 0.34f)
+        val w = trackerW(fieldW)
         val dp = UiKit.bodyPaint(23f, cDim)
         val lineO = LINE_O
         val gapC = UiKit.MODULE_GAP
         val list = items
         // the selected row stands in a gap above and below for its up / down arrows (the user: "add some buffer between current
         // selection and next quests")
-        fun isSel(it: MapList.Item) = cursor.shown && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
+        listSelDrawn = false
+        fun isSel(it: MapList.Item) = cursor.shown && !listAway() && it !is MapList.Item.Section && it !is MapList.Item.PsHead && it.key == cursor.sel
         fun need(it: MapList.Item) = itemH(it) + gapC + (if (isSel(it)) 2f * SEL_GAP else 0f)
         // THE LAYOUT, in list space
         val n = list.size
@@ -6042,6 +6583,23 @@ class MapView(context: Context) : View(context) {
         listMaxFirst = maxFirst
         // AN OPENED TAB SHIFTS UP: when its section (the tab and its quests) does not all fit below the list's present first row, the
         // list scrolls so the tab stands at the top, with as many of its quests under it as fit (the rows glide there)
+        // A ROW ASKED FOR ([revealInList]): in view, its tab's header above it when both fit, else the row as low as it can stand
+        if (revealRow != 0) {
+            val ri = list.indexOfFirst { it.key == revealRow && it !is MapList.Item.Section && it !is MapList.Item.PsHead }
+            if (ri >= 0) {
+                fun fitsTo(f: Int): Boolean {
+                    var hh = if (f > 0) lineO else 0f
+                    for (i in f..ri) hh += need(list[i])
+                    if (ri < n - 1) hh += lineO
+                    return y0 + hh <= yMax
+                }
+                if (listFirst > ri || !fitsTo(listFirst)) {
+                    val hi = (ri downTo 0).firstOrNull { list[it] is MapList.Item.Group } ?: -1
+                    listFirst = if (hi >= 0 && fitsTo(hi)) hi else { var f = ri; while (f > 0 && fitsTo(f - 1)) f--; f }
+                }
+            }
+            revealRow = 0; revealTab = 0
+        }
         if (revealTab != 0) {
             val hi = list.indexOfFirst { it is MapList.Item.Group && it.key == revealTab }
             if (hi >= 0) {
@@ -6106,7 +6664,7 @@ class MapView(context: Context) : View(context) {
         val psOne = psMerged() > 0
         val ti = if (psOne) list.indexOfFirst { it is MapList.Item.Polestar } else list.indexOfFirst { it is MapList.Item.Tracked }
         if (ti >= listFirst && ti >= 0) {
-            val h0 = if (psOne) psCard()?.let { UiKit.questCardHeight(it) } else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
+            val h0 = if (psOne) psCard()?.let { cardH(it) } else tracked.firstOrNull { it.optInt("id", 0) == list[ti].key }?.let { rowContentH(it) }
             if (h0 != null && h0 > 0f) {
                 // (the light blue row's card stands under its ribbon: the card lands there, the ribbon stays with the rows)
                 val t0 = winTop + at[ti] - at[listFirst] + (if (isSel(list[ti])) SEL_GAP else 0f) + (if (psOne) PS_RIBBON_H else 0f)
@@ -6126,6 +6684,7 @@ class MapView(context: Context) : View(context) {
             val ch = itemH(it)
             val ct = winTop + pos - listScroll + (if (sel) SEL_GAP else 0f)
             if (ct + ch < winTop - SEL_GAP || ct > winBot + SEL_GAP) continue    // outside the window
+            if (sel) listSelDrawn = true
             val row = RectF(x, ct, x + w, ct + ch)
             if (fly && i == ti && front) {                   // in flight: drawFlight draws its card (the ribbon stays, with the rows)
                 if (it is MapList.Item.Polestar) drawPsRibbon(c, row)
@@ -6133,7 +6692,7 @@ class MapView(context: Context) : View(context) {
             }
             when (it) {
                 is MapList.Item.Me -> drawMe(c, row)
-                is MapList.Item.Polestar -> psCard()?.let { UiKit.questCard(c, psCardBox(row), it) }
+                is MapList.Item.Polestar -> psCard()?.let { if (listKNow > 0f) compactCard(c, psCardBox(row), it) else UiKit.questCard(c, psCardBox(row), it) }
                 is MapList.Item.Tracked -> tracked.firstOrNull { e -> e.optInt("id", 0) == it.id }?.let { e -> drawRow(c, e, row) }
                 is MapList.Item.Section -> UiKit.trackerHeader(c, row.left, row.top, row.right, "Untracked", "${it.count}")
                 is MapList.Item.PsHead -> drawPsRibbon(c, row)                     // pg1: "Polestar · No guide" (never a stop)
@@ -6240,7 +6799,8 @@ class MapView(context: Context) : View(context) {
     // out of the JSON and sort them again every frame. They are split into onDraw's draw passes
     // here, each list already sorted by y.
     /** [guess] = a "!" from the bundle's quest givers (not one the game listed to the player): off a capital's small map */
-    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false)
+    /** [lead] = an untracked quest's QuestieDB spot nearest the player (its one disc and tap target; the others are ghost dots) */
+    private class Marker(val x: Double, val y: Double, val shape: Int, val qid: Int = 0, val guess: Boolean = false, val lead: Boolean = false)
     private val mkMid = ArrayList<Marker>()     // objectives, "!" (plain and daily), flight, vignettes
     private val mkTurnIn = ArrayList<Marker>()  // "?"
     private var turnInPx = FloatArray(0)        // the "?" screen centres, refilled each frame
@@ -6387,8 +6947,8 @@ class MapView(context: Context) : View(context) {
                     if (if (ready) !on(QuestLayers.Layer.TURN_INS) else !on(QuestLayers.Layer.OTHER)) continue
                     val pts = CursorRoute.goals(null, e, mapId)
                         .sortedBy { if (px.isNaN()) 0.0 else hypot(it[0] - px, it[1] - py) }.take(OTHER_SPOTS)
-                    for (p in pts) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
-                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true))
+                    for ((k, p) in pts.withIndex()) if (ready) mkTurnIn.add(Marker(p[0], p[1], SH_TURNIN, id, guess = true))
+                        else mkMid.add(Marker(p[0], p[1], SH_OBJ_OTHER, id, guess = true, lead = k == 0))
                 }
             }
             // Quests AVAILABLE to pick up on this map, at the giver (addon: GetAvailableQuestLines,
@@ -6621,13 +7181,17 @@ class MapView(context: Context) : View(context) {
             autoZoomCur += (frame[2] - autoZoomCur) * k
             if (abs(frame[0] - autoCx) > 1e-4f || abs(frame[1] - autoCy) > 1e-4f ||
                 abs(frame[2] - autoZoomCur) > 0.01f) postInvalidateOnAnimation()
-            zoom = autoZoomCur.coerceIn(1f, ZOOM_MAX)
+            zoom = autoZoomCur.coerceIn(zoomFloor, ZOOM_MAX)           // from out on the world it eases back in (2026-11-17)
             panX = autoCx; panY = autoCy
         } else if (!compact) {
             camAncX = Float.NaN
         }
 
-        val zoneView = !compact && zoom <= 1.001f
+        // HOME'S MAP ZOOMED OUT (2026-11-17): how far out the zoom may go this frame (the whole world with the Map room's art, else the
+        // zone), and the pan's room; a floor that rose (the art went) brings the zoom back to it
+        if (!compact) { worldFrame(m.optInt("mapID", 0), fw, fh); if (zoom < zoomFloor) { zoom = zoomFloor; autoZoomCur = zoom } } else zoomFloor = 1f
+        // the whole zone centred: at the zone's zoom, never on the controls page (its pan is the cursor's) nor zoomed out past it
+        val zoneView = !compact && !controls && zoom <= 1.001f && zoom >= 0.999f && !(frame != null && frame[2] > 1.001f)
         val cxMap = if (compact) (if (px.isNaN()) 0.5f else px.toFloat())
                     else if (zoneView) 0.5f else if (frame != null) autoCx
                     else if (followPlayer && !px.isNaN()) px.toFloat() else panX
@@ -6664,8 +7228,9 @@ class MapView(context: Context) : View(context) {
         // THE TRACKER covers the field's left side (drawTracker): keep the view's centre in the middle
         // of the part it leaves, so nothing under the list is lost -- inside the Goldshire inn the list
         // hid the red exit (seen on UI Art's emulator). Not at whole-zone view, which must show it all.
+        listKNow = stepListK()                           // the controls page's compact list (its width this frame)
         val trackPx = if (!compact && showTracker && items.isNotEmpty() && !zoneView)
-            min(TRACKER_W, fw * 0.34f) + BTN_GAP else 0f
+            trackerW(fw) + BTN_GAP else 0f
         var cxView = cxMap - (trackPx / 2f) / fw * (2f * halfX)
         var cyView = cyMap
         // the small map: the player lower by half of what the host's card covers (compactCover), so its arrow has room above
@@ -6704,10 +7269,58 @@ class MapView(context: Context) : View(context) {
         // art harvest), the full tile over it while the view is close (user 2026-09-29 14:58: the shrunk picture was the blur).
         // World: x north, y west; an ADT's west edge is y = (32 - col) * 533.333, its north edge x = (32 - row) * 533.333.
         // No tiles on the device yet (the harvest still building), or a continent's worth on screen: the old grid.
+        // HOME'S MAP ZOOMED OUT (2026-11-17): past the zone the Map room's art lies under everything (WorldArt: the room's own renderer and
+        // pictures), the zone's 0..1 on it through this projection; the tiles fade out over it down to half the zone, then are not drawn
+        worldDrew = false; terrainDrew = false; paintedConts = 0; otherTiles = 0; seaPictures = 0
+        // THE CONTINENT UNDER THE VIEW (the user, 2026-11-17: "when zooming out and then zooming in on the other continent the screen goes
+        // black"): the close tiles below are only the PLAYER's continent's, through the player's zone rect, so zoomed back in over the
+        // other continent nothing was drawn. There the art stays on at any zoom (its terrain if built, else its painted picture and zone
+        // art), the player's tiles are not drawn, and its pictures are not freed until the view is back on the player's continent.
+        // Which continent: the one whose box holds the view's middle (what fills the field), else the controls' cursor.
+        val rA = rect
+        val aimCont = if (!compact && !morphOn && rA != null && rA.valid && worldFull()) worldArt?.aim(m.optInt("mapID", 0),
+            if (controls) listOf(floatArrayOf(cxView, cyView), floatArrayOf(curU, curV)) else listOf(floatArrayOf(cxView, cyView))) else null
+        // (review: also the sea between the boxes - nobody's: the art stays on there too, under the player's own tiles, so the field is
+        // never the bare grid and the pictures are not freed and read again on each crossing)
+        val offOwn = aimCont != null && rA != null && aimCont != rA.continent
+        val otherCont = offOwn && aimCont!! >= 0
+        otherContDrawn = otherCont
+        terrainAim = aimCont ?: Int.MIN_VALUE
+        if (!compact && !morphOn && (zoom < 0.999f || offOwn) && worldFull()) worldArt?.let { wa ->
+            worldZr.set(sx(0.0), sy(0.0), sx(1.0), sy(1.0)); worldClip.set(left, top, left + fw, top + fh)
+            worldAsked = true
+            // Terrain (the default): the minimap's terrain all the way out; the painted art only where there is none for this continent.
+            // The style is for zoomed OUT: at the zone's width and closer over another continent its own terrain and close tiles, as on
+            // the player's own (review: Painted stayed on the upscaled painting there)
+            val rt = rect
+            // (review 2: over the open sea between the boxes at the zone's width and closer the terrain is only its deep sea - a dark
+            // field that looks the same as the black screen the user reported; the sea has no terrain of its own, so it is the painted
+            // world's sea there, as the per-continent rule's fallback. Zoomed out the terrain's sea stays: the lands are in view)
+            // (water depth, 2026-11-17: Terrain's sea is now WaterDepth's navy-teal, not a dark field, and the gradient off each coast runs
+            // into it: in Terrain the sea between stays the terrain's, no switch to the painting at the boxes' edges; Painted as it was)
+            val seaPainted = aimCont == WorldArt.SEA && zoom >= 0.999f && !worldTerrain()
+            val styleT = (worldTerrain() && !seaPainted) || (otherCont && zoom >= 0.999f)
+            val tIdx = if (styleT && rt != null && rt.valid) TerrainOverview.index(this) else emptyMap()
+            if (tIdx == null && !worldTerrain()) {
+                // Painted, the index still being read for the close view of another continent: its painting meanwhile
+            } else if (tIdx == null) {
+                // the minimap index is being read (a moment, once): the sea, not the painted art for a frame
+                pFill.color = WaterDepth.DEEP; c.drawRect(left, top, left + fw, top + fh, pFill)
+                terrainDrew = true; worldDrew = true
+            } else if (rt != null && ((worldTerrain() && !seaPainted && tIdx[rt.continent]?.isNotEmpty() == true) || aimCont?.let { tIdx[it] }?.isNotEmpty() == true)) {
+                // the other continent seen at the zone's width and closer: its water a sea colour (the player's own keeps its look)
+                terrainDrew = drawTerrainOut(c, wa, m.optInt("mapID", 0), rt, left, top, fw, fh, cxView, cyView, halfX, halfY)
+                worldDrew = terrainDrew
+            }
+            if (!terrainDrew) worldDrew = wa.paint(c, m.optInt("mapID", 0), worldZr, worldClip, this)
+        }
+        // the user's pick (2026-11-17, "Free on zoom-in"): back on the zone, the big pictures go at once (the next zoom-out reads them again)
+        else if (!compact && !morphOn && zoom >= 0.999f && !offOwn && worldAsked) { worldAsked = false; worldArt?.release() }
+        val tileShare = if (otherCont) 0f else if (worldDrew && !terrainDrew) 1f - worldShare(zoom) else 1f
         val rT = rect
-        var terrain = false
+        var terrain = (worldDrew && (tileShare <= 0.001f || offOwn)) || terrainDrew
         var drew = false; var allAbsent = true           // a tile drawn this frame; every tile here looked for and not on the device
-        if (rT != null && rT.valid && MinimapTiles.has(rT.continent)) {
+        if (rT != null && rT.valid && MinimapTiles.has(rT.continent) && tileShare > 0.001f) {
             val adt = MinimapTiles.ADT
             val wyW = rT.left - (cxView - halfX) * rT.width; val wyE = rT.left - (cxView + halfX) * rT.width
             val wxN = rT.top - (cyView - halfY) * rT.height; val wxS = rT.top - (cyView + halfY) * rT.height
@@ -6718,8 +7331,22 @@ class MapView(context: Context) : View(context) {
                 terrain = true
                 val sample = if (n <= QUARTER_TILES_MAX) 4 else 8
                 val full = 2f * halfX * rT.width.toFloat() <= TILE_MAX_YD
+                pArt.alpha = (255 * tileShare).toInt().coerceIn(0, 255)
                 c.save()
                 c.clipRect(left, top, left + fw, top + fh)
+                // nothing of the world under them: the sea where this continent has no ADT is its depth field's (WaterDepth), over the
+                // deep colour, so a coast's gradient does not stop at the last tile (only once the field is built: before, the old ground)
+                if (!worldDrew) WaterDepth.field(rT.continent, this)?.let { f ->
+                    pFill.color = WaterDepth.DEEP; pFill.alpha = pArt.alpha
+                    c.drawRect(left, top, left + fw, top + fh, pFill)
+                    pFill.alpha = 255
+                    f.sea?.let { sb ->
+                        seaDst.set(sx(rT.nx((32 - f.c0) * adt)), sy(rT.ny((32 - f.r0) * adt)),
+                            sx(rT.nx((32 - f.c0 - f.w / WaterDepth.FIELD_PX) * adt)), sy(rT.ny((32 - f.r0 - f.h / WaterDepth.FIELD_PX) * adt)))
+                        seaDst.sort()
+                        c.drawBitmap(sb, null, seaDst, pArt); seaPictures++
+                    }
+                }
                 for (row in r0..r1) for (col in c0..c1) {
                     // half a pixel of overlap so filtered neighbours never show a hairline between them
                     tileDst.set(sx(rT.nx((32 - col) * adt)) - 0.5f, sy(rT.ny((32 - row) * adt)) - 0.5f,
@@ -6729,6 +7356,7 @@ class MapView(context: Context) : View(context) {
                     if (full) MinimapTiles.get(rT.continent, col, row) { invalidate() }?.let { c.drawBitmap(it, null, tileDst, pArt); drew = true }
                 }
                 c.restore()
+                pArt.alpha = 255
             }
         }
         if (!terrain) {
@@ -6741,8 +7369,9 @@ class MapView(context: Context) : View(context) {
         // issues #316 #317 #284 (1.0.32, "its black with blue zones", "game art shows its finished but map is still empty"): Home's map
         // pictures not made yet (the background art builds them while the game is closed): said in the Map room's words, under the markers
         // (review: also over this continent's folder with no tile here yet - the step part-way - not only with no folder at all)
-        val tilesShown = HomeMapNote.terrainShown(terrain, drew, allAbsent, artNote != null)
-        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT else null
+        val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
+        artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT
+            else if (HomeMapNote.otherShows(morphOn, offOwn, worldDrew)) HomeMapNote.NOT_BUILT else null
         // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
         artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
@@ -6845,6 +7474,15 @@ class MapView(context: Context) : View(context) {
 
         // the scale label is drawn in the OVERLAY pass, above the pins (a quest "!" sat on it)
         }
+
+        // HOME'S MAP CONTROLS: the game's cursor (the golden lines, the reticle) at the cursor's spot, under the marks as in the Map room
+        if (controls && !compact && !morphOn) {
+            cursorX = sx(curU.toDouble()); cursorY = sy(curV.toDouble())
+            MapReticle.lines(c, cursorX, cursorY, RectF(left + trackPx, top, left + fw, top + fh - (if (hintsOn()) HINT_BAND else 0f)))
+            val t = ((System.currentTimeMillis() - cursorShownAt) / WorldMapRoomView.INTRO_MS.toFloat()).coerceIn(0f, 1f)
+            MapReticle.reticle(c, cursorX, cursorY, t)
+            if (t < 1f) postInvalidateOnAnimation()
+        } else { cursorX = Float.NaN; cursorY = Float.NaN }
 
         // ---- QUEST AREAS, BEFORE ANY ICON (deriveQuestAreas). Shading on the terrain, so it goes
         // under every icon on the map, service pins included, and it is clipped to the field.
@@ -7214,7 +7852,7 @@ class MapView(context: Context) : View(context) {
             turnInPx[2 * i] = if (on) tx else Float.NaN; turnInPx[2 * i + 1] = if (on) ty else Float.NaN
         }
         val sameNpc2 = (QUEST_ICON_PX / 2f) * (QUEST_ICON_PX / 2f)
-        bubbleN = 0                                    // this frame's numbered bubbles, for the tap test
+        bubbleN = 0; untrackedDrawn = 0; discDrawn.clear(); discCount.clear()   // this frame's numbered bubbles, for the tap test
         for (lp in 0..1) for (s in qdbSpots) {         // QuestieDB's objective guesses (deriveQdb), under the game's marks; leads last
             if (s.turnIn || s.lead != (lp == 1)) continue
             val gx = sx(s.x); val gy = sy(s.y)
@@ -7238,7 +7876,25 @@ class MapView(context: Context) : View(context) {
             val cxp = sx(mk.x); val cyp = sy(mk.y)
             if (!onField(cxp, cyp)) continue
             when (mk.shape) {
-                SH_OBJ_OTHER -> objDot(c, cxp, cyp, 0.5f)                // an untracked quest's objective: dimmer
+                // an untracked quest's objective (the user, 2026-11-17): on the open map a full-size grey disc, no number, tappable (its
+                // panel) and under the controls' cursor (A); Home's small map keeps the dim dot. The filter's OTHER layer still hides it
+                // THE TRACKED CIRCLES' SIZE (the user, 2026-11-17 again: "the scaling on the untracked quest spot goes wacky when zooming
+                // out, it does not stay the same as the other tracked circles"): the grey disc is the tracked circle's own art (poi_disc,
+                // UiKit.questDiscMuted marker = false; it was the add-on's quest_disc.tga, 1.46x bigger at one size), and a quest's
+                // QuestieDB guesses follow the tracked quests' guess rule (drawQdbSpot): a ghost dot at every spot and ONE grey disc, at
+                // QDB_SCALE, on the spot nearest the player - its one tap target (three full discs had piled up as the view widened)
+                SH_OBJ_OTHER -> if (compact) objDot(c, cxp, cyp, 0.5f) else if (mk.guess) {
+                    UiKit.ghostDot(c, cxp, cyp)
+                    if (mk.lead) {
+                        UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART * QDB_SCALE, marker = false)
+                        discSeen(mk.qid)
+                        addBubble(cxp, cyp, mk.qid); untrackedDrawn++
+                    }
+                } else {
+                    UiKit.questDiscMuted(c, cxp, cyp, BUBBLE_ART, marker = false)
+                    discSeen(mk.qid)
+                    addBubble(cxp, cyp, mk.qid); untrackedDrawn++
+                }
                 SH_DUNGEON -> if (!compact) drawDungeon(c, cxp, cyp, dungeonNames[mk.qid] ?: "")
                 SH_FLIGHT -> drawIcon(c, Ic.FLIGHT, cxp, cyp, SVC_ICON_PX)
                 SH_VIGNETTE -> drawIcon(c, Ic.VIGNETTE, cxp, cyp, 22f)
@@ -7259,6 +7915,7 @@ class MapView(context: Context) : View(context) {
                         // game's yellow focus disc. A white ring expands while a tap waits for the game's answer.
                         val focused = mk.qid == shownFocus()
                         UiKit.questDisc(c, cxp, cyp, BUBBLE_ART, focus = focused, number = no)
+                        discSeen(mk.qid)
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (!morphOn && !focused && mk.qid == askedQid && now - askedAt < ASK_MS) {
                             val ph = ((now - askedAt) % 900L) / 900f
@@ -7547,7 +8204,7 @@ class MapView(context: Context) : View(context) {
             val fade = if (mf < 1f) c.saveLayerAlpha(left, top, left + fw, top + fh, (255 * mf).toInt()) else -1
             if (!hostZoomHidden) {
                 drawButton(c, btnInDraw, "+", zoom < ZOOM_MAX, 1f)
-                drawButton(c, btnOutDraw, "-", zoom > 1f, 1f)
+                drawButton(c, btnOutDraw, "-", zoom > zoomFloor + 0.001f, 1f)
                 // their shoulders on their lower left corners (the user, 2026-10-16: "Put the L and R button glyphs onto the + and _
                 // buttons instead of in the bottom with the glyph descriptions"): RB zooms in, LB out (MapCursor)
                 if (hintsOn()) {
@@ -7567,14 +8224,14 @@ class MapView(context: Context) : View(context) {
             } else spine.clear()
             // in yards across, the unit Settings uses, so the two can be compared at a glance
             val rz = rect
-            val zlabel = if (zoom <= 1.02f) "zone"
+            val zlabel = if (zoom <= 1.02f && zoom >= 0.98f) "zone"
                          else if (rz != null && rz.valid)
                              String.format("%.0f yd%s", rz.width / zoom, if (autoZoom) " auto" else "")
                          else String.format("%.1fx%s", zoom, if (autoZoom) " auto" else "")
             pSmall.color = cDim
             val lift = if (hintsOn()) HINT_BAND else 0f
             c.drawText(Tr.t(zlabel), left + 10f, top + fh - 12f - lift, pSmall)
-            if (!followPlayer) c.drawText(Tr.t(if (recentreFrom != null) "recentring" else "panned - walk to recentre"),
+            if (!followPlayer && !controls) c.drawText(Tr.t(if (recentreFrom != null) "recentring" else "panned - walk to recentre"),
                 left + 10f, top + fh - 34f - lift, pSmall)
             if (hintsOn()) drawPadHints(c, left, top, fw, fh)
             if (fade >= 0) c.restoreToCount(fade)
@@ -7596,12 +8253,12 @@ class MapView(context: Context) : View(context) {
             else stepChoice.draw(c, RectF(), 0f, 0f, STEP_ROW)
             // the player menu beside the list, from the top (the portrait's height)
             if (pmenu.open && !morphOn) {
-                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                val lw = if (showTracker && items.isNotEmpty()) trackerW(fw) + 16f else 0f
                 drawPlayerMenu(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { pmenuHits.clear(); pmenuBox.setEmpty() }
             // the panel steps aside while its quest's areas are lit (it would cover them); Left brings it back
             if (panelId != 0 && !pmenu.open && !morphOn) {
-                val lw = if (showTracker && items.isNotEmpty()) min(TRACKER_W, fw * 0.34f) + 16f else 0f
+                val lw = if (showTracker && items.isNotEmpty()) trackerW(fw) + 16f else 0f
                 drawPanel(c, left + BTN_GAP + lw, top + BTN_GAP, top + fh - 64f - (if (hintsOn()) HINT_BAND else 0f), fw - lw - 2f * BTN_GAP)
             } else { panelHits.clear(); panelBox.setEmpty() }
         }
@@ -7609,7 +8266,7 @@ class MapView(context: Context) : View(context) {
         // the selected quest's bubble wears the round ring (UI Art: round things get round cursors), touch or controller;
         // its list row is highlighted in drawTracker
         val ringQ = selQuest()                          // the merged light blue row rings its quest's bubble
-        if (!compact && !morphOn && cursor.shown && ringQ > 0) {
+        if (!compact && !morphOn && cursor.shown && !listAway() && ringQ > 0) {
             for (i in 0 until bubbleN) if (bubbleQ[i] == ringQ)
                 UiKit.focusRing(c, bubbleXY[2 * i], bubbleXY[2 * i + 1], BUBBLE_ART * 0.32f + 10f)
         }
@@ -7735,7 +8392,9 @@ class MapView(context: Context) : View(context) {
                 FILTER_LIVE -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.HERB, 56f)
                 FILTER_SWITCH -> UiKit.spawnSpot(c, cx0 + 116f, cy, UiKit.Spawn.ORE, 56f)
                 FILTER_SPARKLES -> drawIcon(c, Ic.SOFT_USE, cx0 + 116f, cy, 56f)
-                else -> UiKit.tex(if (key == FILTER_CHESTS) "mm_chest" else "mm_rare")?.let { bmp ->
+                // the rares' switch: the silver dragon the map's rares now wear (the user's pick "Silver dragon", 2026-11-17)
+                FILTER_RARES -> UiKit.eliteDragon(c, RectF(cx0 + 116f - 28f, cy - 28f, cx0 + 116f + 28f, cy + 28f), silver = true)
+                else -> UiKit.tex("mm_chest")?.let { bmp ->
                     val sc = 56f / max(bmp.width, bmp.height)
                     val hw = bmp.width * sc / 2f; val hh = bmp.height * sc / 2f
                     iconDst.set(cx0 + 116f - hw, cy - hh, cx0 + 116f + hw, cy + hh)

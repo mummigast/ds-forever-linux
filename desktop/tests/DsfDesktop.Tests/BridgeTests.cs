@@ -11,6 +11,7 @@ using System.Threading;
 using DsfDesktop.Bridge;
 using DsfDesktop.GameLog;
 using DsfDesktop.Pairing;
+using DsfDesktop.Sunshine;
 using DsfDesktop.Wow;
 
 namespace DsfDesktop.Tests
@@ -24,6 +25,23 @@ namespace DsfDesktop.Tests
         public string StreamPairResult;   // null = the Sunshine side succeeds
         public string SunWhy = "";        // the PC can't stream: the Thor's reason ("pc busy: another Sunshine")
         public string InputWhy = "";      // the Thor's taps can't reach WoW (WowInput.ThorWhy; "" = no wow.input_why)
+        public volatile int[] Mode;       // the Thor's stream_mode
+        public void StreamMode(int w, int h, int fps) { Mode = new[] { w, h, fps }; }
+        public int HostChecks;
+        public int PcTests, ScreenRetries;
+        public void ScreenRetry() { ScreenRetries++; }
+        public Dictionary<string, object> PcTest()
+        {
+            PcTests++;
+            var r = new PcTestResult { At = DateTime.Now, Screen = "own", ScreenLine = "Own virtual screen 1920x1080@120", ScreenHz = 120, Pad = "vigem" };
+            r.Steps.Add(new TestStep { Id = "ports", Name = "Ports", State = TestState.Pass, Line = "All 6 ready (base 52989)" });
+            return r.ToMessage();
+        }
+        public Dictionary<string, object> HostCheck()
+        {
+            HostChecks++;
+            return new Dictionary<string, object> { ["t"] = "ignored", ["state"] = "restarting", ["sunshine"] = new Dictionary<string, object> { ["http_port"] = 53989 } };
+        }
         public FakeHost() { Devices = new DeviceStore(T.P("devices.json")); }
         public Dictionary<string, object> Info()
         {
@@ -40,7 +58,10 @@ namespace DsfDesktop.Tests
             lock (Pins) Pins.Add(pin);
             ThreadPool.QueueUserWorkItem(_ => done(StreamPairResult));
         }
-        public void LoginFile(string email, string password) { }
+        /// <summary>the last login_file's game account (fake data only)</summary>
+        public volatile string AccountList = "(none)";
+        public volatile int LoginFiles;
+        public void LoginFile(string email, string password, string accountList) { AccountList = accountList; LoginFiles++; }
         public Dictionary<string, object> BnetReady() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "no sign-in window" };
         public Dictionary<string, object> Focus() => new Dictionary<string, object> { ["ok"] = false, ["why"] = "WoW isn't running" };
         public Dictionary<string, object> AddonsStatus() => new Dictionary<string, object> { ["state"] = "current" };
@@ -521,6 +542,84 @@ namespace DsfDesktop.Tests
         }
 
         [Test]
+        public static void TheThorsStreamModeReachesTheHost()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "stream_mode", ["w"] = 1920, ["h"] = 1080, ["fps"] = 120 });
+                c.Send(new Dictionary<string, object> { ["t"] = "ping", ["id"] = "m" });
+                c.Until("pong");
+                A.Eq("1920,1080,120", h.Mode == null ? "none" : string.Join(",", h.Mode));
+            }
+        }
+
+        /// <summary>the user's pick 2026-11-17 ("Yes, remember it"): the Thor's remembered game account reaches the host only with
+        /// "remember"; "Ask each time" never hands one over (fake data only)</summary>
+        [Test]
+        public static void TheGameAccountComesOnlyWhenRemembered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-10", stream: false);
+                c.Until("backlog_end");
+                void Login(Dictionary<string, object> extra, string want, string why)
+                {
+                    var n = h.LoginFiles;
+                    var m = new Dictionary<string, object> { ["t"] = "login_file", ["email"] = "fake@example.invalid", ["password"] = "not-a-password" };
+                    foreach (var kv in extra) m[kv.Key] = kv.Value;
+                    c.Send(m);
+                    for (int i = 0; i < 100 && h.LoginFiles == n; i++) Thread.Sleep(20);
+                    A.Eq(n + 1, h.LoginFiles, why + ": handed over");
+                    A.Eq(want, h.AccountList, why);
+                }
+                Login(new Dictionary<string, object> { ["game_account"] = "remember", ["account_list"] = "Fake1|!Fake2|" }, "Fake1|!Fake2|", "remembered");
+                Login(new Dictionary<string, object> { ["game_account"] = "ask", ["account_list"] = "Fake1|!Fake2|" }, null, "ask each time");
+                Login(new Dictionary<string, object> { ["game_account"] = "remember" }, null, "nothing remembered on the Thor");
+                Login(new Dictionary<string, object>(), null, "an older Thor");
+            }
+        }
+
+        [Test]
+        public static void TheThorsHostCheckIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8b", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "host_check" });
+                var r = c.Until("host_check_result").Last();
+                A.Eq(1, h.HostChecks);
+                A.Eq("restarting", r.Str("state"));
+                A.True(Json.Write(r).Contains("53989"), Json.Write(r));
+            }
+        }
+
+        [Test]
+        public static void TheThorsPcTestIsAnswered()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8c", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                var r = c.Until("pc_test_result").Last();
+                A.Eq(1, h.PcTests);
+                A.Eq("own", r.Str("screen"));
+                A.True(Json.Write(r).Contains("All 6 ready"), Json.Write(r));
+            }
+        }
+
+        [Test]
         public static void UnpairRemovesTheDevice()
         {
             using (var h = new FakeHost())
@@ -532,6 +631,22 @@ namespace DsfDesktop.Tests
                 c.Send(new Dictionary<string, object> { ["t"] = "unpair" });
                 c.Until("unpaired");
                 A.False(h.Devices.Validate("thor-9", token));
+            }
+        }
+
+        [Test]
+        public static void TheThorsRetryStartsTheScreenTriesOver()
+        {
+            using (var h = new FakeHost())
+            using (var s = Start(h))
+            using (var c = new Client(s.Port))
+            {
+                Pair(c, h, "thor-8d", stream: false);
+                c.Until("backlog_end");
+                c.Send(new Dictionary<string, object> { ["t"] = "screen_retry" });
+                c.Send(new Dictionary<string, object> { ["t"] = "pc_test" });
+                c.Until("pc_test_result");
+                A.Eq(1, h.ScreenRetries);
             }
         }
     }

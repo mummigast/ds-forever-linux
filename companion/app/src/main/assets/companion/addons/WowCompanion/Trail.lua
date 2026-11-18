@@ -100,6 +100,24 @@ end
 -- overshot the facing by more than it corrected, so the bar swung left and right a little wider each frame, up to whole-bar
 -- swings and the 2.5 rad reset. Now each step is the spring's EXACT solution over dt (closed form, the same 0.2 s settle):
 -- stable at any frame time, never overshooting, the letters still placed at sub-pixel offsets (no snapping of a moving offset).
+-- cp43 THE ROUTE CONVEYOR (the user, 2026-11-17: "on the compass the blue arows arent clear what they are, I want to make them
+-- animate scrolling upwards with a yellow dot between them"): the path marker (cp36's light blue double chevron) is now a
+-- conveyor: three single chevrons pointing up with a small gold dot (C.GOLD on C.DISC_TEX, the quest disc's own gold) between
+-- each pair, all drifting upward on a loop (C.PA.SPEED spec px/s, one chevron step C.PA.P a second) and fading out at both ends of
+-- its window (C.PA.SPAN), so the wrap never pops. C.paConveyor(t) is the pure place/alpha of every piece at time t (GetTime(),
+-- no stored offset: no drift, any frame time); the pieces are made once and only moved vertically, so cp40's eased x (no jitter)
+-- is untouched. Still drawn from C.step (no second OnUpdate), still hidden with no route. The Home map's route dots carry the same
+-- blue chevron (app side, RouteArrows.kt: four dots, then the chevron in the 5th slot; cp44 gives the compass that rhythm too).
+-- Cheap per frame: no table made per frame (C.paConveyor fills the marker's own reused table), the drift steps at most C.PA.TICK (30 a second), and the pieces are re-placed only when the drift stepped or
+-- the eased x / the scale moved (so a steady facing costs nothing; while turning they follow the eased x each frame, as cp36's
+-- marker did, or they would lag the letters).
+-- cp44 FOUR DOTS, THEN AN ARROW (the user, 2026-11-17: "go back to 4, I was meaning on the compass scroll I just miscounted"): the
+-- conveyor takes the Home map's rhythm: going up, four gold dots, then one light blue chevron in the 5th slot, repeating. It is a row
+-- of C.PA.M slots C.PA.S spec px apart (the old chevron-to-dot step, 7), all drifting up at the same C.PA.SPEED (14 spec px a second);
+-- what stands in a slot follows the slot's place in the endless row (every C.PA.K-th a chevron), so the window need not hold whole
+-- sets. The window grew from 42 to 49 spec px (7 slots) so that, with the 7 px fade at each end, at least five slots are always at
+-- full alpha: one whole set of four dots and a chevron. Same costs as cp43: C.paConveyor fills its reused table, the drift steps at
+-- most C.PA.TICK, nothing is re-placed unchanged; the pooled chevrons / dots a frame does not use are hidden.
 -- cp42 THE 11-16 TEST BUILD MERGE: issue #358's cp41 (the font family, WC.font) and feat/big-layout's cp41 (the compass in the
 -- layout editor) both kept; both notes below
 -- cp41 ISSUE #358 (a player: "Character names: Cyrillic characters are displayed as empty squares instead of actual letters"; the
@@ -192,7 +210,7 @@ end
 -- "we need to make a way to basically edit the UI locations on the top screen from our UI menu"): the bar's place and size are the layout's (TapPad pad22 WC.lay.get("compass"): its top-centre at (dx, 4 + dy)
 -- 1080-line pixels from the screen's top-centre, scale s % of the frame: C.place); C.lay is the piece Hub's editor gathers. The target
 -- bar follows it until the target bar is moved itself (Hub uf23).
-WC.compass = { V = "cp42" }
+WC.compass = { V = "cp44" }
 do
     local C = WC.compass
     local PI = math.pi
@@ -1712,18 +1730,55 @@ do
         C.paWhy = why
         return w
     end
-    -- its look: a light blue DOUBLE CHEVRON pointing up (go on this way), a dark rim under each stroke; smaller than the objective's
-    -- disc and nothing like it. Lines (as Polestar's own route lines), on our frame, made once.
-    C.PA.ARMS = { { 0, 7, -8, 0 }, { 0, 7, 8, 0 }, { 0, -1, -8, -8 }, { 0, -1, 8, -8 } }   -- spec px from the marker's centre, y up
-    C.PA.W, C.PA.RIM, C.PA.SIZE = 3.5, 6, 18
+    -- its look (cp43, cp44): a light blue CONVEYOR pointing up (go on this way): going up, four gold dots then a single chevron,
+    -- repeating, scrolling upward on a loop, a dark rim under each piece; drawn on our frame, made once.
+    -- ARM: one chevron's arms in spec px from its centre, y up (12 wide, 4 tall); S the step from slot to slot; K slots a set (K - 1
+    -- dots, then the chevron), P = K * S the step from chevron to chevron; M slots in the window, SPAN = M * S; FADE the soft ends;
+    -- SPEED spec px a second; NCH / NDOT the most chevrons / dots M slots in a row can hold (the pools)
+    C.PA.ARM = { { 0, 2, -6, -2 }, { 0, 2, 6, -2 } }
+    C.PA.K, C.PA.S, C.PA.M, C.PA.SPEED, C.PA.FADE, C.PA.DOT = 5, 7, 7, 14, 7, 4.5
+    C.PA.P, C.PA.SPAN = C.PA.K * C.PA.S, C.PA.M * C.PA.S
+    C.PA.NCH = math.ceil(C.PA.M / C.PA.K)
+    C.PA.NDOT = C.PA.M - math.floor(C.PA.M / C.PA.K)
+    C.PA.W, C.PA.RIM, C.PA.SIZE = 2.5, 4.5, 18
+    C.PA.TICK = 1 / 30                                                 -- the drift's step at most (s): 30 places a second
+    -- every slot at time t, bottom to top: { kind = "chev" | "dot", y (spec px from the band line, up), a (0..1) }; M slots S apart,
+    -- the lowest at -SPAN / 2 + (the drift mod S); a slot's kind from its place in the endless row (the drift's whole steps taken
+    -- off), every K-th a chevron; alpha 0 at both window ends. [out]: a table to fill in place (the draw passes its own, made once:
+    -- nothing made per frame); none: a new one (the checks)
+    function C.paConveyor(t, out)
+        local PA = C.PA
+        local S, K, half = PA.S, PA.K, PA.SPAN / 2
+        local off = (tonumber(t) or 0) * PA.SPEED
+        local base = math.floor(off / S)
+        local frac = off - base * S
+        out = out or {}
+        for j = 0, PA.M - 1 do
+            local y = -half + j * S + frac
+            local a = (half - math.abs(y)) / PA.FADE
+            if a > 1 then a = 1 elseif a < 0 then a = 0 end
+            local p = out[j + 1]
+            if not p then p = {}; out[j + 1] = p end
+            p.kind, p.y, p.a = ((j - base) % K == K - 1) and "chev" or "dot", y, a
+        end
+        return out
+    end
     function C.paBuild()
         if C.pa then return C.pa end
         local f = C.frame
-        local o = { rim = {}, ln = {} }
-        local R = C.PA.RGB
-        for i = 1, #C.PA.ARMS do
+        local o = { rim = {}, ln = {}, dsh = {}, dot = {}, all = {}, cv = {} }
+        local R, G = C.PA.RGB, C.GOLD
+        for i = 1, C.PA.NCH * #C.PA.ARM do
             o.rim[i] = f:CreateLine(nil, "ARTWORK", nil, 0); o.rim[i]:SetColorTexture(0, 0, 0, 0.85)
             o.ln[i] = f:CreateLine(nil, "ARTWORK", nil, 2); o.ln[i]:SetColorTexture(R[1], R[2], R[3], 1)
+            o.all[#o.all + 1] = o.rim[i]; o.all[#o.all + 1] = o.ln[i]
+        end
+        for i = 1, C.PA.NDOT do
+            o.dsh[i] = f:CreateTexture(nil, "ARTWORK", nil, 0); o.dsh[i]:SetTexture(C.DISC_TEX); o.dsh[i]:SetVertexColor(0, 0, 0, 0.85)
+            o.dsh[i]:SetSize(C.u(C.PA.DOT + 2), C.u(C.PA.DOT + 2))
+            o.dot[i] = f:CreateTexture(nil, "ARTWORK", nil, 2); o.dot[i]:SetTexture(C.DISC_TEX); o.dot[i]:SetVertexColor(G[1], G[2], G[3], 1)
+            o.dot[i]:SetSize(C.u(C.PA.DOT), C.u(C.PA.DOT))
+            o.all[#o.all + 1] = o.dsh[i]; o.all[#o.all + 1] = o.dot[i]
         end
         o.d = f:CreateFontString(nil, "OVERLAY")
         WC.font(o.d, C.u(C.SPEC.dist), "OUTLINE")
@@ -1732,6 +1787,7 @@ do
         pcall(function() o.a:SetAtlas("Navigation-Tracked-Arrow") end)
         o.a:SetVertexColor(R[1], R[2], R[3])
         o.a:SetSize(C.u(14), C.u(14))
+        o.all[#o.all + 1] = o.d; o.all[#o.all + 1] = o.a
         C.pa = o
         return o
     end
@@ -1742,24 +1798,57 @@ do
         local f, u, S, PA = C.frame, C.u, C.SPEC, C.PA
         local o = C.paBuild()
         local cx, cy = m.x, -S.line
-        for i, arm in ipairs(PA.ARMS) do
-            local x1, y1, x2, y2 = arm[1], arm[2], arm[3], arm[4]
-            local dx, dy = x2 - x1, y2 - y1
-            local l = math.sqrt(dx * dx + dy * dy)
-            local ex, ey = dx / l, dy / l                                  -- (the rim a pixel longer at both ends)
-            local al = (i > 2) and 0.7 or 1                                -- (the rear chevron a little dimmer)
-            local r, ln = o.rim[i], o.ln[i]
-            r:SetThickness(u(PA.RIM)); r:SetAlpha(al)
-            r:SetStartPoint("TOP", f, u(cx + x1 - ex), u(cy + y1 - ey)); r:SetEndPoint("TOP", f, u(cx + x2 + ex), u(cy + y2 + ey))
-            ln:SetThickness(u(PA.W)); ln:SetAlpha(al)
-            ln:SetStartPoint("TOP", f, u(cx + x1), u(cy + y1)); ln:SetEndPoint("TOP", f, u(cx + x2), u(cy + y2))
-            C.paVis(r, true); C.paVis(ln, true)
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        -- the drift's clock steps at most every TICK (a clock that went back: re-started)
+        if not o.tt or now - o.tt >= PA.TICK or now < o.tt then o.tt = now end
+        local us = u(1)
+        -- re-placed only when the drift stepped, the eased x or the scale moved, or the pieces were hidden
+        if o.shown and o.pt == o.tt and o.px == cx and o.pu == us then
+            C.paText(o, f, u, S, PA, m, w)
+            o.shown = true
+            return
         end
-        -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal)
+        o.pt, o.px, o.pu = o.tt, cx, us
+        local ci, di = 0, 0
+        local cv = C.paConveyor(o.tt, o.cv)
+        for q = 1, #cv do
+            local p = cv[q]
+            local py = cy + p.y
+            if p.kind == "chev" then
+                ci = ci + 1
+                for j, arm in ipairs(PA.ARM) do
+                    local x1, y1, x2, y2 = arm[1], arm[2], arm[3], arm[4]
+                    local dx, dy = x2 - x1, y2 - y1
+                    local l = math.sqrt(dx * dx + dy * dy)
+                    local ex, ey = dx / l, dy / l                          -- (the rim a pixel longer at both ends)
+                    local i = (ci - 1) * #PA.ARM + j
+                    local r, ln = o.rim[i], o.ln[i]
+                    r:SetThickness(u(PA.RIM)); r:SetAlpha(p.a)
+                    r:SetStartPoint("TOP", f, u(cx + x1 - ex), u(py + y1 - ey)); r:SetEndPoint("TOP", f, u(cx + x2 + ex), u(py + y2 + ey))
+                    ln:SetThickness(u(PA.W)); ln:SetAlpha(p.a)
+                    ln:SetStartPoint("TOP", f, u(cx + x1), u(py + y1)); ln:SetEndPoint("TOP", f, u(cx + x2), u(py + y2))
+                    C.paVis(r, p.a > 0); C.paVis(ln, p.a > 0)
+                end
+            else
+                di = di + 1
+                local sh, d = o.dsh[di], o.dot[di]
+                sh:SetAlpha(p.a); d:SetAlpha(p.a)
+                sh:SetPoint("CENTER", f, "TOP", u(cx), u(py)); d:SetPoint("CENTER", f, "TOP", u(cx), u(py))
+                C.paVis(sh, p.a > 0); C.paVis(d, p.a > 0)
+            end
+        end
+        for i = ci * #PA.ARM + 1, #o.ln do C.paVis(o.rim[i], false); C.paVis(o.ln[i], false) end      -- cp44: the pool's unused
+        for i = di + 1, #o.dot do C.paVis(o.dsh[i], false); C.paVis(o.dot[i], false) end
+        C.paText(o, f, u, S, PA, m, w)
+        o.shown = true
+    end
+    -- the distance text and the off-band side arrow (every frame: their own checks keep them cheap)
+    function C.paText(o, f, u, S, PA, m, w)
+        -- terse: a distance only for a leg's start (where the walk ends: a flight master, a dock, a portal), under the window
         local txt = (type(w) == "table" and w.kind ~= "walk" and num(w.d)) and C.distText(w.d) or nil
         if txt then
             if o.text ~= txt then o.d:SetText(txt); o.text = txt end
-            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + PA.SIZE / 2 + 3)); C.paVis(o.d, true)
+            o.d:SetPoint("TOP", f, "TOP", u(m.x), -u(S.line + PA.SPAN / 2 + 2)); C.paVis(o.d, true)
         else
             C.paVis(o.d, false)
         end
@@ -1769,13 +1858,11 @@ do
         else
             C.paVis(o.a, false)
         end
-        o.shown = true
     end
     function C.paHide()
         local o = C.pa
         if not o or not o.shown then return end
-        for i = 1, #o.ln do C.paVis(o.rim[i], false); C.paVis(o.ln[i], false) end
-        C.paVis(o.d, false); C.paVis(o.a, false)
+        for _, p in ipairs(o.all) do C.paVis(p, false) end
         o.shown = false
     end
 
@@ -2242,7 +2329,15 @@ end
 -- ag12n (the user, 2026-11-16: "Sometimes while playing the friendly name plates will turn themselves back on even though they are
 -- turned off in the menu."): Friendly plates Off stays off for the session; only the player's own change through the game's own
 -- controls stands (A.friendsOffStep below).
-WC.live = { V = "ag13", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+-- ag14 THE CLASSIFICATION DRAGONS (the user, 2026-11-17: "the Skull above mobs is confusing, I think we need to scrap that, we do however
+-- need to add the dragon Icon for an Elite and a silver one for rare spawns"): ag2's AVOID skull (dungeonskull) over a plate is gone,
+-- and with it its rule (elite, "??", ours + 3, a fight not on us). In its place the game's own plate dragons by UnitClassification
+-- (plain): elite / worldboss nameplates-icon-elite-gold, rare / rareelite nameplates-icon-elite-silver (Blizzard_NamePlates'
+-- GetClassificationAtlasElement gives a rareelite the silver dragon; a rare its star, but the Classic target frame's
+-- ShouldUseSilverUnitFrame puts every rare in silver, and the user asked for silver; this game's plates draw no rarity icon at all:
+-- camelot NameplatesOverrides.ShowRarityIconInfoDisplayOption). As the game's classification frame, none while the unit wears a raid
+-- marker (GetRaidTargetIndex). The dragon and the quest '!' side by side when both show. A.tgtIcons = { cl, q, tok }.
+WC.live = { V = "ag14", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2979,8 +3074,7 @@ do
     -- ---------------------------------------------------------------- THE PLATE ICONS (ag2; the user: "Build now", icons only)
     -- Our own small frames on UIParent, ANCHORED above each slotted plate (never parented into it, nothing of the plate written),
     -- the game's atlases at runtime, cleared when the plate goes:
-    --   AVOID (dungeonskull): an elite / rare elite / boss, a "??" (skull) level, a level >= ours + 3, or a mob in a fight that is
-    --         not on us within 30 yd (it may turn on us);
+    --   ag14: the CLASSIFICATION DRAGON (the game's nameplates-icon-elite-gold / -silver, A.classOf) in place of ag2's AVOID skull;
     --   QUEST (smallquestbang, the signed-off F spec): a quest objective (qi);
     --   the pull picks p1 / p2 (TargetCrosshairs) come with the app's tap row, later.
     -- ---------------------------------------------------------------- THE APP'S PICKS (ag3; contract taps v2)
@@ -3076,13 +3170,13 @@ do
         f:EnableMouse(false)
         f:SetSize(u(60), u(30))
         f:Hide()
-        local av = f:CreateTexture(nil, "ARTWORK")
-        av:SetSize(u(26), u(26))
-        av:SetPoint("RIGHT", f, "CENTER", u(14), 0)
-        pcall(function() av:SetAtlas("dungeonskull") end)
+        -- ag14: the dragon (its atlas set per mob in A.iconsStep), square as the game's 20 x 20 ClassificationFrame; placed with the
+        -- '!' by A.iconsPlace
+        local cl = f:CreateTexture(nil, "ARTWORK")
+        cl:SetSize(u(28), u(28))
+        cl:Hide()
         local q = f:CreateTexture(nil, "ARTWORK")
         q:SetSize(u(30), u(30))
-        q:SetPoint("LEFT", f, "CENTER", -u(14), 0)
         pcall(function() q:SetAtlas("smallquestbang") end)
         -- ag3: the app's pull pick (the signed-off F spec: TargetCrosshairs 44 px, its step number at its top right)
         local pk = f:CreateTexture(nil, "ARTWORK", nil, 2)
@@ -3095,30 +3189,48 @@ do
         pn:SetPoint("BOTTOMLEFT", pk, "TOPRIGHT", -u(8), -u(10))
         pcall(function() pn:SetTextColor(1, 0.82, 0, 1) end)
         pn:Hide()
-        o = { f = f, av = av, q = q, pk = pk, pn = pn }
+        o = { f = f, cl = cl, q = q, pk = pk, pn = pn }
         A.icon[s] = o
         return o
     end
-    function A.avoidOf(m, plv)
-        if m.c == "e" or m.c == "R" or m.c == "b" then return true end
-        if m.lv and (m.lv < 0 or (plv and m.lv >= plv + 3)) then return true end
-        if m.cb == 1 and not (m.om and m.om >= 2) and m.b and m.b <= 30 then return true end
-        return false
+    -- ag14: the mob's dragon by its classification (m.c, from UnitClassification): elite / worldboss gold, rare / rareelite silver
+    A.DRAGON = { e = "nameplates-icon-elite-gold", b = "nameplates-icon-elite-gold", r = "nameplates-icon-elite-silver",
+                 R = "nameplates-icon-elite-silver" }
+    function A.classOf(m, tok)
+        local a = m and A.DRAGON[m.c or ""]
+        if not a then return nil end
+        -- as the game's own classification frame: none while the unit wears a raid marker
+        if tok and type(GetRaidTargetIndex) == "function" and type(pv(GetRaidTargetIndex, tok)) == "number" then return nil end
+        return a
+    end
+    -- ag14: the dragon and the '!' side by side when both show, each centred when alone (ag2's skull and '!' sat on top of each other)
+    function A.iconsPlace(o, cl, q)
+        local u = (C and C.u) or function(px) return px * 768 / 1080 end
+        local k = (cl and 1 or 0) + (q and 2 or 0)
+        if o.place == k then return end
+        o.place = k
+        o.cl:ClearAllPoints(); o.q:ClearAllPoints()
+        if k == 3 then
+            o.cl:SetPoint("RIGHT", o.f, "CENTER", -u(1), 0)
+            o.q:SetPoint("LEFT", o.f, "CENTER", u(1), 0)
+        else
+            o.cl:SetPoint("CENTER", o.f, "CENTER", 0, 0)
+            o.q:SetPoint("CENTER", o.f, "CENTER", 0, 0)
+        end
     end
     -- ag9 (the user, 2026-11-13: "the skull and !should be moving to the top as well"): what the TARGET's plate wears is kept for Hub's
-    -- target bar (A.tgtIcons = { av, q, tok }), and while Hub shows that target (WC.uf.ownsPlate: the plate itself hidden for it) the
-    -- plate's icons are at alpha 0 - they are on the bar now
+    -- target bar (A.tgtIcons = { cl, q, tok }; ag14: cl the dragon's atlas, Hub draws its own from the target's classification), and
+    -- while Hub shows that target (WC.uf.ownsPlate: the plate itself hidden for it) the plate's icons are at alpha 0 - on the bar now
     function A.iconsStep(list)
-        local plv = pv(UnitLevel, "player")
         local want = {}
         local tgt = nil
         for _, m in ipairs(list or {}) do
             if not m.dd and A.slot[m.s] then
                 local tok = A.slot[m.s].tok
-                local av, qq = A.avoidOf(m, plv), m.qi == 1 or A.qset[m.s] == tok
+                local cl, qq = A.classOf(m, tok), m.qi == 1 or A.qset[m.s] == tok
                 local pk = (A.pick[1] and A.pick[1].s == m.s and 1) or (A.pick[2] and A.pick[2].s == m.s and 2) or nil
-                if av or qq or pk then want[m.s] = { av = av and not pk, q = qq and not pk, pk = pk, tok = tok } end
-                if (av or qq) and pv(function() return UnitIsUnit(tok, "target") end) == true then tgt = { av = av, q = qq, tok = tok } end
+                if cl or qq or pk then want[m.s] = { cl = (not pk) and cl or nil, q = qq and not pk, pk = pk, tok = tok } end
+                if (cl or qq) and pv(function() return UnitIsUnit(tok, "target") end) == true then tgt = { cl = cl, q = qq, tok = tok } end
             end
         end
         A.tgtIcons = tgt
@@ -3141,8 +3253,12 @@ do
                     pcall(function() o.f:SetPoint("BOTTOM", plate, "TOP", 0, 2) end)
                     o.tok = w.tok
                 end
-                if w.av then o.av:Show() else o.av:Hide() end
+                if w.cl then
+                    if o.clA ~= w.cl then o.clA = w.cl; pcall(function() o.cl:SetAtlas(w.cl) end) end
+                    o.cl:Show()
+                else o.cl:Hide() end
                 if w.q then o.q:Show() else o.q:Hide() end
+                A.iconsPlace(o, w.cl ~= nil, w.q == true)
                 if w.pk then o.pk:Show(); o.pn:SetText(tostring(w.pk)); o.pn:Show() else o.pk:Hide(); o.pn:Hide() end
                 local a = (owned and tgt.tok == w.tok) and 0 or 1
                 if o.alpha ~= a then o.f:SetAlpha(a); o.alpha = a end
@@ -5346,7 +5462,20 @@ end
 -- Now R.barAnchor puts the art's outline ON the rim's visible edge (3 texels out on every side) and only round the health bar (the
 -- cast bar, pips and auras under it are never inside): the frame's outsets solved from the art's own geometry (its outline PAD - 3 in
 -- from the frame's sides and bottom, PAD - 4 from its top, of a 166 x 20 bar's frame), so the glow beyond it is the nameplate's.
-WC.rings = { V = "at9", BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at10 (the user, 2026-11-17: "when first walking up on aggressive mobs the name plate has a low opacity and is smaller and so the aggro
+-- tint looks a little bit weird until it grows. part of it is the shape is wrong at first and then the other part is I think that the
+-- opacity clashes with the low opacity of the wow plates. I wonder if we should only show the aggro tint as the opacity of the wow
+-- plates turns up?"): the game (C++, not FrameXML: Blizzard_NamePlates only sets the plates' fixed SIZE, C_NamePlate.SetNamePlateSize)
+-- SCALES each plate's base frame by distance (nameplateMinScale .. nameplateMaxScale) and fades it (nameplateMinAlpha ..
+-- nameplateMaxAlpha; nameplateOccludedAlphaMult behind walls). Our frame is WorldFrame's child, not the plate's, so it got neither:
+--   THE SHAPE: our frame's scale is the anchor's (its health bar's) effective scale over WorldFrame's, re-read each tick (a SetScale
+--   on our own frame only when it moved), so the PAD / TOP_IN outsets and the art's outline shrink and grow with the bar itself.
+--   THE OPACITY: shown alpha = our fade (o.a, as before) x the plate's effective alpha (its UnitFrame's GetEffectiveAlpha) x a gate:
+--   0 below SHOW_LO (0.9) of the plate's full alpha (nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is targeted:
+--   CVars READ only), a smoothstep to 1 at SHOW_HI (0.97). A plain multiply alone would still show a faint, smaller copy far out;
+--   the gate keeps it off until the plate is (nearly) fully in, as the user asked, and the multiply keeps it matched after.
+--   Plain reads only (no taint); a secret or missing value counts as 1 (as before). The plate is still never written or hooked.
+WC.rings = { V = "at10", SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -5435,8 +5564,51 @@ do
         return l, t, l, b
     end
 
+    -- at10: our frame's scale = the anchor's effective scale over our parent's (to: nil = 1, the target bar on UIParent); a SetScale
+    -- on OUR frame only, and only when it moved (the outsets are in our frame's units, so they follow the bar)
+    function R.fitScale(o, to)
+        local sc = 1
+        if to then
+            local par = o.f:GetParent()                              -- (method-form pcalls: no closure a frame)
+            local okA, a = pcall(to.GetEffectiveScale, to)
+            local okP, p = false, nil
+            if type(par) == "table" then okP, p = pcall(par.GetEffectiveScale, par) end
+            a, p = okA and num(a), okP and num(p)
+            if a and p and a > 0 and p > 0 then sc = a / p end
+        end
+        if not o.sc or math.abs(o.sc - sc) > 0.002 then o.f:SetScale(sc); o.sc = sc end
+        return sc
+    end
+    -- at10: the plate's part of the tint's alpha: its effective alpha (pa) x the gate (0 below SHOW_LO of its full, smoothstep to 1
+    -- at SHOW_HI). Its full: nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is the target (READ only; 1 when
+    -- unreadable). A secret / missing alpha = 1 (the tint as before at9)
+    local function cvn(k)
+        local ok, v = pcall(function() return C_CVar.GetCVar(k) end)
+        v = ok and type(v) == "string" and tonumber(v) or nil
+        return (v and v > 0) and v or nil
+    end
+    function R.plateFactor(ref, isTarget)
+        if type(ref) ~= "table" then return 1 end
+        local ok, pa = pcall(ref.GetEffectiveAlpha, ref)
+        pa = ok and num(pa) or nil
+        if not pa then return 1 end
+        if pa <= 0 then return 0 end
+        local c = R.full
+        if not c then                                                -- read once a tick (R.tick clears it)
+            local okT, hasT = pcall(function() return UnitExists("target") == true end)
+            c = { max = cvn("nameplateMaxAlpha") or 1, ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1 }
+            R.full = c
+        end
+        local full = isTarget and c.max or c.max * c.ns
+        local x = (pa / math.min(1, full) - R.SHOW_LO) / (R.SHOW_HI - R.SHOW_LO)
+        if x <= 0 then return 0 end
+        if x >= 1 then return math.min(1, pa) end
+        return math.min(1, pa) * x * x * (3 - 2 * x)
+    end
+
     function R.tick(dt)
         local rec = A and A.last
+        R.full = nil
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
         local seen = {}
         R.n = 0
@@ -5514,8 +5686,10 @@ do
                         -- user's bisect 2026-11-08 found it behind test6's ADDON_ACTION_FORBIDDEN errors; at4's layering is back)
                         o.f:SetPoint("TOPLEFT", to, "TOPLEFT", -pad, bar and (pad - R.TOP_IN) or pad)
                         o.f:SetPoint("BOTTOMRIGHT", to, "BOTTOMRIGHT", pad, -pad)
-                        o.plate, o.bar = plate, bar
+                        o.plate, o.bar, o.to = plate, bar, to
                     end
+                    -- at10: the anchor's own scale (the game's distance scale on the plate), so the outsets grow with the bar
+                    pcall(R.fitScale, o, (not o.onBar) and o.to or nil)
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
                     -- at7: on the target bar, under the bar's own frame (its strata, one level below)
@@ -5534,9 +5708,12 @@ do
                     local want = (m.cb ~= 1 and c and not held) and R.ALPHA or 0
                     local k = dt / R.FADE_S * R.ALPHA
                     if o.a < want then o.a = math.min(want, o.a + k) else o.a = math.max(want, o.a - k) end
-                    o.f:SetAlpha(o.a)
+                    -- at10: x the plate's own opacity, gated near its full (none on the target bar: Hub's bar is ours)
+                    o.pf = o.onBar and 1 or R.plateFactor((okU and type(uf) == "table" and uf) or plate, isT == true)
+                    local shown = o.a * o.pf
+                    if o.shownA ~= shown then o.f:SetAlpha(shown); o.shownA = shown end
                     o.state, o.d, o.r = e.st, e.d, r
-                    if o.a > 0 then
+                    if shown > 0 then
                         if not o.f:IsShown() then o.f:Show() end
                         R.n = R.n + 1
                     elseif o.f:IsShown() then o.f:Hide() end

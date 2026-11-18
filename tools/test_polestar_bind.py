@@ -41,8 +41,8 @@ def check(ok, name, got=''):
 
 
 # ================================================================ 1. the tags
-check('local PV = "m169"' in PADMAP and PADMAP.count(QUOTE) >= 1, "1: PadMap says m169, its notes quote the user")
-check(int(re.search(r'local HV = "hub(\d+)"', HUB).group(1)) >= 57 and HUB.count(QUOTE) >= 1, "1: Hub says hub57, its notes quote the user")
+check(int(re.search(r'local PV = "m(\d+)"', PADMAP).group(1)) >= 170 and PADMAP.count(QUOTE) >= 1, "1: PadMap says m170 or later (m169 + push to talk), its notes quote the user")
+check(int(re.search(r'local HV = "hub(\d+)"', HUB).group(1)) >= 58 and HUB.count(QUOTE) >= 1, "1: Hub says hub58+ (hub57 + push to talk), its notes quote the user")
 comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); return e end')
 for name, src in (("PadMap.lua", PADMAP), ("Hub.lua", HUB)):
     e = comp(src, name)

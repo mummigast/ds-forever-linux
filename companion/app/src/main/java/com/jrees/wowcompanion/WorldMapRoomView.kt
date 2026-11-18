@@ -64,7 +64,17 @@ class WorldMapRoomView(context: Context) : View(context) {
     init { MemWatch.source("worldroom") { bmps.size().toLong() } }
     // 1.0.28 (the low-memory kill #173: 70 - 72 MB of this room's pictures held in the killed run's last 5 minutes, the game at
     // 3.6 GB): Android's running-low warning lets them go while the room is not on screen (they are read again when it opens)
-    init { MemWatch.onTrim("worldroom") { level -> if (MemWatch.hiddenLetsGo(level, isShown)) bmps.size().toLong().also { bmps.evictAll() } else 0L } }
+    init { MemWatch.onTrim("worldroom") { level -> trimmed(level) } }
+    /**
+     * The trim's let-go (MemWatch.onTrim's "worldroom"): what it freed, bytes. 2026-11-17: while Home's map is zoomed out on these
+     * pictures the warning also stops it asking for them ([backdropPaused]: Home's map falls back to its zone, today's map) until its
+     * module closes, so the pictures are not decoded straight back in while Android is short.
+     */
+    fun trimmed(level: Int): Long {
+        if (!MemWatch.hiddenLetsGo(level, isShown)) return 0L
+        if (backdropOn) backdropPaused = true
+        return bmps.size().toLong().also { bmps.evictAll() }
+    }
 
     /**
      * FREE MAP PICTURES (memory relief 2; the user's picks, 2026-11-14: "FREE MAP PICTURES: the World map room's pictures (43-72 MB)
@@ -77,7 +87,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val letGoClock = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var roomOn = false
     private val letGoLater = Runnable {
-        if (roomOn) return@Runnable
+        if (roomOn || backdropOn) return@Runnable
         val b = bmps.size().toLong()
         if (b <= 0L) return@Runnable
         bmps.evictAll()
@@ -85,6 +95,8 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     /** the pictures held now, bytes (the tests; MemWatch's "worldroom") */
     val pictureBytes: Long get() = bmps.size().toLong()
+    /** pictures being read / made now (the tests) */
+    val picturesPending: Int get() = inFlight.size
     @Volatile private var artReady = false
     private var artNote: String? = null
     private fun artDir() = ArtHarvest.dir("worldmap")
@@ -125,7 +137,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         inFlight.add(key)
         io.execute {
             val b = try { BitmapFactory.decodeFile(File(artDir(), "$key.webp").path) } catch (t: Throwable) { null }
-            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate() }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate(); backdropClient?.invalidate() }
         }
         return null
     }
@@ -137,7 +149,7 @@ class WorldMapRoomView(context: Context) : View(context) {
         inFlight.add(key)
         io.execute {
             val b = try { BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample }) } catch (t: Throwable) { null }
-            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate() }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b); invalidate(); backdropClient?.invalidate() }
         }
         return null
     }
@@ -215,7 +227,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             ccx = p[0] + ccx * w; ccy = p[1] + ccy * h
             if (flying()) { flyZ /= w; flyX = p[0] + flyX * w; flyY = p[1] + flyY * h }
         }
-        android.util.Log.i("WCMAP", "map room: canvas $canvas -> $to at zoom ${"%.2f".format(zoom)}")
+        if (!painting) android.util.Log.i("WCMAP", "map room: canvas $canvas -> $to at zoom ${"%.2f".format(zoom)}")
         canvas = to; laysFor = -1
         pl.set(placeOf(shown)?.takeIf { it.width() > 0f && it.height() > 0f } ?: RectF(0f, 0f, 1f, 1f))
     }
@@ -228,13 +240,35 @@ class WorldMapRoomView(context: Context) : View(context) {
         var guard = 0
         while (guard++ < 3) {
             val m = model.maps[canvas] ?: return
-            if (m.type == 2 && zoom < 1f) {
+            // a continent, or a land the world places by its own row (feat/map-skyborn's island, Zephras Isle: WorldMapModel.isLand)
+            if (model.isLand(m.id)) {
                 val w = model.parentOf(canvas)?.takeIf { p -> model.assignsOf(p).isNotEmpty() && model.placeOn(canvas, p) != null }
-                if (w != null) { switchCanvas(w); continue }
+                if (w != null && zoom < 1f) { switchCanvas(w); continue }
+                // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea): the view on ANOTHER continent's box (a continent's frame is mostly sea
+                // and reaches over its neighbour's coast): Home's backdrop goes to the world (it draws both there, the aimed one on top;
+                // no zoom range in a backdrop); the room hands its canvas straight to that continent where its frame covers the view
+                val pw = w?.let { model.placeOn(canvas, it) }
+                if (w != null && pw != null) {
+                    fun onW(x: Float, y: Float) = floatArrayOf(pw[0] + x * (pw[2] - pw[0]), pw[1] + y * (pw[3] - pw[1]))
+                    val at = ArrayList<FloatArray>(3)
+                    if (flying()) at.add(onW(flyX, flyY))
+                    at.add(onW(ccx, ccy)); at.add(onW(panX, panY))
+                    val aim = model.aimContinent(w, at, nearest = false)
+                    if (aim != null && aim != canvas) {
+                        if (painting) { switchCanvas(w); continue }
+                        val p = model.placeOn(aim, canvas)
+                        val h = 0.5f / zoom
+                        if (p != null && p[0] <= panX - h + EDGE_EPS && p[2] >= panX + h - EDGE_EPS && p[1] <= panY - h + EDGE_EPS &&
+                            p[3] >= panY + h - EDGE_EPS) { switchCanvas(aim); continue }
+                    }
+                }
             }
             if (model.assignsOf(canvas).isNotEmpty()) {
                 val h = 0.5f / zoom
-                val k = layers().firstOrNull { l -> l.kind == WorldMapModel.CONTINENT && zoom * l.p.width() >= 0.999f &&
+                // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea): only the continent the view is headed for, never the first frame that
+                // covers it (the frames overlap; WorldMapModel.aimContinent: the smallest box that holds the aim wins, so an island's
+                // frame, inside Eastern Kingdoms', is picked over it)
+                val k = contAim()?.takeIf { l -> zoom * l.p.width() >= 0.999f &&
                     l.p.left <= panX - h + EDGE_EPS && l.p.right >= panX + h - EDGE_EPS && l.p.top <= panY - h + EDGE_EPS && l.p.bottom >= panY + h - EDGE_EPS }
                 if (k != null) { switchCanvas(k.id); continue }
             }
@@ -242,9 +276,23 @@ class WorldMapRoomView(context: Context) : View(context) {
         }
     }
 
-    /** the continent on the world canvas whose box (the one it is drawn in) holds ([u], [v]) */
-    private fun contAt(u: Float, v: Float): Lay? = layers().firstOrNull { l -> l.kind == WorldMapModel.CONTINENT &&
+    /** the continent on the world canvas the view is headed for (WorldMapModel.aimContinent): a glide's target, else the cursor, else
+     *  the view's middle, by the box that holds it (the smallest wins: an island in a continent's); none in a box: the nearest box to the first */
+    private fun contAim(): Lay? {
+        val at = ArrayList<FloatArray>(3)
+        if (flying()) at.add(floatArrayOf(flyX, flyY))
+        at.add(floatArrayOf(ccx, ccy)); at.add(floatArrayOf(panX, panY))
+        val id = model.aimContinent(canvas, at) ?: return null
+        return layers().firstOrNull { it.id == id && it.kind == WorldMapModel.CONTINENT }
+    }
+
+    /** the continent on the world canvas whose box (the one it is drawn in) holds ([u], [v]); an island's box lies inside a continent's
+     *  (Zephras Isle in Eastern Kingdoms'): the smallest box wins */
+    private fun contAt(u: Float, v: Float): Lay? = layers().filter { l -> l.kind == WorldMapModel.CONTINENT &&
         model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it)?.holds(u, v) } == true }
+        .minByOrNull { l -> model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it) }?.let { (it.u1 - it.u0) * (it.v1 - it.v0) } ?: 1.0 }
+    /** a land layer that is an island zone straight on the world (Zephras Isle), not a continent */
+    private fun isIsland(l: Lay) = l.kind == WorldMapModel.CONTINENT && model.maps[l.id]?.type == 3
 
     /** layer [l]'s outline (the game's highlight of it on the continent) at ([u], [v]) of the canvas: true / false, null = not known */
     private fun inOutline(l: Lay, u: Float, v: Float): Boolean? {
@@ -364,13 +412,37 @@ class WorldMapRoomView(context: Context) : View(context) {
             return
         }
         dst.set(sxc(p.left), syc(p.top), sxc(p.right), syc(p.bottom))
-        c.drawBitmap(base, null, dst, pBmp)
+        // A CONTINENT'S PAINTING SEEN AT A ZONE'S WIDTH (review, 2026-11-17: Home's "other continent" fallback and this room close in on
+        // Durotar showed the painting's title letters and sea hatching blown up into blocks): past [SOFT_FROM] x its own pixels the
+        // painting fades into a small smooth copy of itself (the sea's and land's colours, no letters); the zones' own art lies over it
+        val up = if (info.type == 2) dst.width() / base.width.coerceAtLeast(1) else 0f
+        val fade = ((up - SOFT_FROM) / SOFT_FROM).coerceIn(0f, 1f)
+        if (fade > 0f) softOf(id, base)?.let { c.drawBitmap(it, null, dst, pBmp) }
+        if (fade < 1f) {
+            val a = pBmp.alpha
+            pBmp.alpha = (255 * (1f - fade)).toInt()
+            c.drawBitmap(base, null, dst, pBmp)
+            pBmp.alpha = a
+        }
         for (o in if (Settings.worldMapFog == "all") info.overlays else model.paintedOverlays(id)) {
             val b = bmp("$id/ov_${o.id}") ?: continue
             overlayDst(p, info, o)
             c.drawBitmap(b, null, dst, pBmp)
         }
     }
+    /** each continent's small smooth copy of its painting (a few KB: halved with filtering down to [SOFT_W] wide) */
+    private val soft = HashMap<Int, Bitmap>()
+    private fun softOf(id: Int, base: Bitmap): Bitmap? = soft[id] ?: runCatching {
+        var b = base
+        while (b.width > SOFT_W * 2) {
+            val n = Bitmap.createScaledBitmap(b, b.width / 2, (b.height / 2).coerceAtLeast(1), true)
+            if (b !== base) b.recycle()
+            b = n
+        }
+        Bitmap.createScaledBitmap(b, SOFT_W, (SOFT_W * base.height / base.width.coerceAtLeast(1)).coerceAtLeast(1), true)
+            .also { if (b !== base && it !== b) b.recycle() }
+    }.getOrNull()?.also { soft[id] = it }
+
     /** [dst] = overlay [o] of map [info] at its place [p] on the screen */
     private fun overlayDst(p: RectF, info: WorldMapModel.MapInfo, o: WorldMapModel.Overlay) {
         dst.set(sxc(p.left + o.x / info.w.toFloat() * p.width()), syc(p.top + o.y / info.h.toFloat() * p.height()),
@@ -418,11 +490,15 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun drawArt(c: Canvas) {
         drawPicture(c, canvas, UNIT_R)
         val mid = contAt(panX, panY)
-        for (l in layers().sortedBy { if (it === mid) 1 else 0 }) {
+        // AN ISLAND ON THE WORLD (the user, 2026-11-17: the Skyborne's island "should be in like the upper center"): the world's painting
+        // has no picture of it, so its own art shows at every zoom, cut to its land (its overlays' outline), over the continents' sheets
+        // (Eastern Kingdoms' frame reaches under it); its whole sheet fades in over that as it fills the view, as a continent's does
+        for (l in layers().sortedBy { (if (isIsland(it)) 2 else 0) + (if (it === mid) 1 else 0) }) {
             val a = l.shown
-            if (a <= 0.004f) continue
             val sr = RectF(sxc(l.p.left), syc(l.p.top), sxc(l.p.right), syc(l.p.bottom))
             if (!sr.intersect(canvasR)) continue
+            if (isIsland(l)) drawMasked(c, l, 1f, RectF(sr), land = true)
+            if (a <= 0.004f) continue
             if (l.kind == WorldMapModel.CONTINENT) drawContinentLayer(c, l, a) else drawMasked(c, l, a, sr)
         }
     }
@@ -455,7 +531,7 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /** a zone's / capital's own art at [a], cut to its outline: the game's highlight picture of the zone (as the stitch was), else
      *  its overlays, else a soft-edged box (a capital) */
-    private fun drawMasked(c: Canvas, l: Lay, a: Float, sr: RectF) {
+    private fun drawMasked(c: Canvas, l: Lay, a: Float, sr: RectF, land: Boolean = false) {
         pLayer.alpha = (255 * a).toInt().coerceIn(0, 255)
         c.saveLayer(sr, pLayer)
         drawPicture(c, l.id, l.p)
@@ -471,7 +547,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             srcR.set(0, 0, max(1, (hb.width * h.tpx).toInt()), max(1, (hb.height * h.tpy).toInt()))
             dst.set(sxc(h.x), syc(h.y), sxc(h.x + h.w), syc(h.y + h.h))
             c.drawBitmap(hb, srcR, dst, pMaskHl)
-        } else if (l.kind == WorldMapModel.ZONE && info != null && info.overlays.isNotEmpty()) {
+        } else if ((l.kind == WorldMapModel.ZONE || land) && info != null && info.overlays.isNotEmpty()) {
             for (o in info.overlays) { val b = bmp("${l.id}/ov_${o.id}") ?: continue; overlayDst(l.p, info, o); c.drawBitmap(b, null, dst, pBmp) }
         } else {
             dst.set(sxc(l.p.left), syc(l.p.top), sxc(l.p.right), syc(l.p.bottom))
@@ -488,6 +564,196 @@ class WorldMapRoomView(context: Context) : View(context) {
         fun e(t: Int): Float { val d = (min(t, n - 1 - t) / (n * 0.14f)).coerceIn(0f, 1f); return d * d * (3f - 2f * d) }
         val px = IntArray(n * n) { k -> ((255 * e(k % n) * e(k / n)).toInt() shl 24) or 0xFFFFFF }
         Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
+    }
+
+    // ---------------------------------------------------------------- HOME'S MAP, ZOOMED OUT: THIS ROOM'S ART UNDER IT
+    // The user, 2026-11-17: "we need to change the map to show a High fidelity version of the whole map in that home map, so that we can
+    // zoom out to see everything and zoom back in." Home's map module (MapView) draws the game's minimap tiles around the player; zoomed
+    // out past its zone it asks this room to paint the SAME layered art the room draws (the world map, the continents' stitched pictures,
+    // their zones and capitals at the zoom's opacities, "World map: Explored only" honoured) under its own marks, through ONE cache (these
+    // pictures, MemWatch's "worldroom") with the room's memory rules: Android's running-low warning lets them go while the room is not on
+    // screen, and they go [MapRoomLetGo.AFTER_MS] after Home's map stops asking ([backdropDone]; at once on the 8 / 12 GB models and in
+    // Lighter mode). The room's own view (its canvas, zoom, pan, cursor) is set aside for the one draw and put back unchanged.
+    /** the view Home's draw invalidates when a picture it asked for has been decoded */
+    @Volatile private var backdropClient: View? = null
+    /** Home's map has asked for the art since it last said it was done: the pictures stay */
+    @Volatile private var backdropOn = false
+    /** Android warned of low memory while Home's map used the art: no more until its module closes ([trimmed], [backdropDone]) */
+    @Volatile var backdropPaused = false
+        private set
+    /** inside [paintBackdrop]: the room's own frame is set aside (no canvas log lines) */
+    private var painting = false
+
+    /**
+     * Paint the art under Home's map: map [zone] (a uiMapID of the art set) has its 0..1 at [zr] on the screen (Home's px; any size,
+     * the zone a speck on the world), inside [clip] (the map's field). [client] is redrawn as pictures arrive. False = nothing painted
+     * (the art set is not built or not read yet, the zone has no place in it, the Map room itself is on screen): Home keeps its own
+     * ground. Main thread, from Home's onDraw.
+     */
+    fun paintBackdrop(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View): Boolean {
+        if (!artReady || roomOn || painting || backdropPaused || !model.maps.containsKey(zone)) return false
+        if (zr.width() <= 0f || zr.height() <= 0f || clip.width() <= 0f || clip.height() <= 0f) return false
+        val cv = model.canvasFor(zone)
+        val p = model.placeOn(zone, cv) ?: return false
+        if (p[2] - p[0] <= 0f || p[3] - p[1] <= 0f) return false
+        backdropClient = client
+        if (!backdropOn) { backdropOn = true; letGoClock.removeCallbacks(letGoLater) }
+        val k = Kept(this)
+        painting = true
+        try {
+            canvas = cv; laysFor = -1; flyZ = Float.NaN; flyDone = null
+            shiftFrom = 0f; shiftTo = 0f; shiftAt = 0L
+            canvasR.set(clip)
+            // the canvas's px a unit on the screen (x, y), so map [zone]'s place lands on [zr]: zoom = the canvas's width in fields
+            val ux = zr.width() / (p[2] - p[0]); val uy = zr.height() / (p[3] - p[1])
+            val a = clip.width()
+            zoom = ux / a
+            val b = uy / zoom
+            artR.set(clip.centerX() - a / 2f, clip.centerY() - b / 2f, clip.centerX() + a / 2f, clip.centerY() + b / 2f)
+            val hw = 0.5f / zoom
+            panX = p[0] + hw - (zr.left - artR.left) / ux
+            panY = p[1] + hw - (zr.top - artR.top) / uy
+            // 2026-11-17 (Kalimdor -> Eastern Kingdoms' sea, Home's map too): the continent is the one under Home's view (its middle)
+            ccx = panX; ccy = panY
+            relayer()                                        // a continent seen whole and less: the world's canvas (as the room)
+            c.save(); c.clipRect(clip)
+            drawArt(c)
+            c.restore()
+            backdropCanvas = canvas
+        } finally {
+            k.restore(this)
+            painting = false
+        }
+        return true
+    }
+
+    /** the canvas Home's last backdrop was drawn on (the tests: a continent, or the world) */
+    var backdropCanvas = 0
+        private set
+
+    /** Home's map no longer asks for the art (its module closed): the pictures go after the room's wait, or at once on [lowMemory] */
+    fun backdropDone(lowMemory: Boolean = DeviceTier.lowMemory()) {
+        backdropPaused = false
+        if (!backdropOn) return
+        backdropOn = false; backdropClient = null
+        letGoClock.removeCallbacks(letGoLater)
+        if (roomOn) return
+        if (lowMemory) letGoNow(MapRoomLetGo.homeLine(bmps.size().toLong(), now = true))
+        else letGoClock.postDelayed(homeLetGo, MapRoomLetGo.AFTER_MS)
+    }
+    /** map [zone]'s place on its root (the world, else its continent: left, top, right, bottom), once the art set is read; null = none */
+    fun backdropRoot(zone: Int): FloatArray? = if (!artReady || backdropPaused) null else model.rootPlace(zone)?.second
+        ?.takeIf { it[2] - it[0] > 0f && it[3] - it[1] > 0f && !(it[0] == 0f && it[1] == 0f && it[2] == 1f && it[3] == 1f && model.maps[zone]?.type ?: 0 >= 3) }
+
+    /** Home's map module's way to this room's art (CompanionHost hands it to MapView) */
+    val homeArt: MapView.WorldArt = object : MapView.WorldArt {
+        override fun paint(c: Canvas, zone: Int, zr: RectF, clip: RectF, client: View) = paintBackdrop(c, zone, zr, clip, client)
+        override fun root(zone: Int) = backdropRoot(zone)
+        override fun done() = backdropDone()
+        override fun release() = backdropRelease()
+        override fun places(zone: Int) = continentPlaces(zone)
+        override fun picture(key: String, client: View, make: () -> Bitmap?) = backdropPicture(key, client, make)
+        override fun peek(key: String): Bitmap? = if (backdropPaused) null else bmps.get(key)
+        override fun aim(zone: Int, at: List<FloatArray>) = backdropAim(zone, at)
+    }
+
+    /** Home's map: the game continent under points [at] of map [zone]'s 0..1, by the boxes on its root (WorldMapModel.aimContinent, no
+     *  nearest: the sea between is nobody's, [MapView.WorldArt.SEA]); null = not on a world or no art set */
+    fun backdropAim(zone: Int, at: List<FloatArray>): Int? {
+        if (!artReady) return null
+        val (root, zp) = model.rootPlace(zone) ?: return null
+        if (model.assignsOf(root).isEmpty()) return null
+        val zw = zp[2] - zp[0]; val zh = zp[3] - zp[1]
+        if (zw <= 0f || zh <= 0f) return null
+        val id = model.aimContinent(root, at.map { floatArrayOf(zp[0] + it[0] * zw, zp[1] + it[1] * zh) }, nearest = false)
+            ?: return MapView.WorldArt.SEA
+        return model.maps[id]?.world?.continent ?: MapView.WorldArt.SEA
+    }
+
+    /**
+     * HOME'S TERRAIN ZOOM-OUT (Settings > Performance > Map style when zoomed out: Terrain; TerrainOverview): each continent of map
+     * [zone]'s root as a straight map of world yards onto [zone]'s own 0..1 - [game continent, au, bu, av, bv] with u = au + bu * worldY
+     * and v = av + bv * worldX, then (on a world) the box the world draws it in, [u0, v0, u1, v1] of [zone]'s 0..1 - by the continent's own assignment on the world (the same transform this room draws it by), else, on a
+     * root that is a continent, by that continent's world rect. Null = the art set is not read (Home's map stays on its zone).
+     */
+    fun continentPlaces(zone: Int): List<DoubleArray>? {
+        if (!artReady || backdropPaused) return null
+        val (root, zp) = model.rootPlace(zone) ?: return null
+        val zw = (zp[2] - zp[0]).toDouble(); val zh = (zp[3] - zp[1]).toDouble()
+        if (zw <= 0.0 || zh <= 0.0) return null
+        val out = ArrayList<DoubleArray>()
+        val asg = model.assignsOf(root)
+        if (asg.isNotEmpty()) for (a in asg) {
+            // u_root = u0 + (y1 - wy) / (y1 - y0) * (u1 - u0); v_root = v0 + (x1 - wx) / (x1 - x0) * (v1 - v0)
+            val ku = (a.u1 - a.u0) / (a.y1 - a.y0); val kv = (a.v1 - a.v0) / (a.x1 - a.x0)
+            // + the box the world draws it in (its terrain is cut to it: a coarse picture's sea never covers a neighbour's coast)
+            out.add(doubleArrayOf(a.map.toDouble(), (a.u0 + a.y1 * ku - zp[0]) / zw, -ku / zw, (a.v0 + a.x1 * kv - zp[1]) / zh, -kv / zh,
+                (a.u0 - zp[0]) / zw, (a.v0 - zp[1]) / zh, (a.u1 - zp[0]) / zw, (a.v1 - zp[1]) / zh))
+        } else model.world(root)?.let { w ->
+            // u_root = (left - wy) / (left - right); v_root = (top - wx) / (top - bottom)
+            val ku = 1.0 / (w.left - w.right); val kv = 1.0 / (w.top - w.bottom)
+            out.add(doubleArrayOf(w.continent.toDouble(), (w.left * ku - zp[0]) / zw, -ku / zw, (w.top * kv - zp[1]) / zh, -kv / zh))
+        }
+        return out
+    }
+
+    /** keys made and found empty (no picture there), until the pictures are let go */
+    private val noPicture = HashSet<String>()
+    /**
+     * A picture Home's map makes itself ([make], off the UI thread on this room's reader: TerrainOverview's levels) kept in THIS room's
+     * one cache as [key], with the same rules as the painted art (Home asked: they stay; zoom-in / close / Android's warning let go).
+     * Null while it is made, when there is none, or while the room is on screen / paused. Main thread.
+     */
+    fun backdropPicture(key: String, client: View, make: () -> Bitmap?): Bitmap? {
+        if (roomOn || backdropPaused) return null
+        backdropClient = client
+        if (!backdropOn) { backdropOn = true; letGoClock.removeCallbacks(letGoLater) }
+        bmps.get(key)?.let { return it }
+        if (key in inFlight || key in noPicture) return null
+        inFlight.add(key)
+        io.execute {
+            val b = try { make() } catch (t: Throwable) { null }
+            post { inFlight.remove(key); if (b != null) bmps.put(key, b) else noPicture.add(key); backdropClient?.invalidate() }
+        }
+        return null
+    }
+    /**
+     * Home's map zoomed back in to its zone (the user's pick, 2026-11-17: "Free on zoom-in"): the pictures go now (unless the Map room
+     * is on screen), "map pictures let go (N MB): Home's map back on its zone" in mem.log; the next zoom-out decodes what it needs again.
+     * A low-memory pause stays until the module closes.
+     */
+    fun backdropRelease() {
+        if (!backdropOn) return
+        backdropOn = false; backdropClient = null
+        letGoClock.removeCallbacks(homeLetGo)
+        if (!roomOn) letGoNow(MapRoomLetGo.zoneLine(bmps.size().toLong()))
+    }
+    /** Home's map asked for the art since it was last done (the tests) */
+    val backdropInUse: Boolean get() = backdropOn
+    private val homeLetGo = Runnable {
+        if (roomOn || backdropOn) return@Runnable
+        letGoNow(MapRoomLetGo.homeLine(bmps.size().toLong(), now = false))
+    }
+    private fun letGoNow(line: String) {
+        noPicture.clear()
+        if (bmps.size() <= 0) return
+        bmps.evictAll()
+        MemWatch.note(line)
+    }
+
+    /** the room's own view, set aside while Home's backdrop is painted */
+    private class Kept(v: WorldMapRoomView) {
+        val canvas = v.canvas; val zoom = v.zoom; val panX = v.panX; val panY = v.panY; val ccx = v.ccx; val ccy = v.ccy
+        val flyZ = v.flyZ; val flyX = v.flyX; val flyY = v.flyY; val flyAt = v.flyAt; val flyDone = v.flyDone
+        val shiftFrom = v.shiftFrom; val shiftTo = v.shiftTo; val shiftAt = v.shiftAt
+        val artR = RectF(v.artR); val canvasR = RectF(v.canvasR); val pl = RectF(v.pl)
+        fun restore(v: WorldMapRoomView) {
+            v.canvas = canvas; v.zoom = zoom; v.panX = panX; v.panY = panY; v.ccx = ccx; v.ccy = ccy
+            v.flyZ = flyZ; v.flyX = flyX; v.flyY = flyY; v.flyAt = flyAt; v.flyDone = flyDone
+            v.shiftFrom = shiftFrom; v.shiftTo = shiftTo; v.shiftAt = shiftAt
+            v.artR.set(artR); v.canvasR.set(canvasR); v.pl.set(pl)
+            v.laysFor = -1                                   // the layers follow the room's own canvas again
+        }
     }
 
     // ---------------------------------------------------------------- live data
@@ -549,6 +815,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun abandonConfirm(id: Int) { confirmId = id; confirmAt = System.currentTimeMillis(); confirmAbandon() }
         override fun changed() { syncB(); invalidate() }
         override fun redrawIn(ms: Long) { postInvalidateDelayed(ms) }
+        // A on the panel (the user, 2026-11-17: "A for track"): the room's own track toggle (its pending answer, its tap-pad route)
+        override fun track(id: Int, on: Boolean) { if (tracked(id) != on) toggleTrack(id) }
+        override fun glyphs(): Boolean = held
+        // the cursor on this untracked quest itself (its disc on the map, its row in the list): elsewhere, and on a tracked quest, A / X /
+        // Y stay the room's (A Track & focus / Open, X Track / the side bar, Y options / More actions)
+        override fun padOnQuest(id: Int): Boolean = logEntry(id)?.let { !trackedQ(it) } == true &&
+            ((region == MapRoomKeys.Region.MAP && hoverQuest == id && isZoneView()) || (region == MapRoomKeys.Region.LIST && selQuest == id))
     })
     private var travelDrawn: List<Pair<Travel.Point, FloatArray>> = emptyList()
     private fun drawTravel(c: Canvas) {
@@ -1192,32 +1465,34 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun say(t: String) { note = t; noteAt = System.currentTimeMillis(); invalidate() }
 
     // ---------------------------------------------------------------- the left stick: the game's free map cursor; a row a push in the list
-    private var reader: PadInput? = null
-    private var stickX = 0f
-    private var stickY = 0f
-    private var cursorRunning = false
-    private var cursorFrameAt = 0L
-    private val cursorFrame = Runnable { moveCursor() }
-
-    /** one frame of the cursor's move while the stick is pushed (the game's SoftCursor OnUpdate: its spot + speed x elapsed) */
-    private fun moveCursor() {
-        if (!isShown || region != MapRoomKeys.Region.MAP || modal() || !MapRoomKeys.stickMoves(stickX, stickY)) {
-            cursorRunning = false; return
+    // THE STICKS (MapStickDriver: the one driver, shared with Home's map controls since 2026-11-17): the left stick moves the cursor
+    // (the game's SoftCursor OnUpdate: its spot + speed x elapsed), the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to
+    // zoom in and out"): up in, down out, by how far, smoothly - in toward the cursor, out about the view; LB / RB keep their 1.6x steps
+    private val sticks = MapStickDriver(this, CURSOR_PX_S, object : MapStickDriver.Host {
+        override fun sticksLive() = isShown && !modal()
+        override fun cursorLive() = region == MapRoomKeys.Region.MAP
+        override fun overMarker() = hoverQuest != null
+        override fun moveCursor(dx: Float, dy: Float) {
+            if (artR.width() > 0f) {
+                ccx = (ccx + dx / (artR.width() * zoom)).coerceIn(0f, 1f)        // in the canvas's frame: across every layer
+                ccy = (ccy + dy / (artR.height() * zoom)).coerceIn(0f, 1f)
+                keepOffLegend()
+                follow()
+                updateHover(prefer = hoverQuest)
+            }
+            invalidate()
         }
-        val now = SystemClock.uptimeMillis()
-        val dt = if (cursorFrameAt == 0L) 1f / 60f else ((now - cursorFrameAt) / 1000f).coerceIn(0f, 0.05f)
-        cursorFrameAt = now
-        if (artR.width() > 0f) {
-            val (dx, dy) = MapRoomKeys.cursorStep(stickX, stickY, dt, CURSOR_PX_S, overMarker = hoverQuest != null)
-            ccx = (ccx + dx / (artR.width() * zoom)).coerceIn(0f, 1f)        // in the canvas's frame: across every layer
-            ccy = (ccy + dy / (artR.height() * zoom)).coerceIn(0f, 1f)
-            keepOffLegend()
-            follow()
-            updateHover(prefer = hoverQuest)
+        override fun zoomBy(f: Float, dtS: Float) {
+            flyZ = Float.NaN; flyDone = null; hereTarget = 0
+            zoom *= f
+            if (f > 1f) { val k = min(1f, dtS * 3f); panX += (ccx - panX) * k; panY += (ccy - panY) * k }   // in: toward the cursor
+            afterZoom()
         }
-        invalidate()
-        postOnAnimation(cursorFrame)
-    }
+        override fun leftVector(x: Float, y: Float) {
+            if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
+            else if (!steps.engaged) removeCallbacks(stickRepeat)
+        }
+    })
     /** the legend box overlaps the map's bottom edge: the cursor stops just above it where it spans (on the Thor it hid under it) */
     private fun keepOffLegend() {
         val lb = legendBox
@@ -1226,39 +1501,6 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (sx(curX) in (lb.left - half)..(lb.right + half) && sy(curY) > lb.top - half) ccy = max(0f, uyc(lb.top - half))
     }
     private val legendBox = RectF()
-
-    // ---- THE RIGHT STICK'S ZOOM: while it is pushed up or down, the zone map zooms smoothly (exponential: the same feel at every
-    // zoom; ZOOM_STICK_RATE per second at full tilt), in toward the cursor, out about the view; LB / RB keep their 1.6x steps
-    private var zoomY = 0f
-    private val ZOOM_STICK_RATE = 1.6f        // e-folds a second at full tilt: 1x to the 3.2x maximum in about 0.7 s
-    private var zoomRunning = false
-    private var zoomFrameAt = 0L
-    private val zoomFrame = Runnable { stepZoom() }
-    private fun startZoom() {
-        if (zoomRunning) return
-        zoomRunning = true; zoomFrameAt = 0L
-        postOnAnimation(zoomFrame)
-    }
-    private fun stepZoom() {
-        if (!isShown || modal() || abs(zoomY) <= MapRoomKeys.STICK_DEAD) { zoomRunning = false; return }
-        val now = SystemClock.uptimeMillis()
-        val dt = if (zoomFrameAt == 0L) 1f / 60f else ((now - zoomFrameAt) / 1000f).coerceIn(0f, 0.05f)
-        zoomFrameAt = now
-        // past the dead zone, scaled 0..1; up (y < 0) zooms in
-        val tilt = (abs(zoomY) - MapRoomKeys.STICK_DEAD) / (1f - MapRoomKeys.STICK_DEAD)
-        val was = zoom
-        flyZ = Float.NaN; flyDone = null; hereTarget = 0
-        zoom *= exp(-sign(zoomY) * tilt * ZOOM_STICK_RATE * dt)
-        if (zoom > was) { val k = min(1f, dt * 3f); panX += (ccx - panX) * k; panY += (ccy - panY) * k }   // in: toward the cursor
-        afterZoom()
-        postOnAnimation(zoomFrame)
-    }
-
-    private fun startCursor() {
-        if (cursorRunning) return
-        cursorRunning = true; cursorFrameAt = 0L
-        postOnAnimation(cursorFrame)
-    }
 
     // in the quest list the stick steps a row a push, then the D-pad's own hold-repeat while it stays pushed (MapRoomKeys.StickSteps)
     private val steps = MapRoomKeys.StickSteps()
@@ -1270,22 +1512,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (d.second != 0f && d.first == 0f) moveList(if (d.second > 0f) 1 else -1) else if (d.first < 0f) key("PADDLEFT")
         syncB(); invalidate()
     }
-    private fun startStick() {
-        if (reader != null) return
-        reader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> },
-            onStickVector = { stick, x, y ->
-                // the RIGHT stick zooms (the user, 2026-10-17: "use the right stick to zoom in and out"): up in, down out, by how far
-                if (stick == 1) { zoomY = y; if (abs(y) > MapRoomKeys.STICK_DEAD) startZoom(); return@PadInput }
-                if (stick != 0) return@PadInput
-                stickX = x; stickY = y
-                if (region == MapRoomKeys.Region.MAP && MapRoomKeys.stickMoves(x, y)) startCursor()
-                if (steps.update(x, y)) { if (region == MapRoomKeys.Region.LIST) { stickStep(); postStickRepeat(DirectPadKeys.REPEAT_FIRST_MS) } }
-                else if (!steps.engaged) removeCallbacks(stickRepeat)
-            }).also { it.start() }
-    }
+    private fun startStick() = sticks.start()
     private fun stopStick() {
-        reader?.stop(); reader = null; steps.update(0f, 0f); stickX = 0f; stickY = 0f
-        removeCallbacks(stickRepeat); removeCallbacks(cursorFrame); cursorRunning = false
+        sticks.stop(); steps.update(0f, 0f)
+        removeCallbacks(stickRepeat)
     }
 
     /** the room opened (MainActivity): the player's zone, whole, nothing browsed yet */
@@ -1408,24 +1638,20 @@ class WorldMapRoomView(context: Context) : View(context) {
 
     /**
      * The view inside the canvas (a glide keeps its own way). On the world the bounds close in from the world's frame to the frame of
-     * the continent nearest the middle as it fades in (with the zoom: no jump), so where it fills the view the view is on it whole and
+     * the continent the view is headed for as it fades in (with the zoom: no jump), so where it fills the view the view is on it whole and
      * the canvas becomes the continent's.
      */
     private fun clampPan() {
         if (flying()) return
         val h = 0.5f / zoom
-        val k = if (model.assignsOf(canvas).isNotEmpty()) contNear(panX, panY) else null
+        // 2026-11-17: the continent headed for (the cursor's), not the box nearest the middle (that held a zoom toward Kalimdor on
+        // Eastern Kingdoms' west sea)
+        val k = if (model.assignsOf(canvas).isNotEmpty()) contAim() else null
         val a = k?.a ?: 0f
         val l = (k?.p?.left ?: 0f) * a; val t = (k?.p?.top ?: 0f) * a
         val r = 1f + ((k?.p?.right ?: 1f) - 1f) * a; val bt = 1f + ((k?.p?.bottom ?: 1f) - 1f) * a
         panX = if (2f * h >= r - l) (l + r) / 2f else panX.coerceIn(l + h, r - h)
         panY = if (2f * h >= bt - t) (t + bt) / 2f else panY.coerceIn(t + h, bt - h)
-    }
-    /** the continent on the world canvas whose box's middle is nearest ([u], [v]) */
-    private fun contNear(u: Float, v: Float): Lay? = layers().filter { it.kind == WorldMapModel.CONTINENT }.minByOrNull { l ->
-        val b = model.maps[l.id]?.world?.continent?.let { model.assignOf(canvas, it) }
-        val cx = b?.let { ((it.u0 + it.u1) / 2).toFloat() } ?: l.p.centerX(); val cy = b?.let { ((it.v0 + it.v1) / 2).toFloat() } ?: l.p.centerY()
-        (cx - u) * (cx - u) + (cy - v) * (cy - v)
     }
 
     // the canvas's frame on the screen (sxc / syc, back by uxc / uyc), and [shown]'s through its place on it (sx / sy, ux / uy)
@@ -1522,7 +1748,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             val lit = litQuest()
             if (lit != lastLit) { prevLit = lastLit; lastLit = lit; litAt = System.currentTimeMillis() }
             val e = ease(((System.currentTimeMillis() - litAt) / SEL_EASE_MS.toFloat()).coerceIn(0f, 1f))
-            for (q in marks().sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
+            for (q in marks().filter { markShown(it) }.sortedBy { (if (it.id == prevLit) 1 else 0) + (if (it.id == lit) 2 else 0) }) {
                 val n = order.indexOf(q.id) + 1
                 val cx = sx(q.x); val cy = sy(q.y)
                 val k = when (q.id) { lit -> e; prevLit -> 1f - e; else -> 0f }
@@ -1532,7 +1758,9 @@ class WorldMapRoomView(context: Context) : View(context) {
                 val focused = q.id == focusQid
                 val size = DISC_PX * (1f + (SEL_SCALE - 1f) * k)
                 withAlpha(c, cx, cy, size, fadeA) {
-                    UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+                    // the user's pick (2026-11-17, "Grey there too"): an untracked quest's objective is Home's grey disc, no number
+                    if (untrackedObj(q)) UiKit.questDiscMuted(c, cx, cy, size, marker = true)
+                    else UiKit.questDisc(c, cx, cy, size, if (q.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
                         focus = true, glow = focused, number = if (q.done || n <= 0) null else n)
                     if (focused) {
                         pRing.color = Color.argb(240, 255, 236, 140); pRing.strokeWidth = 3.5f
@@ -1724,6 +1952,16 @@ class WorldMapRoomView(context: Context) : View(context) {
     private val countHits = ArrayList<Pair<Int, FloatArray>>()
     private val COUNT_PX = 54f
     private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    // UNTRACKED QUESTS, AS ON HOME'S MAP (the user's pick, 2026-11-17: "Grey there too"; replaces test62's "all quests yellow" for them):
+    // an untracked quest's objective (in the log, not tracked, not ready) is a full-size grey disc with no number, still hovered and
+    // picked as before; Home's filter "Untracked quest objectives" (QuestLayers OTHER, the same saved switch) hides it here too
+    private val layerPrefs by lazy { context.getSharedPreferences("mapfilters", Context.MODE_PRIVATE) }
+    private fun untrackedObj(m: Mark): Boolean = !m.done && logEntry(m.id)?.let { !trackedQ(it) } == true
+    private fun markShown(m: Mark): Boolean = !untrackedObj(m) ||
+        runCatching { layerPrefs.getBoolean(QuestLayers.Layer.OTHER.key, QuestLayers.Layer.OTHER.default) }.getOrDefault(true)
+    /** the tests: the shown map's untracked quests drawn grey (their ids) */
+    fun greyQuests(): List<Int> = marks().filter { markShown(it) && untrackedObj(it) }.map { it.id }
+
     /** a quest marker of a layer: its spot on the canvas, how much it shows (its map's fade) */
     private class LMark(val m: Mark, val map: Int, val u: Float, val v: Float, val a: Float)
     /** the quest markers of the shown map (a zone's, a capital's) and of every layer shown at all */
@@ -1731,13 +1969,13 @@ class WorldMapRoomView(context: Context) : View(context) {
         val out = ArrayList<LMark>()
         if (isZoneView()) {
             val a = layOf(shown)?.shown ?: 1f
-            for (m in marks()) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
+            for (m in marks()) if (markShown(m)) out.add(LMark(m, shown, pl.left + m.x * pl.width(), pl.top + m.y * pl.height(), a))
         }
         for (l in layers()) {
             if (l.kind == WorldMapModel.CONTINENT || l.id == shown) continue
             val a = l.shown
             if (a <= 0.004f) continue
-            for (m in marksOf(l.id)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
+            for (m in marksOf(l.id)) if (markShown(m)) out.add(LMark(m, l.id, l.p.left + m.x * l.p.width(), l.p.top + m.y * l.p.height(), a))
         }
         return out
     }
@@ -1771,7 +2009,8 @@ class WorldMapRoomView(context: Context) : View(context) {
             val x = sxc(lm.u); val y = syc(lm.v)
             if (x < canvasR.left || x > canvasR.right || y < canvasR.top || y > canvasR.bottom) continue
             withAlpha(c, x, y, DISC_PX, lm.a) {
-                UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
+                if (untrackedObj(lm.m)) UiKit.questDiscMuted(c, x, y, DISC_PX, marker = true)
+                else UiKit.questDisc(c, x, y, DISC_PX, if (lm.m.done) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS, focus = true, glow = lm.m.id == focusQid)
             }
         }
     }
@@ -1906,42 +2145,16 @@ class WorldMapRoomView(context: Context) : View(context) {
         val l = max(canvasR.left, sxc(0f)); val r = min(min(canvasR.right, sxc(1f)), drawerLeft())
         val t = max(canvasR.top, syc(0f)); val b = min(canvasR.bottom, syc(1f))
         if (r <= l || b <= t) return
-        val cx = sx(curX); val cy = sy(curY)
-        val off = RETICLE_PX / 2f - 2f
-        val h = LINE_PX / 2f
-        c.save()
-        c.clipRect(l, t, r, b)
-        c.drawRect(l, cy - h, cx - off, cy + h, pLines)
-        c.drawRect(cx + off, cy - h, r, cy + h, pLines)
-        c.drawRect(cx - h, t, cx + h, cy - off, pLines)
-        c.drawRect(cx - h, cy + off, cx + h, b, pLines)
-        c.restore()
+        MapReticle.lines(c, sx(curX), sy(curY), RectF(l, t, r, b))
     }
-    private val pLines = Paint().apply { style = Paint.Style.FILL; color = Color.rgb(255, 209, 0) }
 
-    /**
-     * THE GAME'S CURSOR (SoftCursor, MetallicSoftCursorPointerTemplate; UI Art's kit map_reticle, the game's x2 art): cropped to its
-     * TexCoords .08-.95, RETICLE_PX wide, a black copy 2 px right under it (its shadow); as the map opens it fades in from 1.5x over
-     * 250 ms (the template's IntroAnim, smoothing IN). No art: the lines alone.
-     */
+    /** the game's cursor (MapReticle, shared with Home's map controls): it fades in as the map opens (its IntroAnim) */
     private fun drawReticle(c: Canvas) {
-        val b = UiKit.tex("map_reticle") ?: return
         val t = ((System.currentTimeMillis() - cursorShownAt) / INTRO_MS.toFloat()).coerceIn(0f, 1f)
-        val e = t * t
-        val size = RETICLE_PX * (1.5f - 0.5f * e)
-        val a = (255 * e).toInt()
-        srcR.set((b.width * 0.08f).toInt(), (b.height * 0.08f).toInt(), (b.width * 0.95f).toInt(), (b.height * 0.95f).toInt())
-        val cx = sx(curX); val cy = sy(curY)
-        dst.set(cx - size / 2f + 2f, cy - size / 2f, cx + size / 2f + 2f, cy + size / 2f)
-        pReticleShadow.alpha = a; c.drawBitmap(b, srcR, dst, pReticleShadow)
-        dst.offset(-2f, 0f)
-        pBmp.alpha = a; c.drawBitmap(b, srcR, dst, pBmp); pBmp.alpha = 255
+        MapReticle.reticle(c, sx(curX), sy(curY), t)
         if (t < 1f) postInvalidateOnAnimation()
     }
     private var cursorShownAt = 0L
-    private val pReticleShadow = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
-        colorFilter = PorterDuffColorFilter(Color.BLACK, PorterDuff.Mode.SRC_IN)
-    }
 
     /** the lit marker's filled soft glow (the user: no outlines; "Use our filled soft light"), under the marker; [k] eases it in */
     private fun selectGlow(c: Canvas, cx: Float, cy: Float, r: Float, k: Float = 1f) {
@@ -1999,7 +2212,8 @@ class WorldMapRoomView(context: Context) : View(context) {
      */
     private fun drawQuestTip(c: Canvas) {
         // UI Art (round 3): by WHERE THE CURSOR IS - on the map always (the user approved it), in the list never (its row says it)
-        val id = if (region == MapRoomKeys.Region.MAP) hoverQuest else null
+        // ... and never while the quest panel shows that quest (the panel says it; review of 2026-11-17: a tip half under the panel)
+        val id = if (region == MapRoomKeys.Region.MAP) hoverQuest?.takeUnless { qp.isOpen && it == qp.id } else null
         val a = tipFade.alpha(id)
         if (tipFade.animating) postInvalidateOnAnimation()
         if (id == null || a <= 0) return
@@ -2050,7 +2264,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         val hs = rows.map { rowHeight(it) }
         // the cursor's row stays in view
         val total = hs.sum() + ROW_GAP * (hs.size - 1)
-        if (region == MapRoomKeys.Region.LIST && listIndex in hs.indices) {
+        if ((region == MapRoomKeys.Region.LIST || listReveal) && listIndex in hs.indices) {
+            listReveal = false
             var y0 = 0f
             for (i in 0 until listIndex) y0 += hs[i] + ROW_GAP
             val y1 = y0 + hs[listIndex]
@@ -2085,6 +2300,18 @@ class WorldMapRoomView(context: Context) : View(context) {
         StaticLayout.Builder.obtain(titleOf(id), 0, titleOf(id).length, titleP, max(10f, w).toInt()).setMaxLines(2)
             .setEllipsize(TextUtils.TruncateAt.END).setLineSpacing(0f, 0.95f).build()
     private fun titleW() = PANEL_W - 16f - 52f - CHECK_PX - 18f
+    /** an untracked quest's row (in the log, not tracked, not ready): the grey disc and the muted "Untracked" tag at the title row's
+     *  end, as Home's card (the user, 2026-11-17: "its confusing on that its not tracked"; the 1.0.34 merge leftover) */
+    private fun untrackedRow(id: Int): Boolean {
+        val q = logEntry(id) ?: return false
+        val ready = q.optBoolean("ready") || q.optBoolean("done") || marks().firstOrNull { it.id == id }?.done == true
+        return !ready && !trackedQ(q)
+    }
+    private val tagP by lazy { UiKit.bodyPaint(20f, Theme.dim) }
+    /** the title's width on [id]'s row: the "Untracked" tag's room taken off on an untracked row */
+    private fun titleWFor(id: Int): Float = if (untrackedRow(id)) titleW() - tagP.measureText(Tr.t("Untracked")) - 12f else titleW()
+    /** the tests: the rows drawn with the "Untracked" tag (their ids), the last frame's */
+    val untrackedTagRows = HashSet<Int>()
     private fun objLines(id: Int): Int {
         val q = logEntry(id) ?: return 0
         if (q.optBoolean("ready") || q.optBoolean("done")) return 1
@@ -2092,7 +2319,7 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
     private fun rowHeight(r: MapQuestBook.Row): Float = when (r) {
         is MapQuestBook.Row.Header -> HEAD_H
-        is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleW()).height.toFloat()) + objLines(r.id) * 26f + 8f
+        is MapQuestBook.Row.Quest -> 12f + max(CHECK_PX, titleLayout(r.id, titleWFor(r.id)).height.toFloat()) + objLines(r.id) * 26f + 8f
         MapQuestBook.Row.Polestar -> 12f + 30f + (if (runCatching { polestar() }.getOrNull()?.words != null) 26f else 0f) + 8f
     }
 
@@ -2170,21 +2397,33 @@ class WorldMapRoomView(context: Context) : View(context) {
         // ONE gold box, wherever the pad is (UI Art): while this quest's options or Abandon's question are up, the pad is there and
         // the row shows the passive link (the game's quest-log glow, softer), as the map's hovered marker links its row
         val padAway = optQuest != 0 || confirmId != 0
-        val linked = (id == hoverQuest && region == MapRoomKeys.Region.MAP) || (padAway && (id == optQuest || id == confirmId))
+        // the open quest panel's quest is the owner too (A / a touch on its disc selects its row: the user, 2026-11-17)
+        val panelOwns = qp.isOpen && id == qp.id && region == MapRoomKeys.Region.MAP
+        val linked = (id == hoverQuest && region == MapRoomKeys.Region.MAP) || (padAway && (id == optQuest || id == confirmId)) || panelOwns
         if (region == MapRoomKeys.Region.LIST && i == listIndex && !padAway) UiKit.focus(c, row)
-        else if (linked && id != focusQid) {
+        else if (linked && (id != focusQid || panelOwns)) {
             dst.set(row.left, row.top - 4f, row.right, row.top + 40f)
             // the row that owns the open menu / question: the game's own HighlightTexture strength (full); the map's hover link softer
-            val owner = padAway && (id == optQuest || id == confirmId)
+            val owner = (padAway && (id == optQuest || id == confirmId)) || panelOwns
             UiKit.tex("qlog_quest_glow")?.let { pBmp.alpha = if (owner) 255 else LINK_ALPHA; c.drawBitmap(it, null, dst, pBmp); pBmp.alpha = 255 }
+                ?: run { if (owner) UiKit.selectedRow(c, dst) }        // no harvested glow: the kit's selected row (as the focused row's)
         }
         val n = numbers.indexOf(id) + 1
-        UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
+        // an untracked quest's row wears the map's grey disc, no number (the user, 2026-11-17: "its confusing on that its not tracked")
+        if (q != null && !ready && !trackedQ(q)) UiKit.questDiscMuted(c, row.left + 26f, row.top + 26f, 40f, marker = true)
+        else UiKit.questDisc(c, row.left + 26f, row.top + 26f, 40f, if (ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS,
             focus = id == focusQid, number = if (ready || n <= 0) null else n)
-        val tl = titleLayout(id, titleW())
+        val tl = titleLayout(id, titleWFor(id))
         c.save(); c.translate(row.left + 52f, row.top + 10f); tl.draw(c); c.restore()
         // THE TRACK TICK (the game's QuestLogTrackCheckboxTemplate) at the row's top right: X or a touch toggles tracking
         val box = RectF(row.right - 10f - CHECK_PX, row.top + 8f, row.right - 10f, row.top + 8f + CHECK_PX)
+        // an untracked row: the muted "Untracked" before the tick, on the title's first line (Home's card)
+        if (untrackedRow(id)) {
+            val word = Tr.t("Untracked")
+            tagP.color = Theme.dim
+            c.drawText(word, box.left - 12f - tagP.measureText(word), row.top + 10f + tl.getLineBaseline(0), tagP)
+            untrackedTagRows.add(id)
+        } else untrackedTagRows.remove(id)
         UiKit.tex("qlog_check_box")?.let { c.drawBitmap(it, null, box, pBmp) } ?: UiKit.check(c, box.centerX(), box.centerY(), CHECK_PX, false)
         if (q != null && trackedQ(q)) UiKit.tex("qlog_check_mark")?.let { m ->
             val sc = CHECK_PX / 28f
@@ -2257,9 +2496,9 @@ class WorldMapRoomView(context: Context) : View(context) {
     private fun legendPrompts(): List<Prompt> {
         val back = Prompt(listOf(glyph("b")), "Back")
         // the quest panel (b-maproom-quests): its own keys
+        // (its buttons carry A / X / Y: the user, 2026-11-17)
         if (qp.isOpen) return if (qp.focus < 0) listOf(Prompt(listOf(glyph("right")), "Into the quest"), Prompt(listOf(glyph("b")), "Close"))
-            else if (qp.focus == 0) listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
-            else listOf(Prompt(listOf(glyph("a")), "Press"), Prompt(listOf(glyph("b")), "Back"))
+            else listOf(Prompt(listOf(glyph("up"), glyph("down")), "Scroll"), Prompt(listOf(glyph("b")), "Back"))
         if (psOpen) return emptyList()              // pm1: the menu's own buttons carry their glyphs
         if (skipOpen) return listOf(Prompt(listOf(glyph("a")), "Select"), Prompt(listOf(glyph("b")), "Close"))
         if (confirmId != 0) return emptyList()      // the question's own buttons say A Yes / B No (UI Art: the clutter rule)
@@ -2680,7 +2919,7 @@ class WorldMapRoomView(context: Context) : View(context) {
             MapRoomKeys.Do.ZoomOut -> { hereTarget = 0; fly((if (flying()) flyZ else zoom) / 1.6f, if (flying()) flyX else panX, if (flying()) flyY else panY) }
             is MapRoomKeys.Do.Open -> goTo(d.zone)
             MapRoomKeys.Do.ToggleSideBar -> toggleSideBar()
-            is MapRoomKeys.Do.OpenQuest -> qp.open(d.quest)
+            is MapRoomKeys.Do.OpenQuest -> { qp.open(d.quest); showInList(d.quest) }
             is MapRoomKeys.Do.TrackFocus -> trackFocus(d.quest)
             is MapRoomKeys.Do.ToggleTrack -> toggleTrack(d.quest)
             is MapRoomKeys.Do.ListMove -> moveQuest(d.d)
@@ -2690,6 +2929,19 @@ class WorldMapRoomView(context: Context) : View(context) {
     }
 
     private fun moveQuest(d: Int) = moveList(d)
+
+    /** A on a quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): its group opens
+     *  and the list's selection goes onto its row, brought into view; the cursor stays on the map (no follow: the map holds still) */
+    private fun showInList(id: Int) {
+        val z = logEntry(id)?.optString("zone", "")?.ifEmpty { MapQuestBook.OTHER } ?: return
+        if (!book.isOpen(z)) book.toggle(z)
+        val i = listRows().indexOfFirst { it is MapQuestBook.Row.Quest && it.id == id }
+        if (i < 0) return
+        listIndex = i
+        setListCursor(follow = false)
+        listReveal = true
+    }
+    private var listReveal = false               // the next list draw scrolls the selected row into view (the cursor on the map)
 
     // ---------------------------------------------------------------- pm1: the Polestar menu and the skip choice
     /** X can open the Polestar menu: the row is there and the menu can show (Polestar the tracker, answering) */
@@ -2706,6 +2958,8 @@ class WorldMapRoomView(context: Context) : View(context) {
         if (runCatching { polestar() }.getOrNull()?.choose == true) m.openPath()
         psOpen = true
     }
+    /** hub58 / PadMap m170 (the user's pick, 2026-11-17): the bound "Polestar menu" command in this room - X's own open, over the room */
+    fun openPolestarMenu() { if (!psOpen) openPsMenu(); invalidate() }
     /** back to the map: the add-on told the menu closed */
     private fun closePsMenu() {
         if (!psOpen) return
@@ -2787,6 +3041,11 @@ class WorldMapRoomView(context: Context) : View(context) {
             confirmHits.firstOrNull { it.first.contains(x, y) }?.let { (_, yes) -> if (yes) confirmAbandon() else confirmId = 0 }
             syncB(); invalidate(); return true
         }
+        if (qp.isOpen && qp.box.contains(x, y)) {
+            // the quest panel: its buttons act (Track / Share / Abandon, the question's Cancel / Abandon), the rest of it does nothing
+            qp.hits.firstOrNull { it.first.contains(x, y) }?.let { (_, act) -> qp.act(act) }
+            syncB(); invalidate(); return true
+        }
         if (optQuest != 0) {
             optHits.firstOrNull { it.first.contains(x, y) }?.let { (_, i) -> optSel = i; opts(optQuest).getOrNull(i)?.let { runOpt(it) } }
                 ?: run { optQuest = 0 }
@@ -2836,7 +3095,11 @@ class WorldMapRoomView(context: Context) : View(context) {
             keepOffLegend()
             updateHover()
             val hit = currentThing()
-            if (hit != null && hit == before) { if (hit < 0) goTo(-hit) else if (isZoneView()) trackFocus(hit) else goTo(hit) }
+            // an untracked quest's grey disc opens at once in the list and the panel, as A does (the user, 2026-11-17: "when clicking on
+            // one, it does not open to the quest in the left menu so its confusing on that its not tracked"), never tracking it
+            val grey = hit != null && hit > 0 && isZoneView() && hoverQuest == hit && logEntry(hit)?.let { !trackedQ(it) } == true
+            if (grey) { qp.open(hit!!); showInList(hit) }
+            else if (hit != null && hit == before) { if (hit < 0) goTo(-hit) else if (isZoneView()) trackFocus(hit) else goTo(hit) }
             syncB(); invalidate()
         }
         return true
@@ -2851,7 +3114,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         return t.substring(0, n).trimEnd() + "..."
     }
 
-    private companion object {
+    companion object {
+        /** a continent's painting fades into its smooth copy from this many screen px a picture px (all of it by twice that) */
+        const val SOFT_FROM = 3f
+        const val SOFT_W = 64
         /**
          * The room's one line while the world map is not built (issues #243 #262 #263 #264: "not on this device yet" never said
          * what to do; the background art builds only while the game is closed - PlayGate, every Thor). Tr: es / fr in i18n.
@@ -2919,4 +3185,9 @@ object MapRoomLetGo {
     const val AFTER_MS = 60_000L
     /** "map pictures let go (43 MB): the Map room left 60 s ago" */
     fun line(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): the Map room left ${AFTER_MS / 1000} s ago"
+    /** Home's map module zoomed out on the same pictures (2026-11-17): "map pictures let go (12 MB): Home's map closed 60 s ago" /
+     *  "... Home's map closed (lighter memory)" (the 8 / 12 GB models and Lighter mode: at once) */
+    fun zoneLine(bytes: Long): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map back on its zone"
+    fun homeLine(bytes: Long, now: Boolean): String = "map pictures let go (${(bytes + (1L shl 19)) shr 20} MB): Home's map closed" +
+        (if (now) " (lighter memory)" else " ${AFTER_MS / 1000} s ago")
 }

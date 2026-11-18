@@ -225,6 +225,71 @@ class LayoutShotsTest {
         shot(c, "layout_opening")
     }
 
+    // ---------------------------------------------------------------- hub58: only what is on; Polestar in two
+    // (the user, 2026-11-17: "the edit mode should include any UI element that is currently turned on, including the wow UI and
+    // polestar. the polestar ui should be broken into 2, one for the arrow and one for the actual guide.")
+    @Test fun polestarsTwoPiecesAndOnlyWhatIsOn() {
+        val v = page("lay_polestar")
+        val e = v.editor
+        assertEquals(listOf("hud", "target", "party", "compass", "psarrow", "psguide", "nbar", "chat"), e.tiles().map { it.id })
+        val mini = LayoutView::class.java.getDeclaredField("mini").apply { isAccessible = true }.get(v) as android.graphics.RectF
+        for (id in e.tiles().map { it.id }) assertTrue("$id's tile inside the column (the rows fit)", tileBox(v, id).bottom <= mini.bottom + 1f)
+        shot(v, "layout_polestar")
+        e.tile = e.tiles().indexOfFirst { it.id == "psguide" }
+        v.padKey("PAD1")
+        assertEquals("A picks Polestar's guide", "psguide", e.picked)
+        v.padKey("PADDLEFT"); v.padKey("PADDLEFT")
+        assertEquals(e.doc!!.piece("psguide")!!.ax - 2.0, e.want!!.first, 0.0)
+        lay(v)
+        shot(v, "layout_polestar_guide")
+        // the guide window hidden, our target bar turned off: both leave the page at the next document, the guide let go
+        feed(v, "lay_off"); v.onDoc(); lay(v)                          // (a detached view's post never runs: its handler by hand)
+        assertEquals(listOf("hud", "party", "compass", "psarrow", "nbar", "chat"), e.tiles().map { it.id })
+        assertNull(e.picked)
+        shot(v, "layout_off")
+    }
+
+    // ---------------------------------------------------------------- hub59: the game's own UI as pieces
+    @Test fun theGamesFramesInTheList() {
+        val v = page("lay_game")
+        val e = v.editor
+        assertEquals(11, e.tiles().size)
+        shot(v, "layout_game")
+        e.tile = e.tiles().indexOfFirst { it.id == "g.DamageMeter" }
+        lay(v)
+        assertNotNull("the last game tile scrolled into the column", tileBox(v, "g.DamageMeter"))
+        v.padKey("PAD1")
+        assertEquals("g.DamageMeter", e.picked)
+        v.padKey("PADDDOWN"); v.padKey("PADDDOWN")
+        assertEquals(Math.round(e.doc!!.piece("g.DamageMeter")!!.ay + 2.0).toDouble(), e.want!!.second, 0.0)
+        lay(v)
+        shot(v, "layout_game_meter")
+        val q = page("lay_queued")
+        assertEquals("Moves after the fight", LayoutModel.statusOf(q.editor.doc))
+        shot(q, "layout_game_queued")
+    }
+
+    // ---------------------------------------------------------------- split-hud: the buffs, the controller bar and the XP bar apart
+    /** the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar" -> "Both": three pieces in the list, each picked
+     *  and moved on its own; the buffs hidden by their tile = no Buffs piece, the other two stay (shots layout_split*) */
+    @Test fun theSplitPartsAreThreePieces() {
+        val v = page("lay_split")
+        val e = v.editor
+        val three = listOf("g.GamepadMainActionBarFrame", "g.BuffFrame", "g.MainStatusTrackingBarContainer")
+        for (id in three) assertTrue(id, e.tiles().any { it.id == id })
+        shot(v, "layout_split")
+        e.tile = e.tiles().indexOfFirst { it.id == "g.MainStatusTrackingBarContainer" }
+        lay(v)
+        v.padKey("PAD1")
+        assertEquals("the XP bar picked alone", "g.MainStatusTrackingBarContainer", e.picked)
+        lay(v)
+        shot(v, "layout_split_xp_picked")
+        val nb = page("lay_split_nobuffs")
+        assertTrue(nb.editor.tiles().none { it.id == "g.BuffFrame" })
+        assertTrue(nb.editor.tiles().any { it.id == "g.GamepadMainActionBarFrame" } && nb.editor.tiles().any { it.id == "g.MainStatusTrackingBarContainer" })
+        shot(nb, "layout_split_nobuffs")
+    }
+
     // ---------------------------------------------------------------- the Settings row
     @Test fun settingsShowsLayoutFirstOnTopScreen() {
         art()
@@ -244,14 +309,18 @@ class LayoutShotsTest {
         // (11-16 merge with the tiles: Top screen does not fold, so every group opens; Layout is the first)
         assertTrue("Layout opens", SettingsTabs.Group.LAYOUT in r.open)
         assertEquals("Layout is the first group", SettingsTabs.Group.LAYOUT, SettingsTabs.groups(SettingsTabs.Tab.TOP).first())
-        val part = layoutBox.parts.single() as SettingsView
+        // hub61 (the beautify design 7): the row is a tile now, "Edit layout" (GameUiSection's LAYOUT part): A / a tap opens the page
+        val part = layoutBox.parts.single() as GameUiSection
         assertEquals(listOf("Edit layout"), SettingsTabs.Block.LAYOUT.rows)
-        // the row's Open, pressed by a finger (the cursor's A presses it the same way)
+        assertEquals(listOf(GameUiTiles.LAYOUT_ID), part.tileIds())
+        // the tile, pressed by a finger (the cursor's A presses it the same way: a touch at its centre)
         val b = part.focusTargets().single()
-        // (a detached view is never isShown(): the tap itself, as the touch's lift calls it)
-        SettingsView::class.java.getDeclaredMethod("tap", java.lang.Float.TYPE, java.lang.Float.TYPE).apply { isAccessible = true }
-            .invoke(part, b.centerX(), b.centerY())
+        val down = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, b.centerX(), b.centerY(), 0)
+        part.dispatchTouchEvent(down); down.recycle()
+        val up = android.view.MotionEvent.obtain(0, 40, android.view.MotionEvent.ACTION_UP, b.centerX(), b.centerY(), 0)
+        part.dispatchTouchEvent(up); up.recycle()
         assertEquals(1, opened)
+        assertNull("no band", part.openTile)
         val d = out ?: return
         val bm = Bitmap.createBitmap(W, 1080, Bitmap.Config.ARGB_8888)
         val c = Canvas(bm); c.drawColor(Theme.ink)

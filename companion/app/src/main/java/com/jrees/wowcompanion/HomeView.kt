@@ -230,6 +230,10 @@ class HomeView(
     /** Home is about to show: take the map and the bars. MainActivity calls this after its room loop. */
     fun borrow() {
         lend(mapView, mapSlot)
+        mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
+        // an untracked quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): the
+        // map shows it in the list, so the module goes to the Quests page (from the controls or the buffs; the list full again)
+        mapView.onListWanted = { if (mapWanted) { setMapPage(HomeMapPages.Page.QUESTS); syncMapB() } }
         lend(castView, barsSlot)
         // B through the Cast view's OWN reader while Home holds it (see [watchB]): one getevent, never two
         castView.onPadButtons = { held -> onPadHeld(held) }
@@ -247,8 +251,15 @@ class HomeView(
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
         watchB(false)
+        setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()                 // 2026-11-17: the map controls' sticks, the world's art
         mailCard(false)                                                   // another room: the mail card closes
         closeTypeTool()                                                   // f-trackpad-keyboard: another room: the tool closes, the guest freed
+        // fix/polestar-b-home (the user, 2026-11-17: "when opening the polestar menu from the map, and then pressing B to go back home, it
+        // returns to a full screen view of the map instead of the home screen. pressing B again doesnt do anything"): a room opened FROM a
+        // full-screen module (the map row's X, its A on the Calendar, a bound command) closes the module HERE, laid while its views are
+        // still lent, so its guest "home" is freed before the room takes and nothing of it (mapWanted / mapHeld, the fallback reader, the
+        // hold's re-ask, ExitGuard's mapGuarding) lives on while Home is hidden; Home comes back on its rest
+        if (flow.close()) { Log.i(TAG, "home: the full module closes (another room opens)"); apply(flow.screen, animate = false); onStateChanged?.invoke() }
         if (lent(mapView)) {
             mapView.compact = false; mapView.compactZoomButtons = false; mapView.headerRightInset = 0f; mapView.buttonTopInset = 0f
             mapView.showHeader = true
@@ -792,30 +803,82 @@ class HomeView(
         homePadN = n
         if (!mapHeld) mapHeldNow()                                // a press arrived: held (also after a "pending" answer)
         val k = msg.optString("k")
-        // b129 (the user's pick "Right goes to buffs"): the buff / debuff list open = its keys; the cursor on an aura = the
-        // auras' keys; else Right enters the auras, Left does nothing (no D-pad pan), SELECT = the map's filter (2026-10-09: Start
-        // opens the pause wheel everywhere; Map's MapCursor takes PADBACK)
+        // THE THREE PAGES (HomeMapPages; the user, 2026-11-17: "when opening the map, pressing to the right should open some map controls,
+        // pressing right again goes to the buffs and left goes back to the quests"): Quests <-> Map controls <-> Buffs on the D-pad.
+        // b129 (the user's pick "Right goes to buffs", now the second Right): the buff / debuff list open = its keys; the cursor on an
+        // aura = the auras' keys (Left off their end: the controls); SELECT = the map's filter (2026-10-09: Start opens the pause wheel
+        // everywhere; Map's MapCursor takes PADBACK)
+        mapView.controlsBuffs = auraPane.hasStop()
         if (auraPane.open != null) { auraPane.onPad(msg); syncMapB(); return }
         if (auraPane.fullCursorOn) {
             if (k == "PADBACK" || k == "PADLSHOULDER" || k == "PADRSHOULDER") mapView.hostKey(k) else auraPane.fullKey(k)
+            setMapPage(HomeMapPages.afterBuffs(k, auraPane.fullCursorOn || auraPane.open != null))
             syncMapB(); return
         }
+        if (mapPage == HomeMapPages.Page.BUFFS) setMapPage(HomeMapPages.Page.QUESTS)     // the pane's stop went (mail read): the list
         // the quest panel open (MapView): every key is the panel's - Right lights the quest's areas, not the buffs (the user, 2026-10-16:
         // "pressing over on the dpad should highlight quest areas not the buffs"); the buff pane redraws round it
         if (mapView.panelOpen()) {
             if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
             auraPane.invalidate(); syncMapB(); return
         }
-        if (k == "PADDRIGHT") { auraPane.enterFull(); syncMapB(); return }
-        if (k == "PADDLEFT") return
+        if (mapPage == HomeMapPages.Page.CONTROLS) {
+            // the filter (Select / View) works here as on the list: open, its keys are its own (B closes it first)
+            if (mapView.filterShown() || k == "PADBACK") { mapView.hostKey(k); syncMapB(); return }
+            val to = HomeMapPages.press(mapPage, k, auraPane.hasStop())
+            if (to == HomeMapPages.Page.BUFFS) { auraPane.enterFull(); setMapPage(if (auraPane.fullCursorOn) to else mapPage) }
+            else if (to != null) setMapPage(to)
+            else mapView.controlsKey(k)
+            syncMapB(); return
+        }
+        HomeMapPages.press(mapPage, k, auraPane.hasStop())?.let { to -> setMapPage(to); syncMapB(); return }    // Right: the controls
+        if (k == "PADDLEFT" || k == "PADDRIGHT") return
         if (!mapView.hostKey(k)) { if (flow.close()) { changed(); onBHome?.invoke() }; return }
+        syncMapB()
+    }
+
+    // ---- THE OPEN MAP'S PAGE (HomeMapPages): the list, the map controls (MapView.controls: the Map room's sticks), the buffs
+    private var mapPage = HomeMapPages.Page.QUESTS
+    /** the off-device tests: the open map module's page */
+    fun mapPageNow(): HomeMapPages.Page = mapPage
+    private fun setMapPage(p: HomeMapPages.Page) {
+        if (p == mapPage) return
+        val was = mapPage
+        mapPage = p
+        if (was == HomeMapPages.Page.BUFFS && p != HomeMapPages.Page.BUFFS && auraPane.fullCursorOn) auraPane.leaveFull()
+        mapView.controlsBuffs = auraPane.hasStop()
+        mapView.controls = p == HomeMapPages.Page.CONTROLS
+        mapView.buffsPage = p == HomeMapPages.Page.BUFFS      // 2026-11-17: no quest cursor / list hints on the buffs page
+        sticksCatch(p == HomeMapPages.Page.CONTROLS)
+        Log.i(TAG, "map module: page ${p.name.lowercase()}")
+        invalidate(); auraPane.invalidate()
+    }
+    /** the map controls hold the sticks in the game (Map.lua mr8's catch: the character does not walk while they move the map) */
+    private var sticksOn = false
+    private fun sticksCatch(on: Boolean) {
+        removeCallbacks(sticksKeep)
+        if (on == sticksOn && !on) return
+        sticksOn = on
+        val cells = MapRoomPad.homeSticksCells(pad, on)
+        if (cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)) {
+            if (on != sticksSaid) Log.i(TAG, "map controls: sticks ${if (on) "held" else "let go"}")
+            sticksSaid = on
+        }
+        if (on) postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS)
+    }
+    private var sticksSaid: Boolean? = null
+    private val sticksKeep = Runnable { if (sticksOn && mapPage == HomeMapPages.Page.CONTROLS && mapWanted) sticksCatch(true) }
+    /** a touch on the open map's field: the map controls (the user: "tapping in the map area should also change it to the map controls") */
+    private fun mapFieldTouched() {
+        if (!mapWanted) return
+        setMapPage(HomeMapPages.touched(mapPage))
         syncMapB()
     }
 
     /** the Home button's B follows the map's own chain: "home" with nothing open, "back" while its filter is */
     private fun syncMapB() {
         // b129: B on an aura (or in its list) steps back inside the module, not Home
-        val where = if (auraPane.open != null || auraPane.fullCursorOn) "back" else mapView.hostBLeads()
+        val where = if (auraPane.open != null || auraPane.fullCursorOn) "back" else HomeMapPages.bLeads(mapPage, mapView.hostBLeads())
         if (where != mapBSaid && homeGuestTap(GuestPad.bnext(pad, home = where == "home"))) mapBSaid = where
     }
 
@@ -860,7 +923,7 @@ class HomeView(
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
     fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
-    /** B: pet follow (PetFollowB): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
+    /** Smart pet's B half (SmartPet; was B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
     fun bClosesSomething(): Boolean = flow.full != null || auraPane.open != null || typeWanted || mailOpen
@@ -909,6 +972,21 @@ class HomeView(
     }
     /** ExitGuard (the host's): the map module guards itself */
     fun mapGuarding(): Boolean = mapWanted
+    /** fix/polestar-b-home: the module believes it holds the controller (its B then comes through the guest, never Home's own reader) */
+    fun mapHolds(): Boolean = mapWanted && mapHeld
+    /**
+     * fix/polestar-b-home (the user, 2026-11-17: "pressing B again doesnt do anything to return it home"): the capture names nobody
+     * holding (not the guest "home") while the open module still believes it holds (MapExitGuard.holdGone, the host's guard tick): no press
+     * reaches the module and its B was swallowed (onB leaves B to the guest). Not held any more: Home's own reader reads B (it closes the
+     * module) and the hold is asked again; the first press that arrives makes it held again (mapPad).
+     */
+    fun mapHoldGone() {
+        if (!mapHolds()) return
+        Log.i("WCLOG", "map module: the capture names nobody: not held, B read by Home, the hold asked again")
+        mapHeld = false; mapBSaid = null; mapView.padHints = false
+        mapFallbackOn()
+        mapAsk()
+    }
     /** ExitGuard's B: one step back out of Home's own controller layer - the aura list, the type tool, a module full screen */
     fun guardBack(): Boolean {
         if (auraPane.open != null) { auraPane.close(); changed(); return true }
@@ -936,9 +1014,13 @@ class HomeView(
 
     // ================================================================ documents (MainActivity routes them)
 
+    /** q65: the quests document's own word on a fight (its `cb`): the quest item's tap is refused in one */
+    private var questsFight = false
+
     fun onQuests(q: JSONObject, current: Boolean) {
         quests.update(q, current, System.currentTimeMillis())
         pad = q.optJSONObject("pad")
+        questsFight = q.optBoolean("cb", false)
         HomeAttackSwitch.pad = pad
         HomeCombat.fromQuests(q)?.let { grow.noteFight(it, current, System.currentTimeMillis()) }
         questPane.invalidate()
@@ -1148,6 +1230,8 @@ class HomeView(
     }
 
     fun ack(msg: JSONObject) {
+        // q65: the quest item's answer: a refusal is said on the card
+        if (msg.optString("op") == "useitem") { if (!msg.optBoolean("ok")) questPane.note(msg.optString("why", "").ifEmpty { "Refused" }); return }
         // every answer to a focus is logged (test50: 92860's refusal was only drawn, so the log could not say why it never took)
         if (msg.optString("op") == "track" && quests.wanted != null)
             Log.i(TAG, "focus ${quests.wanted}: the game answered ${if (msg.optBoolean("ok")) "ok" else "refused"} for " +
@@ -1700,8 +1784,11 @@ class HomeView(
         val mapFull = s.full == HomeModule.MAP && !s.takeover && lent(mapView)
         if (mapFull != mapWanted) {
             mapWanted = mapFull
-            if (mapFull) { auraPane.close(); homePadN = -1; mapAsk() }
-            else { if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff() }
+            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsk() }
+            else {
+                setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()          // 2026-11-17: the sticks and the world's art let go
+                if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff()
+            }
         }
         // only while Home holds it: a fight that starts in the Map room must not shrink that room's map
         // the bars: one thin row at rest, the takeover in combat, the Cast room's own layout full screen
@@ -2183,18 +2270,28 @@ class HomeView(
         }
         // HOLD TO TALK's line (HoldTalk, the user 2026-11-16): under the toolbar's D-pad, over the page (the band is only as tall as its
         // buttons); with the band's own pause slide
-        if (castView.talkLine != null && castView.parent === barsSlot && barsSlot.visibility == View.VISIBLE)
-            castView.drawTalkLine(c, barsSlot.left + barsSlot.translationX + castView.left + castView.translationX,
-                barsSlot.top + barsSlot.translationY + castView.top + castView.translationY, width.toFloat())
+        // its POP-UP (the user 2026-11-17: "pop up tabs to press L or R to change what chat that its for"): the chat tabs, the microphone
+        // and the words, in the line's place while the hold lasts and its words wait
+        if ((castView.talkLine != null || castView.talkPanel != null) && castView.parent === barsSlot && barsSlot.visibility == View.VISIBLE) {
+            val ox = barsSlot.left + barsSlot.translationX + castView.left + castView.translationX
+            val oy = barsSlot.top + barsSlot.translationY + castView.top + castView.translationY
+            if (castView.talkPanel != null) castView.drawTalkPanel(c, ox, oy, width.toFloat(), this)
+            else castView.drawTalkLine(c, ox, oy, width.toFloat())
+        }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
     }
 
     // ================================================================ the bars: a tap opens them full screen
 
     private var barsDown = false
+    /** a touch that came down on hold to talk's pop-up (CastView.talkPanelTouch): the rest of it is the pop-up's */
+    private var talkSwallow = false
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
+        // hold to talk's pop-up: a finger on it is its own (a tab picks that chat); nothing under it acts
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) talkSwallow = castView.talkPanelTouch(e.x, e.y)
+        if (talkSwallow) { barsDown = false; return true }
         // THE MAIL CARD (HomeMailButton; the user's pick: "B or tap elsewhere closes"): while it is open a touch anywhere on Home closes
         // it. On the map (the card, the envelope, the Calendar button, the quest card and buffs under it) that touch does nothing else
         // (it is Home's to its end); anywhere else it goes on as always - the controller's buttons still cast, in a fight too (review
@@ -2212,6 +2309,10 @@ class HomeView(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (talkSwallow) {
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) talkSwallow = false
+            return true
+        }
         if (mailSwallow) {
             if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) mailSwallow = false
             return true
@@ -2281,9 +2382,12 @@ class HomeView(
             val q = homeCard()
             val folded = HomeSettings.questMin &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
+            // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
+            // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
             if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
                 bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
-                collapsed = folded)
+                collapsed = folded, itemButton = true)
+            if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
                 val p = UiKit.bodyPaint(24f, Theme.warn)
@@ -2336,6 +2440,14 @@ class HomeView(
         }
 
         private fun tap(x: Float, y: Float) {
+            // q65 (the user, 2026-11-17: "make the quest item usable by tap out of combat"): a touch on the quest's item uses it
+            val qi = if (cardHidden) null else homeCard()?.item
+            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), UiKit.CARD_HOME_SCALE)
+                    .apply { inset(-14f, -14f) }.contains(x, y)) {
+                val ok = QuestItemTap.use(context, qi, pad, inFight() || questsFight) { note(it) }
+                Log.i(TAG, "quest item ${qi.id} (quest ${qi.quest}): ${if (ok) "tapped" else "refused"}")
+                return
+            }
             // b125 (the user: "instead of the focused quest going to the quests tab, I wan it to "Minimize" the focused quest down to see
             // more of the minimap. tapping it again should restore its full size"): over the map a tap folds the card to its title line
             // and back (the pane's box shrinks; the card's own clip hides the objectives). The old layout still opens the Quests room
@@ -2631,6 +2743,9 @@ class HomeView(
 
         /** the open map closed: the cursor leaves the auras */
         fun leaveFull() { fullCur = null; calCur = false; mailCur = false; mailCard(false); close(); if (lent(mapView)) mapView.hostZoomHidden = false }
+
+        /** the open map's buffs page has somewhere to land: an aura, the mail envelope or the Calendar button */
+        fun hasStop(): Boolean = auras.shownBuffs.isNotEmpty() || auras.shownDebuffs.isNotEmpty() || mailShows() || calShows()
 
         /** D-pad Right from the map: onto the buffs' leftmost icon on their first line (the debuffs' when there are no buffs) */
         fun enterFull() {

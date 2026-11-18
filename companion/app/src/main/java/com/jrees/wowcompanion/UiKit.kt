@@ -24,6 +24,7 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.widget.TextView
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * The shared Classic look: the game's OWN fonts, buttons, parchment and borders, so that every
@@ -122,11 +123,34 @@ object UiKit {
     /** a kit texture by the short name `extract_kit.py` writes, or null when it is not on the device */
     fun tex(name: String): Bitmap? {
         texCache[name]?.let { return it }
+        if (name == CMD_PTT_ART) return pttArt()?.also { texCache[name] = it }
         if (!retry(name)) return null
         val f = ArtHarvest.file("ui/kit/$name.png")          // the harvested kit (app-private), else the pushed one
         val bmp = (if (f.canRead()) BitmapFactory.decodeFile(f.path) else null)?.let { themed(name, it) }
         if (bmp != null) { texCache[name] = bmp; missing.remove(name) }
         return bmp
+    }
+
+    /**
+     * hub58 / PadMap m170 "PUSH TO TALK (HOLD)" (the user's pick, 2026-11-17: "Use fitting icons from the existing kit art"): the kit's Chat
+     * picture (ricon_chat, the toolbar's own) with the toolbar's hold-to-talk badge on its lower-left corner (the dark disc, the bronze
+     * ring, the microphone: CastView's READY badge), so the command reads "talk" wherever it is drawn - the chooser, the right page, the
+     * toolbar band, the cast bar ([PadMapModel.kitArt]). A plain [tex] name; the theme's [forget] drops it with the rest.
+     */
+    const val CMD_PTT_ART = "cmd_ptt"
+    private fun pttArt(): Bitmap? {
+        val base = tex("ricon_chat") ?: return null
+        val out = base.copy(Bitmap.Config.ARGB_8888, true) ?: return null
+        val c = Canvas(out)
+        val s = minOf(out.width, out.height).toFloat()
+        val r = s * 0.24f
+        val cx = s * 0.27f; val cy = out.height - s * 0.27f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(235, 8, 6, 4) }
+        c.drawCircle(cx, cy, r, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = maxOf(1.5f, r * 0.12f); p.color = Theme.bronze
+        c.drawCircle(cx, cy, r, p)
+        VoiceUi.mic(c, cx, cy + r * 0.06f, r * 1.25f, Theme.gold)
+        return out
     }
 
     /**
@@ -971,12 +995,26 @@ object UiKit {
     fun header(c: Canvas, width: Float, title: String, note: String? = null, height: Float = 62f) {
         pFlat.style = Paint.Style.FILL; pFlat.color = Theme.panel
         c.drawRect(0f, 0f, width, height, pFlat)
-        pFlat.color = Theme.bronzeDim
-        c.drawRect(0f, height - 1.5f, width, height, pFlat)
+        headerRule(c, width, height)
         val pt = titlePaint(height * 0.8f)
         c.drawText(Tr.t(title), 24f, height * 0.8f, pt)
         if (note != null)
             c.drawText(Tr.t(note), 24f + pt.measureText(title) + 22f, height * 0.74f, bodyPaint(height * 0.4f, Theme.dim))
+    }
+
+    /**
+     * The header's bottom rule. Classic: its 1.5 px bronzeDim hairline, as always. Any other theme (beautify 8.4): the kit's section band
+     * (recoloured in the theme's metal) laid thin along the bar's foot, so a black OLED header still ends on a metal edge
+     */
+    private fun headerRule(c: Canvas, width: Float, height: Float) {
+        val band = if (Theme.classic) null else tex("section_band")
+        if (band == null) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Theme.bronzeDim
+            c.drawRect(0f, height - 1.5f, width, height, pFlat); return
+        }
+        // the band's middle third (its bright metal line) stretched across, 6 px tall, its centre on the bar's foot
+        val src = Rect(band.width / 3, 0, band.width * 2 / 3, band.height)
+        c.drawBitmap(band, src, RectF(0f, height - 3f, width, height + 3f), pBmp)
     }
 
     /** the hairline between two panes or two sections */
@@ -1099,7 +1137,7 @@ object UiKit {
     /** the stone strip the buttons stand in, along the bottom of [inner]. Returns its rectangle. */
     fun strip(c: Canvas, inner: RectF, height: Float = STRIP): RectF {
         val s = RectF(inner.left - 8f, inner.bottom - height, inner.right + 8f, inner.bottom + 6f)
-        ground(c, s, "ground_rock", 0.32f)
+        ground(c, s, "ground_rock", 0.32f, vig = false)
         pFlat.style = Paint.Style.FILL; pFlat.color = metal(Color.rgb(96, 80, 50))
         c.drawRect(s.left, s.top, s.right, s.top + 2f, pFlat)
         pFlat.color = Color.BLACK
@@ -2391,6 +2429,16 @@ object UiKit {
                 return
             }
         }
+        // a stick alone (Glyphs.plainStick: Home's map controls' Move): the game's "up" glyph below its arrow (the top 17 rows of 64)
+        Glyphs.plainStick(name)?.let { up ->
+            val u = tex("pad_$up")
+            if (u != null) {
+                pBmp.alpha = alpha
+                c.save(); c.clipRect(r.left, r.top + r.height() * 17f / 64f, r.right, r.bottom); c.drawBitmap(u, null, r, pBmp); c.restore()
+                pBmp.alpha = 255
+                return
+            }
+        }
         // f-abxy-split: every glyph in the chosen BUTTON GLYPHS set, whatever set a caller named (a missing picture: the named one)
         val b = tex("pad_" + Glyphs.translate(name, CastSettings.buttonLayout)) ?: tex("pad_$name") ?: return
         pBmp.alpha = alpha
@@ -2618,7 +2666,14 @@ object UiKit {
                     val turnIn: Boolean = false, val number: Int? = null, val focused: Boolean = true,
                     /** ps4 (the user, 2026-11-11: "My current polestar objective does not give any direction on where to go"): an item
                      *  to use - its icon (fileDataID, 0 none) in place of the first line's mark, and a pad glyph (null none) at its end */
-                    val useIcon: Int = 0, val useGlyph: String? = null)
+                    val useIcon: Int = 0, val useGlyph: String? = null,
+                    /** Quests q64 (the user, 2026-11-17: "one thing that does make sense though on the home screen quests is showing the
+                     *  Icon for if there is a usable quest Item that needs to be used for the quest"): the item the game's tracker shows
+                     *  beside the quest; drawn only where [questCard] is asked to ([itemButton], Home) */
+                    val item: QuestItem? = null,
+                    /** a quest the tracker does not hold (Home's list, the user 2026-11-17: "its confusing on that its not tracked"): the
+                     *  map's grey disc in place of the number and a dim "Untracked" at the title row's end */
+                    val untracked: Boolean = false)
 
     /** the card's measures at scale 1 (the Map room's list: 400 px wide); Home draws it at [CARD_HOME_SCALE] */
     const val CARD_PAD = 12f
@@ -2654,7 +2709,7 @@ object UiKit {
     }
 
     fun questCard(c: Canvas, box: RectF, q: QuestCard?, alpha: Int = 255, scale: Float = 1f, bgAlpha: Int = 255,
-                  collapsed: Boolean = false) {
+                  collapsed: Boolean = false, itemButton: Boolean = false) {
         val s = scale
         val layer = alpha < 255
         if (layer) c.saveLayerAlpha(box, alpha.coerceIn(0, 255))
@@ -2685,11 +2740,23 @@ object UiKit {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.gold
             c.drawRoundRect(RectF(box.left + 5f * s, box.top + 10f * s, box.left + 10f * s, box.bottom - 10f * s), 2.5f * s, 2.5f * s, pFlat)
         }
-        questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
+        if (q.untracked && !q.turnIn) questDiscMuted(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, marker = false)
+        else questDisc(c, box.left + pad + 26f * s, titleMid, CARD_DISC * s, if (q.turnIn) Quest.TURN_IN else Quest.PROGRESS, q.focused,
             if (q.turnIn) null else q.number)
         val pt = bodyPaint(27f * s, q.colour)
         val title = q.title                             // test27 (the user: "the Level number in front of the quests text is confusing, trim that from the quests"): no "[level]"; its colour keeps the difficulty
-        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx, TextUtils.TruncateAt.END).toString()), tx,
+        // q64: the quest's item at the card's right edge on the title row (the tracker's item button beside the quest; Home)
+        val qi = if (itemButton) q.item else null
+        var iw = if (qi != null) CARD_ITEM * s + 12f * s else 0f
+        if (qi != null) questItemButton(c, questItemBox(box, s), qi)
+        if (q.untracked) {
+            val tg = bodyPaint(20f * s, Theme.dim)
+            val word = Tr.t("Untracked")
+            val tw = tg.measureText(word)
+            c.drawText(word, box.right - pad - iw - tw, titleMid - (tg.ascent() + tg.descent()) / 2f, tg)
+            iw += tw + 12f * s
+        }
+        c.drawText(Tr.t(TextUtils.ellipsize(title, pt, box.right - pad - tx - iw, TextUtils.TruncateAt.END).toString()), tx,
             titleMid - (pt.ascent() + pt.descent()) / 2f, pt)
         var y = box.top + pad + CARD_TITLE * s
         // [collapsed] = the title row only (the user: "Minimize the focused quest down to see more of the minimap"): no objective, no
@@ -2724,6 +2791,36 @@ object UiKit {
         }
         c.restore()
         if (layer) c.restore()
+    }
+
+    /** q64: the quest item's button on the card at scale 1 (about the title's height, as the tracker's sits beside its quest) */
+    const val CARD_ITEM = 34f
+
+    /** q64 / q65: the quest item's icon box on a card at [box] / [s] (its draw and its touch) */
+    fun questItemBox(box: RectF, s: Float = 1f): RectF {
+        val mid = box.top + CARD_PAD * s + CARD_TITLE * s / 2f
+        return RectF(box.right - CARD_PAD * s - CARD_ITEM * s, mid - CARD_ITEM * s / 2f, box.right - CARD_PAD * s, mid + CARD_ITEM * s / 2f)
+    }
+
+    /**
+     * q64 THE QUEST'S ITEM BUTTON (the tracker's QuestObjectiveItemButtonTemplate): the item's icon in the game's slot well, its charges
+     * at the bottom right (more than one), and its cooldown as the game draws it - the dark sweep and the seconds while it runs, the
+     * icon dimmed when held (enable 0). A touch uses it out of combat ([QuestItemTap]). [r] = the icon's box.
+     */
+    fun questItemButton(c: Canvas, r: RectF, qi: QuestItem, now: Long = QuestItem.Cd.clock()) {
+        val sz = r.width()
+        val ib = Icons.getOrUnknown(qi.icon.takeIf { i -> i > 0 })
+        if (ib == null) {                                   // no icon art yet: the well's dark and its bronze edge, so the item still shows
+            pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(40, 34, 28); c.drawRect(r, pFlat)
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2f; pFlat.color = Theme.bronzeDim; c.drawRect(r, pFlat)
+        }
+        slot(c, ib, r.left, r.top, sz, count = 0, dim = QuestItem.Cd.held(qi.id))
+        val left = QuestItem.Cd.left(qi.id, now)
+        if (left > 0.0) radialCd(c, r, left.toFloat(), QuestItem.Cd.len(qi.id, now).toFloat(), 255, sz / 64f)
+        if (qi.count > 1) {
+            val p = numberPaint(sz * 0.42f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
+            c.drawText(Tr.t(qi.count.toString()), r.right - sz * 0.06f, r.bottom - sz * 0.08f, p)
+        }
     }
 
     /**
@@ -3416,12 +3513,14 @@ object UiKit {
                 pGlow.alpha = 255
             }
             c.drawBitmap(d, null, r, pBmp)
+            lastDiscPx = size * artFill(d, size)
             val p = numberPaint(size * 0.46f, MarkerArt.DISC_NUMBER, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
             c.drawText(Tr.t(number?.toString() ?: "!"), cx, cy - (p.ascent() + p.descent()) / 2f, p)
             return
         }
         val disc = tex(if (focus) "poi_disc_focus" else "poi_disc")
         if (disc == null) {
+            lastDiscPx = size * 0.72f + 2.5f              // the circle and its 2.5 px rim
             pFlat.style = Paint.Style.FILL; pFlat.color = if (focus) Theme.gameGold else Color.rgb(70, 30, 20)
             c.drawCircle(cx, cy, size * 0.36f, pFlat)
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Theme.gameGold
@@ -3440,6 +3539,7 @@ object UiKit {
             pGlow.alpha = 255
         }
         c.drawBitmap(disc, null, r, pBmp)
+        lastDiscPx = size * artFill(disc, size)
         if (number != null) {
             val p = numberPaint(size * 0.46f, if (focus) Color.rgb(34, 22, 6) else Theme.gameGold, shadow = !focus)
                 .apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
@@ -3453,6 +3553,56 @@ object UiKit {
         }) ?: return
         val m = size * 0.4f
         c.drawBitmap(mark, null, RectF(cx - m, cy - m, cx + m, cy + m), pBmp)
+    }
+
+    /**
+     * AN UNTRACKED QUEST'S DISC (the user, 2026-11-17: "I want these to have the full sized circles like the others that can be touched to
+     * open them, just keep them not yellow and without a number"): a quest disc's own art at [size], in grey (saturation 0, a little
+     * darker: Theme.questGrey's grey, the trivial quests' colour), no number and no mark. Without the art: a Theme.questGrey disc.
+     * THE ART IS THE CIRCLE BESIDE IT (the user, 2026-11-17 again: "the scaling on the untracked quest spot goes wacky when zooming out, it
+     * does not stay the same as the other tracked circles"): the two disc pictures fill their boxes differently (the add-on's quest_disc.tga
+     * 94 %, the kit's poi_disc 64 %), so at one [size] they stood 1.46x apart. [marker] = false: the kit's poi_disc, the tracked circles'
+     * own (Home's map: its tracked quests are poi_disc but the focused one); true: the yellow marker's (MarkerArt's quest_disc.tga, else
+     * poi_disc_focus: the Map room, whose discs are all the yellow marker). Both draw the yellow marker's picture in grey (the light grey
+     * the user picked; poi_disc greyed is near black), Home's in a box shrunk so its solid part spans exactly poi_disc's at [size].
+     */
+    fun questDiscMuted(c: Canvas, cx: Float, cy: Float, size: Float, marker: Boolean) {
+        // Home without the kit's poi_disc draws its tracked circles plain, so its grey disc is plain too (the fallback below)
+        val poi = if (marker) null else tex("poi_disc")
+        val disc = if (marker) MarkerArt.discLoaded() ?: tex("poi_disc_focus") else poi?.let { MarkerArt.discLoaded() ?: tex("poi_disc_focus") ?: it }
+        val s = if (disc != null && poi != null && poi !== disc) size * artFill(poi, size) / artFill(disc, size) else size
+        val r = RectF(cx - s / 2f, cy - s / 2f, cx + s / 2f, cy + s / 2f)
+        if (disc == null) {
+            pFlat.style = Paint.Style.FILL; pFlat.color = Theme.questGrey
+            c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 2.5f; pFlat.color = Color.rgb(40, 40, 40)
+            c.drawCircle(cx, cy, size * 0.36f, pFlat)
+            lastDiscPx = size * 0.72f + 2.5f              // the circle and its 2.5 px rim
+            return
+        }
+        c.drawBitmap(disc, null, r, pMuted)
+        lastDiscPx = s * artFill(disc, s)
+    }
+    /** the solid part of the last quest disc drawn, across, in px ([questDisc] / [questDiscMuted]: its art's own fill of the box) */
+    var lastDiscPx = 0f
+        private set
+    private val fills = java.util.WeakHashMap<Bitmap, HashMap<Int, Float>>()
+    /**
+     * how much of [b]'s width its solid part spans, 0..1, as DRAWN at [px] (shrunk with filtering, alpha > 32 across its middle row): a
+     * soft-edged picture loses more of its faint rim the smaller it is drawn, a hard-edged one does not, so one count from the full
+     * picture put Home's grey disc 3 px over the tracked circle. Read once per picture and size (to 2 px; the disc arts: ~94 % / ~72 %).
+     */
+    fun artFill(b: Bitmap, px: Float): Float = fills.getOrPut(b) { HashMap() }.getOrPut((px / 2f).roundToInt().coerceIn(4, 128)) {
+        val n = (px / 2f).roundToInt().coerceIn(4, 128) * 2
+        val bm = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        Canvas(bm).drawBitmap(b, null, RectF(0f, 0f, n.toFloat(), n.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        var lo = n; var hi = -1
+        for (x in 0 until n) if (Color.alpha(bm.getPixel(x, n / 2)) > 32) { if (x < lo) lo = x; hi = x }
+        bm.recycle()
+        if (hi < lo) 1f else (hi - lo + 1).toFloat() / n
+    }
+    private val pMuted = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f); postConcat(ColorMatrix().apply { setScale(0.85f, 0.85f, 0.85f, 1f) }) })
     }
 
     private val pGhost = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
@@ -3500,7 +3650,10 @@ object UiKit {
      * A PLACE SOMETHING CAN SPAWN (QuestieDB's node / chest / rare data; the user picked "Try QuestieDB's NPC + node data first",
      * 2026-10-06): the ghost family again (UI Art's rule: what the game shows live is solid; a guess is the same thing as a ghost).
      * Pictures: the game's own (kit `mm_herb` = mobile-herbalism, `mm_ore` = mobile-mining, `mm_chest` = the minimap's vignetteloot,
-     * `mm_rare` / `mm_rare_elite` = the minimap's vignettekill / -elite).
+     * `mm_rare` / `mm_rare_elite` = the minimap's vignettekill / -elite; from 2026-11-17 a rare and a rare elite both wear the game's
+     * SILVER PLATE DRAGON instead, kit `elite_silver`, else [eliteDragon]'s drawn stand-in: the user's pick "Silver dragon" for the map,
+     * after "the Skull above mobs is confusing, I think we need to scrap that, we do however need to add the dragon Icon for an Elite and a
+     * silver one for rare spawns").
      *  - [size] < 16: a TEXTURE DOT (the zone at a glance, ~200 herb and ~170 ore spots in Westfall): a 10..14 px dot in the kind's own
      *    pale colour (herb sage, ore stone, chest gold, rares their maroon disc), see-through, no picture;
      *  - [size] >= 16: the kind's PICTURE as a ghost (see-through, its colour taken down) on a faint dark well;
@@ -3508,9 +3661,9 @@ object UiKit {
      *    gold rim and a soft glow, never a ghost.
      */
     fun spawnSpot(c: Canvas, cx: Float, cy: Float, kind: Spawn, size: Float, live: Boolean = false, glow: Boolean = false) {
-        val pic = tex(when (kind) { Spawn.HERB -> "mm_herb"; Spawn.ORE -> "mm_ore"; Spawn.CHEST -> "mm_chest"
-            Spawn.RARE -> "mm_rare"; Spawn.RARE_ELITE -> "mm_rare_elite" })
         val rare = kind == Spawn.RARE || kind == Spawn.RARE_ELITE
+        val pic = tex(when (kind) { Spawn.HERB -> "mm_herb"; Spawn.ORE -> "mm_ore"; Spawn.CHEST -> "mm_chest"
+            Spawn.RARE, Spawn.RARE_ELITE -> "elite_silver" })
         // THE TRACKING'S GOLD (the user, 2026-10-16: the herb / ore / treasure the player tracks "is hard to see sometimes blending with
         // the map, can we give those Icons a golden glow"): a soft gold halo under the spot, at least 14 px across at zone zoom
         if (glow) {
@@ -3523,7 +3676,7 @@ object UiKit {
         if (!live && size < 16f) {
             val (r0, g0, b0) = when (kind) {
                 Spawn.HERB -> Triple(150, 200, 120); Spawn.ORE -> Triple(185, 192, 205); Spawn.CHEST -> Triple(235, 205, 110)
-                else -> Triple(150, 50, 40)
+                else -> Triple(200, 205, 214)                     // a rare: the silver dragon's own silver (was a maroon disc)
             }
             val rr = size / 2f
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(if (rare) 150 else 105, r0, g0, b0); c.drawCircle(cx, cy, rr, pFlat)
@@ -3543,13 +3696,45 @@ object UiKit {
                 pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = maxOf(2f, size / 16f); pFlat.color = Theme.gold
                 c.drawCircle(cx, cy, size * 0.62f, pFlat); pFlat.style = Paint.Style.FILL
             }
-            if (pic != null) c.drawBitmap(pic, null, if (rare) box else RectF(cx - size * 0.42f, cy - size * 0.42f, cx + size * 0.42f, cy + size * 0.42f), pBmp)
+            if (rare) { eliteDragon(c, box, silver = true); return }
+            if (pic != null) c.drawBitmap(pic, null, RectF(cx - size * 0.42f, cy - size * 0.42f, cx + size * 0.42f, cy + size * 0.42f), pBmp)
             return
         }
         // a ghost: the picture see-through and pale, on a faint dark well
         if (!rare) { pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(70, 18, 12, 8); c.drawCircle(cx, cy, size * 0.55f, pFlat) }
-        if (pic != null) { pGhost.alpha = if (rare) 165 else 140; c.drawBitmap(pic, null, if (rare) box else RectF(cx - size * 0.45f, cy - size * 0.45f, cx + size * 0.45f, cy + size * 0.45f), pGhost); pGhost.alpha = 255 }
+        if (rare) { eliteDragon(c, box, silver = true, alpha = 165, ghost = true); return }
+        if (pic != null) { pGhost.alpha = 140; c.drawBitmap(pic, null, RectF(cx - size * 0.45f, cy - size * 0.45f, cx + size * 0.45f, cy + size * 0.45f), pGhost); pGhost.alpha = 255 }
     }
+
+    /**
+     * THE GAME'S PLATE DRAGON in [box] (square): kit `elite_gold` / `elite_silver` (nameplates-icon-elite-gold / -silver), else a drawn
+     * stand-in (two wings round a disc, in the dragon's gold or silver) so a phone without the kit rebuild still shows it. [alpha] / [ghost]
+     * (the ghost family's pale paint) for the map's ghosts. The rule (who wears which) is TilePictures.dragonOf; the add-on draws the same art over the plates (Trail.lua ag14).
+     */
+    fun eliteDragon(c: Canvas, box: RectF, silver: Boolean, alpha: Int = 255, ghost: Boolean = false) {
+        tex(if (silver) "elite_silver" else "elite_gold")?.let { b ->
+            val pp = if (ghost) pGhost else pDragonBmp
+            pp.alpha = alpha; c.drawBitmap(b, null, box, pp); pp.alpha = 255; return
+        }
+        val cx = box.centerX(); val cy = box.centerY(); val w = box.width(); val h = box.height()
+        val col = if (silver) Color.rgb(200, 205, 214) else Color.rgb(232, 184, 60)
+        val dark = Color.argb(230, 20, 14, 8)
+        fun wing(sign: Float, ox: Float, oy: Float, ix: Float, iy: Float, by: Float, colour: Int) {
+            pDragon.color = colour; pDragon.alpha = Color.alpha(colour) * alpha / 255
+            pDragonPath.reset()
+            pDragonPath.moveTo(cx + sign * w * ox, cy + h * oy); pDragonPath.lineTo(cx + sign * w * ix, cy + h * iy)
+            pDragonPath.lineTo(cx + sign * w * 0.2f, cy + h * by); pDragonPath.close()
+            c.drawPath(pDragonPath, pDragon)
+        }
+        for (sg in floatArrayOf(-1f, 1f)) wing(sg, 0.5f, -0.38f, 0.12f, -0.1f, 0.3f, dark)
+        for (sg in floatArrayOf(-1f, 1f)) wing(sg, 0.44f, -0.3f, 0.14f, -0.08f, 0.2f, col)
+        pDragon.color = dark; pDragon.alpha = Color.alpha(dark) * alpha / 255; c.drawCircle(cx, cy, w * 0.24f, pDragon)
+        pDragon.color = col; pDragon.alpha = alpha; c.drawCircle(cx, cy, w * 0.19f, pDragon)
+    }
+
+    private val pDragon = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pDragonBmp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val pDragonPath = android.graphics.Path()
 
     private val pSpotGlow = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -4031,14 +4216,19 @@ object UiKit {
         c.drawBitmap(b, Rect(0, b.height - cap, b.width, b.height), RectF(r.left, r.bottom - capPx, r.right, r.bottom), pBmp)
     }
 
-    /** a pane's ground over [r]: the list's (left) or the detail's ([right]) */
-    fun pane(c: Canvas, r: RectF, right: Boolean = false) {
-        val b = if (Theme.cur.oled) null else tex(if (right) "pane_right" else "pane_left")
+    /**
+     * a pane's ground over [r]: the list's (left) or the detail's ([right]), at [light] (Chat's log: dimmer, readability first). On OLED
+     * too (beautify 8.4, the user 2026-11-17: "the background on some of the OLED themes look lifeless, like the macro and friend room, I
+     * do really like having the background image there"): the art at the theme's pane light under its vignette, never plain black
+     */
+    fun pane(c: Canvas, r: RectF, right: Boolean = false, light: Float = 1f) {
+        val b = tex(if (right) "pane_right" else "pane_left")
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = if (right) Theme.panel else Theme.ink
             c.drawRect(r, pFlat); return
         }
-        c.drawBitmap(b, null, r, litPaint())
+        c.drawBitmap(b, null, r, litPaint(light, if (right) "pane_right" else "pane_left", b))
+        vignette(c, r)
     }
 
     /** the game's divider between the two panes, down from [top] to [bottom], centred on [x] */
@@ -5861,10 +6051,11 @@ object UiKit {
 
     /** the ground of the Overview ([page] false) or of a crafting page, over [r] */
     fun professionGround(c: Canvas, r: RectF, page: Boolean) {
-        // OLED: the Overview's stone goes black; a crafting page is paper and stays
-        val b = if (!page && Theme.cur.oled) null else tex(if (page) "prof_ground_page" else "prof_ground")
+        // OLED keeps the Overview's stone at its pane light (beautify 8.4); a crafting page is paper and stays as it is
+        val b = tex(if (page) "prof_ground_page" else "prof_ground")
         if (b == null) { pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink; c.drawRect(r, pFlat); return }
-        c.drawBitmap(b, null, r, if (page) pLit else litPaint())
+        c.drawBitmap(b, null, r, if (page) pLit else litPaint(1f, "prof_ground", b))
+        if (!page) vignette(c, r)
     }
 
     /**
@@ -6359,7 +6550,7 @@ object UiKit {
             val w = minOf(b.width.toFloat(), r.width() / k)
             c.drawBitmap(b, Rect(0, 0, w.toInt(), b.height), RectF(r.left, r.top, r.left + w * k, r.bottom), pBmp)
             pFlat.color = Color.argb(((1f - light) * 255).toInt().coerceIn(0, 255), 0, 0, 0)
-        } else pFlat.color = Color.rgb(12, 10, 9)
+        } else { pane(c, r); return }       // no class picture yet (waiting for the game): the kit's pane, never a flat slab (beautify)
         c.drawRect(r, pFlat)
     }
 
@@ -6446,7 +6637,8 @@ object UiKit {
         val pn = bodyPaint(25f, if (active) Color.WHITE else Theme.gold)
         c.drawText(Tr.t(TextUtils.ellipsize(name, pn, r.right - 12f - tx, TextUtils.TruncateAt.END).toString()), tx,
             r.centerY() - 12f - (pn.ascent() + pn.descent()) / 2f, pn)
-        val pp = bodyPaint(19f, Theme.dim)
+        // the lit tab is light on Dark Silver: dim grey points vanished on it (contact sheet 11-17), so the lit tab reads near-white
+        val pp = bodyPaint(19f, if (active) Color.rgb(236, 230, 218) else Theme.dim)
         c.drawText(Tr.t(if (points == 1) "1 point" else "$points points"), tx, r.centerY() + 16f - (pp.ascent() + pp.descent()) / 2f, pp)
     }
 
@@ -7143,37 +7335,156 @@ object UiKit {
         c.drawBitmap(b, Rect(cap, 0, b.width - cap, b.height), RectF(r.left + cw - 0.5f, r.top, r.right - cw + 0.5f, r.bottom), pBmp)
     }
 
-    /** a texture tiled over [r], darkened to [light] (1 = as it is) */
-    private fun ground(c: Canvas, r: RectF, name: String, light: Float) {
+    /** a texture tiled over [r], darkened to [light] (1 = as it is); [vig] = the theme's vignette over it (a room's ground, not a strip) */
+    private fun ground(c: Canvas, r: RectF, name: String, light: Float, vig: Boolean = true) {
         val t = Theme.cur
-        // OLED (the user, 2026-11-12: "I personally want an oled theme"): no stone, the page's pure black
-        val b = if (t.groundLight <= 0f) null else tex(name)
+        // OLED keeps its stone (beautify 8, the user 2026-11-17: "I do really like having the background image there"): drawn dark,
+        // its blackest values crushed to true #000 (groundMatrix), never a plain black slab
+        val b = tex(name)
         if (b == null) {
             pFlat.style = Paint.Style.FILL; pFlat.color = Theme.ink
             c.drawRect(r, pFlat); return
         }
         val p = Paint(Paint.FILTER_BITMAP_FLAG)
         p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
-        p.colorFilter = ColorMatrixColorFilter(groundMatrix(light))
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * t.stoneLight, artStats(name, b)))
         c.drawRect(r, p)
+        if (vig) vignette(c, r, t)
     }
 
-    /** [light] as the theme draws its grounds: Classic exactly [light]; a Dark theme dims (groundLight) and greys (groundSat) the stone */
-    private fun groundMatrix(light: Float): ColorMatrix {
+    /**
+     * A ROOM'S GROUND, for a room that has no art of its own ([RoomGround]: Settings, the Controller room): [name] (a kit ground, tiled)
+     * at [light] x the theme's stone light, under the vignette. Returns false when the picture is not on the device (the caller's ink stays).
+     */
+    fun roomGround(c: Canvas, r: RectF, name: String, light: Float, pane: Boolean = false): Boolean {
         val t = Theme.cur
-        val k = light * t.groundLight
-        return ColorMatrix().apply {
-            if (t.groundSat != 1f) { setSaturation(t.groundSat); postConcat(ColorMatrix().apply { setScale(k, k, k, 1f) }) }
-            else setScale(k, k, k, 1f)
-        }
+        val b = tex(name) ?: return false
+        val p = Paint(Paint.FILTER_BITMAP_FLAG)
+        p.shader = android.graphics.BitmapShader(b, android.graphics.Shader.TileMode.REPEAT, android.graphics.Shader.TileMode.REPEAT)
+        p.colorFilter = ColorMatrixColorFilter(groundMatrix(t, light * (if (pane) t.paneLight else t.stoneLight), artStats(name, b)))
+        c.drawRect(r, p)
+        vignette(c, r, t)
+        return true
     }
+
+    /**
+     * THE ONE GROUND MATRIX (beautify 8.2): the art's saturation ([ThemeSpec.artSat]) first, then its light [k]. Classic and the Dark
+     * family: a plain scale (Classic exactly [k], as always).
+     *
+     * OLED, with the picture's own measure [st] (review fix, 2026-11-17: the design's fixed `in * k * 1.08 - 8` - and a crush on the
+     * art's scale after it - still left the Macros / Social list pane, the Calendar, Bags and the Settings rock reading as #000: the kit's
+     * pane_left is very dark art, its median 9 of 255 and its texture a few levels deep; the rock is flat, 44..49): per picture, its
+     * darkest tenth ([ArtStats.p10], at most half its median: a flat stone keeps its grey) lands on true #000 (those pixels stay off) and the gain spreads what is left so its median sits at
+     * `median * k + OLED_FLOOR * k` (the art's own light plus a floor), the gain at most [OLED_GAIN_MAX]. So a dark picture keeps a
+     * visible texture over black, and every OLED room reads as its picture, darkened, never a black slab. Without [st]: the design's
+     * fixed curve.
+     */
+    fun groundMatrix(t: ThemeSpec, k: Float, st: ArtStats? = null): ColorMatrix = ColorMatrix().apply {
+        val kk: Float; val off: Float
+        if (t.oled && st != null) {
+            val floor = minOf(st.p10, st.med * 0.5f)
+            val target = st.med * k + OLED_FLOOR * k
+            kk = (target / (st.med - floor).coerceAtLeast(1f)).coerceIn(0f, OLED_GAIN_MAX)
+            off = -floor * kk
+        } else if (t.oled) { kk = k * 1.08f; off = -8f * k }
+        else { kk = k; off = 0f }
+        val scale = ColorMatrix(floatArrayOf(kk, 0f, 0f, 0f, off, 0f, kk, 0f, 0f, off, 0f, 0f, kk, 0f, off, 0f, 0f, 0f, 1f, 0f))
+        reset()
+        if (t.artSat != 1f) setSaturation(t.artSat)
+        artTint(t)?.let { postConcat(it) }
+        postConcat(scale)
+    }
+
+    /**
+     * THE GROUND'S TINT (review fix 2026-11-17: every theme's rooms stood on the same brown art, so the maker's Ground pick and the
+     * premade themes' grounds - Cool, Rose, Moss, Dusk - only reached the plates and could not be told apart, in the rooms or in the
+     * gallery): the art, after [ThemeSpec.artSat], pulled [ART_TINT] of the way to its own light in the theme's ground hue (its
+     * [ThemeSpec.picks]' tint; a Neutral tint = plain grey), its light kept. Classic: none, the art exactly as harvested.
+     */
+    fun artTint(t: ThemeSpec): ColorMatrix? {
+        val p = t.picks ?: return null
+        if (t.id == ThemePresets.CLASSIC.id) return null
+        val col = ThemeMaker.hsl(p.tintHue, (p.tintSat * 2.4f).coerceAtMost(0.7f), 0.5f)
+        val r = Color.red(col) / 255f; val g = Color.green(col) / 255f; val b = Color.blue(col) / 255f
+        val lum = (0.299f * r + 0.587f * g + 0.114f * b).coerceAtLeast(0.05f)
+        val f = floatArrayOf(r / lum, g / lum, b / lum)
+        val w = ART_TINT
+        val l = floatArrayOf(0.299f, 0.587f, 0.114f)
+        val m = FloatArray(20)
+        for (i in 0..2) for (j in 0..2) m[i * 5 + j] = (if (i == j) 1f - w else 0f) + w * f[i] * l[j]
+        m[18] = 1f
+        return ColorMatrix(m)
+    }
+
+    /** how far a theme's ground art is pulled to its ground hue ([artTint]) */
+    const val ART_TINT = 0.5f
+
+    /** the OLED floor (out of 255, times the call's light): what a ground's median gets on top of its own light */
+    const val OLED_FLOOR = 8f
+    const val OLED_GAIN_MAX = 4f
+
+    /** a picture's light, measured once: the luminance (0..255) of its darkest tenth and its median */
+    class ArtStats(val p10: Float, val med: Float)
+    private val statsCache = HashMap<String, Pair<Bitmap, ArtStats>>()
+
+    /** [b]'s measure, cached per kit [name] while the same picture is loaded (about 4,000 samples on a grid) */
+    fun artStats(name: String, b: Bitmap): ArtStats {
+        statsCache[name]?.let { if (it.first === b) return it.second }
+        val step = maxOf(1, Math.sqrt(b.width.toDouble() * b.height / 4096.0).toInt())
+        val ls = ArrayList<Float>()
+        var y = step / 2
+        while (y < b.height) {
+            var x = step / 2
+            while (x < b.width) {
+                val px = b.getPixel(x, y)
+                if (Color.alpha(px) > 128) ls.add(0.299f * Color.red(px) + 0.587f * Color.green(px) + 0.114f * Color.blue(px))
+                x += step
+            }
+            y += step
+        }
+        val st = if (ls.isEmpty()) ArtStats(0f, 0f) else { ls.sort(); ArtStats(ls[ls.size / 10], ls[ls.size / 2]) }
+        statsCache[name] = b to st
+        return st
+    }
+
+    private val vigCache = HashMap<String, android.graphics.RadialGradient>()
+    private val pVig = Paint()
+
+    /**
+     * THE VIGNETTE (beautify 8.2): over [r], clear in the middle, from 55 % of the half-diagonal fading to the page's ink at
+     * [ThemeSpec.vignette] in the corners, so a ground's edges sink into the page and the eye stays on the content. One cached gradient
+     * per rectangle size and theme.
+     */
+    fun vignette(c: Canvas, r: RectF, t: ThemeSpec = Theme.cur) {
+        if (t.vignette <= 0f || r.width() < 2f || r.height() < 2f) return
+        val a = (t.vignette * 255f).toInt().coerceIn(0, 255)
+        val ink = t.ink and 0xFFFFFF
+        val key = "${r.width().toInt()}x${r.height().toInt()}/$ink/$a"
+        val g = vigCache.getOrPut(key) {
+            if (vigCache.size > 24) vigCache.clear()
+            val rad = Math.hypot(r.width() / 2.0, r.height() / 2.0).toFloat()
+            android.graphics.RadialGradient(0f, 0f, rad, intArrayOf(ink, ink, ink or (a shl 24)), floatArrayOf(0f, 0.55f, 1f),
+                Shader.TileMode.CLAMP)
+        }
+        val m = android.graphics.Matrix(); m.setTranslate(r.centerX(), r.centerY())
+        g.setLocalMatrix(m)
+        pVig.shader = g
+        c.drawRect(r, pVig)
+        pVig.shader = null
+    }
+
     private var litFor: ThemeSpec? = null
+    private var litK = 1f
+    private var litName: String? = null
     private val pLitTheme = Paint(Paint.FILTER_BITMAP_FLAG)
-    /** the panes' 1.5x lift ([pLit]) as the theme draws its grounds (Classic: [pLit] itself) */
-    private fun litPaint(): Paint {
+    /** the panes' 1.5x lift ([pLit]) as the theme draws its pane [name] ([b]), times [k] (Classic at 1: [pLit] itself) */
+    private fun litPaint(k: Float, name: String, b: Bitmap): Paint {
         val t = Theme.cur
-        if (t === ThemePresets.CLASSIC) return pLit
-        if (litFor !== t) { litFor = t; pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(1.5f)) }
+        if (t === ThemePresets.CLASSIC && k == 1f) return pLit
+        if (litFor !== t || litK != k || litName != name) {
+            litFor = t; litK = k; litName = name
+            pLitTheme.colorFilter = ColorMatrixColorFilter(groundMatrix(t, 1.5f * k * t.paneLight, artStats(name, b)))
+        }
         return pLitTheme
     }
 

@@ -29,10 +29,20 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> Focus();
         /// <summary>Battle.net's sign-in window in front and its form found, or why not (BnetForm); keys are never read or logged here</summary>
         Dictionary<string, object> BnetReady();
-        /// <summary>the Thor's saved login for WoW's login.txt; never logged</summary>
-        void LoginFile(string email, string password);
+        /// <summary>the Thor's saved login for WoW's login.txt; never logged. [accountList] = the Thor's remembered game account
+        /// (Config.wtf's accountList, "Game account: Remembered"; null = none, or "Ask each time"): never logged either</summary>
+        void LoginFile(string email, string password, string accountList);
         Dictionary<string, object> AddonsStatus();
         Dictionary<string, object> AddonsInstall();
+        /// <summary>the Thor's stream mode ("stream_mode": w, h, fps): a virtual screen Desktop makes for a headless PC takes it</summary>
+        void StreamMode(int w, int h, int fps);
+        /// <summary>the Thor's "host_check" (its RTSP timed out while HTTP answered): check our streaming host's whole port set and
+        /// heal it when no stream is live; {"state": ok | restarting | failed | streaming, "sunshine": {...}}</summary>
+        Dictionary<string, object> HostCheck();
+        /// <summary>the Thor's "pc_test" (its Test connection): the PC's checks, answered as {"t":"pc_test_result", ...}</summary>
+        Dictionary<string, object> PcTest();
+        /// <summary>the Thor's Retry by hand ("screen_retry"): our virtual screen's tries start over after it gave up</summary>
+        void ScreenRetry();
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -414,13 +424,25 @@ namespace DsfDesktop.Bridge
                         case "login_file":
                             var em = m.Str("email");
                             var pw = m.Str("password");
-                            Task.Run(() => host.LoginFile(em, pw));
+                            // "Ask each time" on the Thor: its game account is never written on the PC (the user's pick 2026-11-17)
+                            var al = m.Str("game_account") == "remember" ? m.Str("account_list") : null;
+                            Task.Run(() => host.LoginFile(em, pw, string.IsNullOrEmpty(al) ? null : al));
                             break;
                         case "addons_status": SawAddonSet(m); s.Enqueue(With("addons", host.AddonsStatus())); break;
                         case "addons_install":
                             SawAddonSet(m);
                             var sa = s;
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
+                            break;
+                        case "stream_mode": host.StreamMode(Num(m, "w"), Num(m, "h"), Num(m, "fps")); break;
+                        case "host_check":
+                            var sh = s;
+                            Task.Run(() => { var r = With("host_check_result", host.HostCheck()); r["t"] = "host_check_result"; sh.Enqueue(r); });
+                            break;
+                        case "screen_retry": host.ScreenRetry(); break;
+                        case "pc_test":
+                            var sp = s;
+                            Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
                             break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);
@@ -445,6 +467,12 @@ namespace DsfDesktop.Bridge
                 }
                 ws.Close(1000);
             }
+        }
+
+        static int Num(Dictionary<string, object> m, string k)
+        {
+            if (!m.TryGetValue(k, out var v) || v == null) return 0;
+            try { return System.Convert.ToInt32(v, System.Globalization.CultureInfo.InvariantCulture); } catch (System.Exception) { return 0; }
         }
 
         static Dictionary<string, object> With(string t, Dictionary<string, object> body)

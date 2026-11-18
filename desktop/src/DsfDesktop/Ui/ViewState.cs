@@ -36,7 +36,7 @@ namespace DsfDesktop.Ui
         public string ThorProgress = "";
         public bool ThorBusy;
 
-        public bool StartWithWindows, StartWow, MatchStream;
+        public bool StartWithWindows, StartWow, MatchStream, OwnScreen;
         public int BridgePort;
     }
 
@@ -51,11 +51,15 @@ namespace DsfDesktop.Ui
         void SetStartWithWindows(bool on);
         void SetStartWow(bool on);
         void SetMatchStream(bool on);
+        /// <summary>"Stream on its own screen" On/Off</summary>
+        void SetOwnScreen(bool on);
         Task<string> ThorInstall();
         Task<string> ThorInstallFile(string apk);
         void ThorWatching(bool on);
         void OpenServices();
         bool AskForFolderOnce();
+        /// <summary>the PC's half of Test connection: its lines for the window</summary>
+        System.Collections.Generic.List<string> RunTest();
     }
 
     static class ViewBuilder
@@ -97,12 +101,26 @@ namespace DsfDesktop.Ui
                 v.HostHint = "It restarts by itself. If it keeps stopping, restart DS Forever Desktop.";
                 v.HostDot = Theme.Bad;
             }
+            else if (c.HealProblem != null)
+            {
+                // the self-healing (HostHealer): restarting ours, or its tries spent
+                v.Host = c.HealLine;
+                v.HostHint = c.HealHint;
+                v.HostDot = c.HealProblem == AppController.ProblemNotResponding ? Theme.Bad : Theme.Warn;
+            }
             else if (pr != null && pr.Problem != null)
             {
                 v.Host = pr.Line;
                 v.HostHint = pr.Hint;
                 v.HostServices = pr.Services;
                 v.HostDot = Theme.Bad;
+            }
+            else if (pr != null && pr.Info.Length > 0 && sh != null && sh.Running) v.Host += "  ·  " + pr.Info;   // Apollo beside ours: fine, said quietly
+            if (c.ScreenProblem != null && pr?.Problem == null && c.HostProblem != "exited")
+            {
+                v.HostHint = c.ScreenProblem == DsfDesktop.Sunshine.ScreenPlan.ProblemNeedsScreen ? "No screen is on. Install a virtual screen, or turn a monitor on."
+                    : "No screen is on. Turn a monitor on.";
+                v.HostDot = Theme.Warn;
             }
 
             v.Stream = c.Stream == StreamState.Streaming ? "streaming to your Thor" : c.Stream == StreamState.Idle ? "not streaming" : "-";
@@ -111,7 +129,8 @@ namespace DsfDesktop.Ui
             var st = c.WowUp() ? WowState.Running : c.Starter.State;
             v.Wow = st == WowState.Running ? "running" : st == WowState.Starting ? "starting (" + c.Starter.Why + ")" : st == WowState.StartFailed ? "didn't start: " + c.Starter.Why : "not running";
             v.WowDot = st == WowState.Running ? Theme.Ok : st == WowState.Starting ? Theme.Gold : st == WowState.StartFailed ? Theme.Warn : Theme.Dim;
-            v.Monitor = c.CaptureStatus.Length > 0 ? c.CaptureStatus : "the primary display";
+            v.Monitor = c.ScreenLine.Length > 0 && c.ScreenLine != DsfDesktop.Sunshine.ScreenPlan.Ready ? c.ScreenLine
+                : c.CaptureStatus.Length > 0 ? c.CaptureStatus : "the primary display";
             v.Link = c.BridgeStatus + (v.Online > 0 ? ", " + v.Online + " connected" : "");
             v.LinkDot = c.Bridge == null ? Theme.Bad : v.Online > 0 ? Theme.Ok : Theme.Dim;
 
@@ -136,6 +155,7 @@ namespace DsfDesktop.Ui
             try { v.StartWithWindows = AutoStart.IsOn(); } catch (Exception) { }
             v.StartWow = c.Settings.StartWowOnStream;
             v.MatchStream = c.Settings.MatchStreamResolution;
+            v.OwnScreen = c.Settings.OwnScreen;
             return v;
         }
     }
@@ -152,6 +172,8 @@ namespace DsfDesktop.Ui
         public void SetStartWithWindows(bool on) => AutoStart.Set(on, c.Paths.Exe);
         public void SetStartWow(bool on) { c.Settings.StartWowOnStream = on; c.SaveSettings(); }
         public void SetMatchStream(bool on) => c.SetMatchStream(on);
+        public void SetOwnScreen(bool on) => c.SetOwnScreen(on);
+        public System.Collections.Generic.List<string> RunTest() => c.RunPcTest("the window").Lines();
         public Task<string> ThorInstall() => c.Thor.InstallLatest();
         public Task<string> ThorInstallFile(string apk) => c.Thor.InstallLocal(apk);
         public void ThorWatching(bool on) => c.ThorWatching = on;

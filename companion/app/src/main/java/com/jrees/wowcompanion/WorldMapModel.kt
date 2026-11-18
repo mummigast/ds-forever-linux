@@ -87,8 +87,28 @@ class WorldMapModel {
     // (its continents by their assignments), else a continent - and every finer map (a zone, a capital) a LAYER on it at its place,
     // its art fading in as the zoom makes it fill the view ([fade]). Places are [l, t, r, b] in the canvas's 0..1 frame.
 
-    /** the continent (mapType 2) map [id] lies on: itself or its ancestor; null = none */
-    fun continentOf(id: Int): Int? = ancestors(id).lastOrNull { maps[it]?.type == 2 }
+    /** the continent (mapType 2) map [id] lies on - or the island it is ([isLand]): itself or its ancestor; null = none */
+    fun continentOf(id: Int): Int? = ancestors(id).lastOrNull { isLand(it) }
+
+    /**
+     * A LAND THE WORLD MAP PLACES BY ITS OWN ROW (the user, 2026-11-17: "The new Island for the skyborn is missing from both maps it
+     * should be in like the upper center is where they put it in the actual game map"): a continent (mapType 2), or a zone straight under
+     * a world map that has an assignment row for the zone's own map - Zephras Isle (UiMap 2521, mapType 3, parent Azeroth 947) on map
+     * 2991. Such an island is drawn, zoomed into and projected onto the world exactly as a continent is: by its row ([assignOf]).
+     */
+    fun isLand(id: Int): Boolean {
+        val m = maps[id] ?: return false
+        if (m.type == 2) return true
+        if (m.type != 3) return false
+        val c = m.world?.continent ?: return false
+        val p = parentOf(id) ?: return false
+        return assignOf(p, c) != null
+    }
+
+    /** world map [world]'s land for its row [a]: the continent map of that map, else an island zone on it (the lowest id); null = none */
+    fun landOf(world: Int, a: Assign): Int? =
+        maps.values.firstOrNull { it.type == 2 && it.world?.continent == a.map && parentOf(it.id) == world }?.id
+            ?: maps.values.filter { it.type == 3 && it.world?.continent == a.map && parentOf(it.id) == world }.minByOrNull { it.id }?.id
 
     /** zone / capital [z]'s place on continent [cont]'s frame, from their two world rects (the stitched picture's own rule) */
     fun zonePlace(cont: Int, z: Int): FloatArray? {
@@ -125,6 +145,29 @@ class WorldMapModel {
         return continentOf(id)?.takeIf { placeOn(id, it) != null } ?: id
     }
 
+    /**
+     * THE CONTINENT A WORLD VIEW IS HEADED FOR (the user, 2026-11-17: "both maps have this problem when zooming in to Kalimdor it just
+     * changes to the ocean of the eastern kingdoms map"). A continent's frame on the world is its painting's whole sheet, mostly sea, so
+     * the frames OVERLAP: Kalimdor's runs to 0.63 of the world's width, Eastern Kingdoms' starts at 0.37. The room took "the first
+     * continent whose frame covers the view" (Eastern Kingdoms, first in the recipe) and bounded the pan by "the box nearest the view's
+     * middle", so a zoom from the world's middle toward Kalimdor was held on Eastern Kingdoms' west sea. The continent is the one whose
+     * own BOX (its assignment: where the world draws it; the smallest when they nest) holds the first point of [at] that lies in any box (the room: a glide's target,
+     * the cursor, the view's middle); when none does (the sea between), the box whose middle is nearest the first point ([nearest];
+     * false: null there). Null = [world] has no continents.
+     */
+    fun aimContinent(world: Int, at: List<FloatArray>, nearest: Boolean = true): Int? {
+        val boxes = assignsOf(world).mapNotNull { a -> landOf(world, a)?.let { it to a } }     // continents + islands (feat/map-skyborn's landOf)
+        if (boxes.isEmpty() || at.isEmpty()) return null
+        // the smallest box that holds it (an island's box lies inside a continent's: feat/map-skyborn's rule)
+        for (p in at) boxes.filter { it.second.holds(p[0], p[1]) }.minByOrNull { (_, a) -> (a.u1 - a.u0) * (a.v1 - a.v0) }?.let { return it.first }
+        if (!nearest) return null
+        val p = at[0]
+        return boxes.minByOrNull { (_, a) ->
+            val cx = ((a.u0 + a.u1) / 2).toFloat() - p[0]; val cy = ((a.v0 + a.v1) / 2).toFloat() - p[1]
+            cx * cx + cy * cy
+        }?.first
+    }
+
     /** one finer map on a canvas: [kind] CONTINENT / ZONE / CITY, its [place], the layer it sits in ([parent]; null = the canvas) */
     class Layer(val id: Int, val kind: Int, val place: FloatArray, val parent: Int?)
 
@@ -135,9 +178,7 @@ class WorldMapModel {
      */
     fun layersOn(canvas: Int, zonesOf: (Int) -> List<Int>): List<Layer> {
         val out = ArrayList<Layer>()
-        val conts = if (assignsOf(canvas).isNotEmpty()) assignsOf(canvas).mapNotNull { a ->
-            maps.values.firstOrNull { it.type == 2 && it.world?.continent == a.map && parentOf(it.id) == canvas }?.id
-        } else listOf(canvas)
+        val conts = if (assignsOf(canvas).isNotEmpty()) assignsOf(canvas).mapNotNull { a -> landOf(canvas, a) } else listOf(canvas)
         for (k in conts) {
             if (k != canvas) out.add(Layer(k, CONTINENT, placeOn(k, canvas) ?: continue, null))
             val zs = if (maps[k]?.type == 2) zonesOf(k).filter { maps[it]?.type == 3 && !CITY_ZONE.containsKey(it) } else emptyList()
@@ -181,7 +222,10 @@ class WorldMapModel {
             val row = m.optJSONObject(k) ?: continue
             row.optJSONArray("e")?.let { a -> explored[id] = (0 until a.length()).map { a.optInt(it) }.toSet() }
             if (row.has("p")) parents[id] = row.optInt("p")
-            row.optJSONArray("r")?.let { a -> if (a.length() == 4) rects[id] = FloatArray(4) { a.optDouble(it).toFloat() } }
+            // a rect of no size is the game's "not on its parent" (C_Map.GetMapRectOnMap(2521, 947) = 0, 0, 0, 0: Zephras Isle)
+            row.optJSONArray("r")?.let { a ->
+                if (a.length() == 4) FloatArray(4) { a.optDouble(it).toFloat() }.let { r -> if (r[1] > r[0] && r[3] > r[2]) rects[id] = r else rects.remove(id) }
+            }
             row.optJSONArray("lv")?.let { a -> if (a.length() == 2) levels[id] = intArrayOf(a.optInt(0), a.optInt(1)) }
         }
     }
@@ -305,6 +349,7 @@ class WorldMapModel {
         maps.keys.filter { parentOf(it) == parent && CITY_ZONE[it] == null }.sorted().mapNotNull { id ->
             centre(id)?.let { Triple(id, it[0], it[1]) }
                 ?: highlightOf(parent, id)?.let { h -> Triple(id, h.x + h.w / 2f, h.y + h.h / 2f) }
+                ?: frameOn(parent, id)?.let { f -> Triple(id, (f[0] + f[2]) / 2f, (f[1] + f[3]) / 2f) }     // an island: its row's box
         }
 
     /** the child under a point: by rect (the smallest wins), else by highlight box */

@@ -41,9 +41,26 @@ object MinimapTiles {
     }
     init {
         // WCMEM: the tiles held (full and small)
-        MemWatch.source("minimap") { synchronized(this) { cache.values.sumOf { it.byteCount.toLong() } + small.values.sumOf { it.byteCount.toLong() } } }
+        MemWatch.source("minimap") { synchronized(this) { cache.values.sumOf { it.byteCount.toLong() } + small.values.sumOf { it.byteCount.toLong() } +
+            standIn.values.sumOf { it.byteCount.toLong() } } }
     }
     private val pending = HashSet<Long>()
+    /**
+     * A SMALL tile's art as it is, shown while its water is repainted (review of 1.0.34 test 1485: the repaint - with its eight
+     * neighbours decoded - made a close tile land later, and a tile-sized black block stood where it would be for a moment on opening
+     * the map or panning). Decoded on its own thread, so the stand-ins of a whole view come at once, ahead of the repaints; dropped
+     * when the repainted tile lands (32 KB / 8 KB each, only while loading). The full-size tile needs none: its small one is under it.
+     */
+    private val quick = Executors.newSingleThreadExecutor()
+    private val standIn = HashMap<Long, Bitmap>()
+    /** tiles repainted before their continent's depth field was ready (WaterDepth): dropped when it is, so they are made again */
+    private val provisional = HashSet<Long>()
+    init {
+        WaterDepth.listen { cont -> main.post {
+            val it = provisional.iterator()
+            while (it.hasNext()) { val k = it.next(); if ((k ushr 32).toInt() == cont) { cache.remove(k); small.remove(k); it.remove() } }
+        } }
+    }
     private val missing = HashSet<Long>()
     private val contOk = HashMap<Int, Boolean>()
 
@@ -87,6 +104,8 @@ object MinimapTiles {
         contOk.clear()
         missing.clear()
         indexed = null
+        TerrainOverview.refresh()
+        synchronized(this) { standIn.clear() }
     }
 
     /**
@@ -97,21 +116,35 @@ object MinimapTiles {
         val k = key(cont, col, row, sample)
         val c = if (sample == 1) cache else small
         c[k]?.let { return it }
-        if (k in missing || k in pending) return null
+        if (k in missing) return null
+        if (k in pending) return standIn[k]
         pending.add(k)
         val f = file(cont, col, row)
+        if (sample > 1 && k !in standIn) quick.execute {
+            val raw = try {
+                if (f.canRead()) BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample })
+                else null
+            } catch (t: Throwable) { null }
+            // (only while the repainted one is still to come)
+            if (raw != null) main.post { if (k in pending && c[k] == null) { synchronized(this) { standIn[k] = raw }; ready() } }
+        }
         exec.execute {
             val bmp = try {
                 if (f.canRead()) BitmapFactory.decodeFile(f.path,
-                    BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample })
+                    BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample; inMutable = true })
                 else null
             } catch (t: Throwable) { null }
+            // the water by its depth (WaterDepth), once, here: never per frame
+            val final = bmp == null || runCatching { WaterDepth.recolourTile(bmp, cont, col, row) }.getOrDefault(true)
             main.post {
                 pending.remove(k)
-                if (bmp != null) c[k] = bmp else missing.add(k)
+                // (made provisional, and the field landed meanwhile: not kept, the next frame makes it again)
+                if (bmp != null && !final && WaterDepth.ready(cont)) { ready(); return@post }
+                if (bmp != null) { c[k] = bmp; if (!final) provisional.add(k) } else missing.add(k)
+                synchronized(this) { standIn.remove(k) }
                 ready()
             }
         }
-        return null
+        return standIn[k]
     }
 }

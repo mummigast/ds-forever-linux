@@ -182,6 +182,25 @@ object Settings {
         set(v) { if (v != lighterMode) { prefs?.edit()?.putBoolean("lighterMode", v)?.apply(); changed() } }
 
     /**
+     * HOME MAP: FULL DETAIL (the user, 2026-11-17: "turn this into a Thor based toggle"): Home's open map zooms out past its zone onto the
+     * Map room's art, down to the whole world. Unset = DeviceTier.homeMapFullDetail (on for the 16 GB Thor Max, off for the smaller
+     * Thors and an unknown RAM). Off = today's lighter map (the zone's minimap tiles, no zoom past the zone); the map controls stay.
+     */
+    var homeMapFull: Boolean
+        get() = prefs?.takeIf { it.contains("homeMapFull") }?.getBoolean("homeMapFull", false) ?: DeviceTier.homeMapFullDetail(DeviceTier.totalMb)
+        set(v) { prefs?.edit()?.putBoolean("homeMapFull", v)?.apply(); changed() }
+
+    /**
+     * HOME MAP: STYLE WHEN ZOOMED OUT (the user, 2026-11-17: "on the high fidelity map, I dont think that I want the transition to the map
+     * overlay, it would be really great if we just kept it as high fidelity there or made it an option toggle"): true = Terrain (the
+     * default: the minimap's terrain all the way out, TerrainOverview), false = Painted (the Map room's art fades in past the zone).
+     * Home's map only; the Map room keeps the game's painted world map.
+     */
+    var homeMapTerrain: Boolean
+        get() = prefs?.getBoolean("homeMapTerrain", true) ?: true
+        set(v) { prefs?.edit()?.putBoolean("homeMapTerrain", v)?.apply(); changed() }
+
+    /**
      * LOW-MEMORY GRAPHICS (the user's pick 2026-11-08, "Automatic, with a toggle", after every 1.0.17 crash report was an Android
      * low-memory kill while the game ran): the game's textures at the older, smaller level (Config.wtf at each start: GameConfigWtf's
      * LOW_MEMORY_GRAPHICS). Unset = on for the 8 GB and 12 GB Thors and with Lighter mode (DeviceTier.lowMemory), off otherwise.

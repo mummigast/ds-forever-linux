@@ -55,6 +55,21 @@ class BridgeLogTest {
         assertEquals("c".repeat(32), JSONObject(c.sent[0]).getString("device_id"))
         assertEquals("focus", JSONObject(c.sent[1]).getString("t"))
         assertTrue(status.any { it.contains("Den PC") })
+        assertFalse(c.sent.any { JSONObject(it).optString("t") == "stream_mode" })
+    }
+
+    /** Desktop 0.2.31 makes a virtual screen for a headless PC at the Thor's stream mode: sent after the welcome's focus */
+    @Test fun theStreamModeFollowsTheWelcome() {
+        val c = Script(listOf(welcome))
+        var log: BridgeLog? = null
+        log = BridgeLog("192.168.1.20", 48210, false, "", "t".repeat(43), "c".repeat(32),
+            dialer = { _, _, _, _ -> c }, onMessage = {}, onStatus = {}, streamMode = { Triple(1920, 1080, 120) },
+            sleeper = { log!!.stop() })
+        log.runHere()
+        val i = c.sent.indexOfFirst { JSONObject(it).optString("t") == "stream_mode" }
+        assertTrue(i > c.sent.indexOfFirst { JSONObject(it).optString("t") == "focus" })
+        val m = JSONObject(c.sent[i])
+        assertEquals(1920, m.getInt("w")); assertEquals(1080, m.getInt("h")); assertEquals(120, m.getInt("fps"))
     }
 
     @Test fun aResetDropsTheHalfDocumentAndTheSequence() {
@@ -220,5 +235,24 @@ class BridgeLogTest {
         val w = JSONObject(welcome).put("gt_now", thorNow - hour).toString()
         bridge(listOf(Script(listOf(w, lines(line)))), docs, ArrayList(), wall = { thorNow }).runHere()
         assertEquals(thorNow, docs.single().getLong("_gt"))
+    }
+
+    /** the user's pick 2026-11-17 ("Ask the Thor again"): Desktop's login_again gets the saved login once more, only down a pinned
+     *  connection and only while the auto sign-in gives one (fake data) */
+    @Test fun desktopsLoginAgainSendsTheSavedLoginOnceMore() {
+        fun run(tls: Boolean, fp: String, login: Pair<String, String>?): List<JSONObject> {
+            val c = Script(listOf(welcome, """{"t":"login_again"}"""))
+            var log: BridgeLog? = null
+            log = BridgeLog("192.168.1.20", 48210, tls, fp, "t".repeat(43), "c".repeat(32),
+                dialer = { _, _, _, _ -> c }, onMessage = {}, onStatus = {}, savedLogin = { login },
+                gameAccount = { BridgeProtocol.GameAccount(ask = false, list = "Fake1|!Fake2|") }, sleeper = { log!!.stop() })
+            log.runHere()
+            return c.sent.map { JSONObject(it) }.filter { it.optString("t") == "login_file" }
+        }
+        val sent = run(true, "ab".repeat(32), "fake@example.invalid" to "not-a-password")
+        assertEquals("the welcome's and the one asked again", 2, sent.size)
+        assertTrue(sent.all { it.getString("email") == "fake@example.invalid" && it.getString("account_list") == "Fake1|!Fake2|" })
+        assertEquals("auto sign-in off: nothing", 0, run(true, "ab".repeat(32), null).size)
+        assertEquals("no pinned connection: nothing", 0, run(false, "", "fake@example.invalid" to "not-a-password").size)
     }
 }

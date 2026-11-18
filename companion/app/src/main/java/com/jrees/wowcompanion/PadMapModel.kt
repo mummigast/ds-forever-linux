@@ -169,7 +169,9 @@ object PadMapModel {
 
     /** m165 B: PET FOLLOW: [on] the app's word the add-on holds (its setting for this character AND Home with nothing of its own open),
      *  [cls] a pet class (the row is offered), [pet] a live pet out, [bound] B is the router's for it now */
-    data class PetB(val on: Boolean, val cls: Boolean, val pet: Boolean, val bound: Boolean)
+    /** m165 B: pet follow / m172 SMART PET: [on] the app's word (Smart pet on), [bfree] with Home free for B (`bf`), [sp] the attack
+     *  half armed (`sp`) */
+    data class PetB(val on: Boolean, val cls: Boolean, val pet: Boolean, val bound: Boolean, val bfree: Boolean = false, val sp: Boolean = false)
 
     /** p12: an "extra" answer also names what was put: [idx] (1-based in the Extra list), [kind], [what] (a command key or an id), [name] */
     data class Ack(val op: String, val ok: Boolean, val why: String?, val storage: Int?, val idx: Int? = null, val kind: String? = null,
@@ -307,7 +309,8 @@ object PadMapModel {
                     textOrNull(st, "over"))
             },
             // m165: B's pet follow (the add-on leaves out every false)
-            petB = m.optJSONObject("pf")?.let { o -> PetB(o.optBoolean("on", false), o.optBoolean("cls", false), o.optBoolean("pet", false), o.optBoolean("b", false)) },
+            petB = m.optJSONObject("pf")?.let { o -> PetB(o.optBoolean("on", false), o.optBoolean("cls", false), o.optBoolean("pet", false), o.optBoolean("b", false),
+                o.optBoolean("bf", false), o.optBoolean("sp", false)) },
         )
     }
 
@@ -620,6 +623,19 @@ object PadMapModel {
     const val ROW_PADTAB = "padtab"
     /** p35: the Home Bar command (Spells' DSHOME): drawn with the bar's own swirl everywhere */
     const val HOME_KEY = "DSHOME"
+    /** PadMap m170 (the user's picks, 2026-11-17): "Push to talk (hold)" (Hub hub58's WowCompanionPadTalk, [HoldTalk.ptt]) and "Polestar
+     *  menu" (WowCompanionPadPolestarMenu) */
+    const val PTT_KEY = "DSPTT"
+    const val PS_MENU_KEY = "DSPSMENU"
+    /** the kit picture a DS Forever command draws in the app instead of its file icon (null = its file icon): Home Bar the bar's swirl
+     *  (p35), push to talk the Chat picture with the hold's microphone ([UiKit.CMD_PTT_ART]), the Polestar menu the Quests room's
+     *  picture (the pause wheel's Polestar slices wear it too) */
+    fun kitArt(key: String?): String? = when (key) {
+        HOME_KEY -> "home_live_base"
+        PTT_KEY -> UiKit.CMD_PTT_ART
+        PS_MENU_KEY -> "ricon_quests"
+        else -> null
+    }
     /** 0-2: WoW Defaults, DS, In combat; p16 / b29: 10 = the 4th tab, the spell radial (the pad owner's YES: 11-39 stay refused) */
     fun colTab(tab: Int) = if (tab >= 5) COL_PARTY_TAB else if (tab >= 4) 10 else tab.coerceIn(1, 3) - 1
     /** PARTY MODE (Book b47, PARTY_BUILD.md 2.3): padtab 26 shows the Party mode tab (the app taps partycfg.pad.ptab.tab when it has it) */

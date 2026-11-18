@@ -41,10 +41,39 @@ object StreamCurtain {
     const val LOGIN_SHOW_MS = 10_000L
     /** Desktop's word on Sunshine's ports hasn't come yet ([StreamPorts]: never the stock ports by guess) */
     const val WAITING = "Waiting for the PC"
+    /** Desktop 0.2.30 and older: another host on the stock ports. A false alarm while ours ran on its own ports (a player's Apollo,
+     *  2026-11-16), so no longer shown ([reason] gives ""); kept for the translations */
     const val BUSY_SUNSHINE = "PC busy: another Sunshine is running"
     const val BUSY_PROGRAM = "PC busy: another program has the streaming ports"
+    /** Desktop 0.2.31: another program holds OUR ports */
+    const val BUSY_PORTS = "PC busy: its streaming ports are taken"
+    /** Desktop 0.2.31: no screen is on at the PC and no virtual display driver is installed */
+    const val NEEDS_SCREEN = "PC needs a virtual screen: see Desktop"
+    const val NO_SCREEN = "PC has no screen on"
     const val BUSY_LISTENING = "PC busy: its streaming host isn't listening"
     const val BUSY_STOPPED = "PC busy: its streaming host stopped"
+    /** Desktop 0.2.32's self-healing: restarting its host, or its tries spent ([HostHeal]'s words) */
+    const val HOST_RESTARTING = HostHeal.RESTARTING
+    const val HOST_DOWN = HostHeal.DOWN
+    /** Desktop 0.2.32's word before a stream starts (the welcome's / "sunshine"'s wait): the start waits, up to [PC_WAIT_MS] */
+    const val PC_SCREEN = "PC making its stream screen"
+    const val PC_STARTING = "PC streaming host starting"
+    /** the longest a start waits for Desktop's word (its screen: up to two host restarts of about 26 s each) */
+    const val PC_WAIT_MS = 90_000L
+
+    /** the curtain's line for Desktop's wait word ("" = none) */
+    fun waitLine(wait: String): String = when (wait) {
+        "screen" -> PC_SCREEN
+        "starting" -> PC_STARTING
+        "" -> ""
+        else -> PC_STARTING
+    }
+
+    /** the stream's start holds: Desktop said to wait and the wait is not over */
+    fun holds(wait: String, waitedMs: Long): Boolean = wait.isNotEmpty() && waitedMs < PC_WAIT_MS
+    /** Desktop 0.2.31: the game refused the region picked on its own region screen (309); the player picks again there (the user's
+     *  pick 2026-11-17: "it shouldnt auto pick it should be changable") */
+    const val REGION_REFUSED = "Region refused: pick another region"
 
     /**
      * Desktop 0.2.27's reason streaming can't work (the welcome's sunshine.problem / sunshine.why: the user's PC 2026-11-13, another
@@ -52,13 +81,19 @@ object StreamCurtain {
      * other why as Desktop said it.
      */
     fun reason(problem: String, why: String): String = when (problem) {
-        "other_sunshine" -> BUSY_SUNSHINE
-        "other_app" -> BUSY_PROGRAM
+        // the coexistence rule (2026-11-17): another host beside ours is fine; an older Desktop's word for it is not shown
+        "other_sunshine", "other_app" -> ""
+        "ports_taken" -> BUSY_PORTS
         "not_listening" -> BUSY_LISTENING
         "exited" -> BUSY_STOPPED
+        "restarting" -> HOST_RESTARTING
+        "not_responding" -> HOST_DOWN
+        "needs_screen" -> NEEDS_SCREEN
+        "no_screen" -> NO_SCREEN
         else -> why.trim().let { w -> when {
             w.isEmpty() -> ""
-            w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> BUSY_SUNSHINE
+            w.startsWith("pc busy: another Sunshine", ignoreCase = true) -> ""
+            w.startsWith("pc busy: another program", ignoreCase = true) -> ""
             w.startsWith("pc busy:", ignoreCase = true) -> "PC busy:" + w.substring(8)
             else -> w.replaceFirstChar { it.uppercase() }
         } }
@@ -66,6 +101,9 @@ object StreamCurtain {
 
     /** WoW is up and between its login screen and character select */
     fun atLogin(pc: PcWow?) = pc != null && (pc.screen == "login" || pc.screen == "signing_in")
+
+    /** the line over the stream while WoW's own screens wait for the player ("" = none): a refused region, until another is taken */
+    fun streamLine(pc: PcWow?): String = if (pc != null && pc.regionRefused && atLogin(pc)) REGION_REFUSED else ""
 
     /**
      * [connected] = the stream is up (Moonlight's picture arrived); [bridged] = this PC has DS Forever Desktop's bridge (Sunshine
