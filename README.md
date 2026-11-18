@@ -15,6 +15,8 @@
 > - Some switches are untested in game (pet and party frames among them): see *Untested* in [FORK.md](FORK.md).
 > - Right after connecting, the camera may turn by itself until the right stick is moved.
 >
+> **Latest changes:** [CHANGES.md](CHANGES.md) (2026-11-18: keyboard shortcuts for vendor/quest buttons and switches, instant relog).
+>
 > What this fork changes, what it leaves out, licences and the Linux build: [FORK.md](FORK.md). The helper:
 > [linux-helper/README.md](linux-helper/README.md). DS Forever's original README follows unchanged.
 
