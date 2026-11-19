@@ -154,7 +154,11 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
+    /** Linux Streaming Edition (2026-11-19): when the top-screen taps may start - never while the game loads ([GameInput.loading]),
+     *  then SETTLE_MS after the hello or LOAD_SETTLE_MS after the loading screen went, whichever is later */
+    private fun settleAt(): Long = if (GameInput.loading()) Long.MAX_VALUE / 2
+        else maxOf(helloAt + GameUiPolicy.SETTLE_MS, GameInput.loadOverAt().takeIf { it >= helloAt }?.let { it + LOAD_SETTLE_MS } ?: 0L)
+    fun onHello() { GameInput.loadingStart(); helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
@@ -623,7 +627,7 @@ object GameUi {
         val m = mt
         val h = hs
         if (m == null && h == null) return
-        if (character == null || s == null || !live || !s.current || now < helloAt + GameUiPolicy.SETTLE_MS) return
+        if (character == null || s == null || !live || !s.current || now < settleAt()) return
         if (pad?.optJSONObject("rows")?.has(MT_ROW) != true || layOpen()) return
         // split-hud: the parts' words first (the same row, one tap at a time), then the meters'
         val col = h?.let { hsCol(it) } ?: m?.let { mtCol(it, dmgChosen(), cdmChosen(), partsChosen()) } ?: return
@@ -804,17 +808,17 @@ object GameUi {
         // Linux Streaming Edition (2026-11-19): while streaming, the restore (and every tap behind it) waits for the key handshake, at
         // most KEY_WAIT_MS past the settle: a click right after world entry is often lost on Linux, and a lost restore costs ~20 taps
         if (r != null && r.col >= 0 && r.n == 0 && !r.q && s != null && live && s.current &&
-            now >= helloAt + GameUiPolicy.SETTLE_MS && now < helloAt + GameUiPolicy.SETTLE_MS + KEY_WAIT_MS &&
+            now >= settleAt() && now < settleAt() + KEY_WAIT_MS &&
             TapBridge.keysPending(ctx, pad)) {
             last = UiStep.Wait("Restoring this character's top screen"); return
         }
-        val rcol = restore.step(r, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+        val rcol = restore.step(r, s, live, now, settleAt())
         if (rcol != null) {
             last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait("The game has not published its tap pad")
             return
         }
         if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
-        val step = policy.step(s, room.name, eff, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+        val step = policy.step(s, room.name, eff, live, now, settleAt())
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
             return
@@ -825,11 +829,11 @@ object GameUi {
         try {
             val sws0 = sw; val nx = sws0?.let { swNext(it) { p -> swWant(p) } }
             val why = "step=${step.javaClass.simpleName} char=${character != null} sw=${sws0 != null} next=$nx col=${if (sws0 != null && nx != null) swCol(sws0, nx.first, nx.second) else null} " +
-                "state=${s != null} current=${s?.current} live=$live settled=${now >= helloAt + GameUiPolicy.SETTLE_MS}"
+                "state=${s != null} current=${s?.current} live=$live settled=${now >= settleAt()}"
             if (why != swWhy) { swWhy = why; android.util.Log.i("DSFTAP", "switches: $why") }
         } catch (t: Throwable) { android.util.Log.i("DSFTAP", "switches: diag threw $t") }
         if (step !is UiStep.Tap) {
-            val col = castBar.step(castBarHidden, castBarHide(), eff, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+            val col = castBar.step(castBarHidden, castBarHide(), eff, s, live, now, settleAt())
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
             // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
             else if (character != null) {
@@ -840,7 +844,7 @@ object GameUi {
                 val next = sws?.let { swNextSkip(it, swBack.parked(now)) { p -> swWant(p) } }
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
-                    now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                    now >= settleAt()) {
                     // one tap, the next only after this part's own answer (its word / set) or 1.5 s; after 3 unanswered taps one
                     // probe every 30 s (TapBackoff). s.n (every tap on the row) no longer stands in for this part's answer
                     val part = next!!.first
@@ -862,7 +866,7 @@ object GameUi {
                     val hudSig = listOf(prdSel, prdY, prdW, prdS)
                     hudBack.answered { hudSig }
                     if (todo != null && s != null && live && s.current && s.hasRow &&
-                        hudBack.due(HUD_KEY, now) && now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                        hudBack.due(HUD_KEY, now) && now >= settleAt()) {
                         hudBack.tapped(HUD_KEY, hudSig, now)
                         val cur = todo.cur!!; val want = todo.want!!
                         val selNow = prdSel ?: "y"
@@ -941,5 +945,6 @@ object GameUi {
 
     private const val ROW = "ui"      // Hub.lua ROW
     private const val HUD_KEY = "hud" // PR #533: hudBack's one key
+    private const val LOAD_SETTLE_MS = 1_000L  // Linux Streaming Edition: after the loading screen went
     private const val KEY_WAIT_MS = 15_000L  // Linux Streaming Edition: the restore waits this long for the key handshake
 }

@@ -34,6 +34,18 @@ object GameInput {
     @Volatile var typing = false
         private set
 
+    // Linux Streaming Edition (2026-11-19, Thor: the login's taps went while its loading screen was still up, and every one was lost):
+    // the game counts as loading from a current hello (login / reload: the add-ons load under the loading screen, so they only ever
+    // see its end) or Core.lua's {"type":"load","on":true} until its {"on":false}; at most LOAD_MAX_MS (a lost end never blocks taps)
+    @Volatile private var loadingSince = 0L
+    /** when the last loading screen went (0 = none seen since the app started) */
+    @Volatile private var loadOver = 0L
+    fun loadOverAt(): Long = loadOver
+    fun loadingStart(now: Long = System.currentTimeMillis()) { loadingSince = now }
+    fun loadingEnd(now: Long = System.currentTimeMillis()) { if (loadingSince != 0L) loadOver = now; loadingSince = 0L }
+    fun loading(now: Long = System.currentTimeMillis()) = loadingSince != 0L && now - loadingSince < LOAD_MAX_MS
+    private const val LOAD_MAX_MS = 60_000L
+
     /** where refusals and failures are shown (the hub's status line); called on any thread */
     @Volatile var onStatus: (String) -> Unit = {}
 
