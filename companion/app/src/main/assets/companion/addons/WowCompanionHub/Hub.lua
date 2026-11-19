@@ -4592,8 +4592,10 @@ end
 -- SoftTargetInteractArc 1 = in front). OFF: every value of ours back to what the game had before (kept in WowCompanionDB.softTgt.orig;
 -- a value the player changed meanwhile stands). The switch is per account (WowCompanionDB.softTgtOff); for now /wcsoft on|off (the app
 -- tile comes with the next app build). Out of a fight only (written at the next PLAYER_REGEN_ENABLED otherwise).
-local ST = { CV = { { "SoftTargetTooltipEnemy", "1" }, { "SoftTargetTooltipFriend", "1" }, { "SoftTargetTooltipInteract", "1" },
-                    { "SoftTargetInteract", "3" }, { "SoftTargetInteractArc", "1" } }, pend = false }
+-- RESULT (22:35 trace + the console log): from an add-on only TooltipInteract takes (the box over corpses and objects: works). WoW
+-- Forever marks SoftTargetEnemy / SoftTargetEnemyRange / SoftTargetInteract "read only or secure" (even from a pressed macro): its
+-- own gamepad targeting (C_GamepadTargeting, the reticle) owns them, so no box over a live enemy from here.
+local ST = { CV = { { "SoftTargetTooltipInteract", "1" } }, pend = false }
 hub.softTgt = ST
 local function stGet(n) local ok, v = pcall(function() return C_CVar.GetCVar(n) end); if ok and v ~= nil then return tostring(v) end end
 local function stSet(n, v) return pcall(function() C_CVar.SetCVar(n, v) end) end
@@ -4604,9 +4606,11 @@ function ST.apply()
     ST.pend = false
     local rec = WowCompanionDB.softTgt or { orig = {}, mine = {} }
     rec.orig, rec.mine = rec.orig or {}, rec.mine or {}
+    rec.seen = {}                                                    -- what the game said, for a log read (SavedVariables)
     for _, cv in ipairs(ST.CV) do
         local n, want = cv[1], cv[2]
         local cur = stGet(n)
+        rec.seen[n] = tostring(cur)
         if cur ~= nil then
             if ST.on() then
                 if tonumber(cur) ~= tonumber(want) then
@@ -4619,7 +4623,48 @@ function ST.apply()
             end
         end
     end
+    rec.after = {}
+    for _, cv in ipairs(ST.CV) do rec.after[cv[1]] = tostring(stGet(cv[1])) end
+    rec.ran = (rec.ran or 0) + 1
     WowCompanionDB.softTgt = rec
+end
+-- THE GAME REFUSES MOST OF THEM FROM AN ADD-ON (the trace, 22:19: TooltipEnemy / TooltipFriend / SoftTargetEnemy / SoftTargetInteract
+-- stayed as they were, only TooltipInteract took). A macro the player presses may set them (/console, the user's own "bind" macro did).
+-- So the add-on WRITES two account macros (CreateMacro / EditMacro: allowed out of a fight) and never presses them: "DSF Soft On" = the
+-- user's wanted values, "DSF Soft Off" = the game's own defaults (C_CVar.GetCVarDefault, read only). Rewritten at each login when they
+-- differ; a full account macro list = skipped.
+-- 22:3x: "tool tips dont show up when targeting": TooltipLocked = the box for the hard (selected) target too; DurationMs = it stays
+-- up (the default only flashes it). InteractArc dropped (255 chars; the account already keeps the user's 1).
+ST.MACRO_ON = { { "SoftTargetTooltipEnemy", "1" }, { "SoftTargetTooltipFriend", "1" }, { "SoftTargetTooltipLocked", "1" },
+                { "SoftTargetTooltipDurationMs", "60000" } }        -- the secure ones dropped (they only printed errors)
+function ST.body(on)
+    local lines = {}
+    for _, cv in ipairs(ST.MACRO_ON) do
+        local v = cv[2]
+        if not on then
+            local ok, d = pcall(function() return C_CVar.GetCVarDefault(cv[1]) end)
+            v = (ok and d ~= nil) and tostring(d) or nil
+        end
+        if v then lines[#lines + 1] = "/console " .. cv[1] .. " " .. v end
+    end
+    return table.concat(lines, "\n")
+end
+function ST.macros()
+    if type(CreateMacro) ~= "function" or type(GetMacroIndexByName) ~= "function" then return end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then ST.pend = true; return end
+    for _, m in ipairs({ { "DSF Soft On", true }, { "DSF Soft Off", false } }) do
+        local name, body = m[1], ST.body(m[2])
+        if #body > 0 and #body <= 255 then
+            local i = GetMacroIndexByName(name) or 0
+            if i == 0 then
+                local n = (type(GetNumMacros) == "function" and GetNumMacros()) or 0
+                if n < (MAX_ACCOUNT_MACROS or 120) then pcall(CreateMacro, name, "INV_MISC_QUESTIONMARK", body, nil) end
+            else
+                local _, _, cur = GetMacroInfo(i)
+                if cur ~= body then pcall(EditMacro, i, name, nil, body) end
+            end
+        end
+    end
 end
 SLASH_WCSOFT1 = "/wcsoft"
 SlashCmdList["WCSOFT"] = function(arg)
@@ -4628,16 +4673,23 @@ SlashCmdList["WCSOFT"] = function(arg)
     if arg == "on" then WowCompanionDB.softTgtOff = nil elseif arg == "off" then WowCompanionDB.softTgtOff = true
     else WowCompanionDB.softTgtOff = ST.on() or nil end
     ST.apply()
-    print("DS Forever: soft target " .. (ST.on() and "ON (tooltips, interact 3, arc 1)" or "OFF (the game's values back)"))
+    print("DS Forever: soft target " .. (ST.on() and "ON (object tooltip)" or "OFF (the game's values back)"))
 end
 do
     local ev = CreateFrame("Frame")
-    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do pcall(function() ev:RegisterEvent(e) end) end
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_LOGOUT" }) do pcall(function() ev:RegisterEvent(e) end) end
     ev:SetScript("OnEvent", function(_, e)
-        if e == "PLAYER_ENTERING_WORLD" then
+        if e == "PLAYER_LOGOUT" then
+            -- for a log read: what the game holds at log out / reload (after the player's macro press)
+            if type(WowCompanionDB) == "table" and type(WowCompanionDB.softTgt) == "table" then
+                local at = {}
+                for _, cv in ipairs(ST.MACRO_ON) do at[cv[1]] = tostring(stGet(cv[1])) end
+                WowCompanionDB.softTgt.atLogout = at
+            end
+        elseif e == "PLAYER_ENTERING_WORLD" then
             -- after the game's own saved options are in place (Trail's ag12 lesson): now and once more a moment later
             pcall(ST.apply)
-            if type(C_Timer) == "table" then C_Timer.After(3, function() pcall(ST.apply) end) end
-        elseif ST.pend then pcall(ST.apply) end
+            if type(C_Timer) == "table" then C_Timer.After(3, function() pcall(ST.apply); pcall(ST.macros) end) else pcall(ST.macros) end
+        elseif ST.pend then pcall(ST.apply); pcall(ST.macros) end
     end)
 end
