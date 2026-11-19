@@ -26,8 +26,10 @@ object GameUi {
     private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else mode(id) }
     /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
     private val castBar = CastBarPolicy()
-    /** hub13 HUD MODE: the game's player / target frames hidden, per character; the hub document's hud.hidden (null = no row) */
-    private val hud = CastBarPolicy(CastBarPolicy.HUD_SHOW, CastBarPolicy.HUD_HIDE)
+    /** hub67 (PR #532 reworked): the ONE restore tap per load; the hub document's `rst` (null = an add-on set without it) */
+    private val restore = RestorePolicy()
+    @Volatile private var rst: HubRestore? = null
+    /** hub13 HUD MODE: the game's player / target frames hidden; the hub document's hud.hidden (hub67: its Show column is RESTORE now) */
     @Volatile private var hudHidden: Boolean? = null
     /** hub15: HUD mode's bar place now (the hub document's prd: y, its range and step, Interact's WC.prd); null = no bar */
     @Volatile private var prdY: Int? = null
@@ -44,8 +46,8 @@ object GameUi {
     /** hub55 (the layout editor; Trail prd18): the layout owns the HUD's height and scale - the tap loop leaves them alone (the width
      *  stays a row); false = an older add-on (the loop as before) */
     @Volatile var prdLay = false; private set
-    private var hudHTapAt = 0L
-    private var hudHTapN = -1
+    /** PR #533: the HUD height / width / scale step's own back-off (one key, [HUD_KEY]) */
+    private val hudBack = TapBackoff()
     /** the character now ("Name-Realm", the host's from the padmap); null = not known yet: no HUD row */
     @Volatile var character: String? = null
         set(v) { if (field != v) { field = v; playerClass = classFor(v); reconcile(); changed() } }    // Smart Res: the new character's class (its party document, before or after)
@@ -71,6 +73,14 @@ object GameUi {
     fun init(c: Context) {
         appCtx = c.applicationContext
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("gameui", Context.MODE_PRIVATE)
+        if (prefs?.getBoolean(LOAD_REPORTS_KEY, false) == true) GameInput.load.reports = true
+    }
+
+    /** the add-ons reported a loading screen: from now on a login's taps wait for its end too ([LoadGate.reports], kept) */
+    fun loadReported() {
+        if (GameInput.load.reports) return
+        GameInput.load.reports = true
+        prefs?.edit()?.putBoolean(LOAD_REPORTS_KEY, true)?.apply()
     }
 
     fun mode(id: String): UiMode {
@@ -152,7 +162,10 @@ object GameUi {
 
     /** when the last CURRENT hello came (a login or a reload): the first hide waits for the loading screen (GameUiPolicy.SETTLE_MS) */
     @Volatile private var helloAt = 0L
-    fun onHello() { helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); hud.freshLogin() }
+    /** Linux Streaming Edition (2026-11-19): when the top-screen taps may start - never while the game loads ([GameInput.loading]),
+     *  then SETTLE_MS after the hello or LOAD_SETTLE_MS after the loading screen went, whichever is later */
+    private fun settleAt(): Long = GameInput.load.settleAt(System.currentTimeMillis(), helloAt, GameUiPolicy.SETTLE_MS, LOAD_SETTLE_MS)
+    fun onHello() { helloAt = System.currentTimeMillis(); GameInput.load.hello(helloAt); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
@@ -194,15 +207,9 @@ object GameUi {
                   val npf: Boolean? = null)
     @Volatile private var sw: Sw? = null
     private var swTapAt = 0L
-    private var swTapN = -1
-    // Linux Edition (added 2026-11-17): unanswered taps in a row; past MISS_MAX the retry slows to MISS_SLOW_MS (seen: uisw tapped
-    // every 2 s for minutes while WoW's settings window held the cursor, each tap a click in the screen's middle)
-    private var swMiss = 0
-    private var swWhy = ""
-    private var swPart = ""
-    private val swParked = HashSet<String>()
-    private var swParkedAt = 0L
-    private var hudMiss = 0
+    /** PR #533 (mummigast): a switch the game never answers backs off and is parked, so the ones after it still go ([TapBackoff]) */
+    private val swBack = TapBackoff()
+    private var swWhy = ""      // Linux Edition: the last "switches:" diagnostic logged (DSFTAP)
     /** parts: "player" / "target" shown (true) or hidden; "np" nameplates on; "prd" the resource bar on */
     const val SW_PLAYER = "player"; const val SW_TARGET = "target"; const val SW_NP = "np"; const val SW_PRD = "prd"; const val SW_WM = "wm"
     const val SW_PARTY = "party"
@@ -332,11 +339,16 @@ object GameUi {
     }]
     /** the switch to tap now: the first whose game word differs from the choice, or which the game has not had since its /reload */
     fun swNext(s: Sw, want: (String) -> Boolean): Pair<String, Boolean>? = swNextSkip(s, emptySet(), want)
-    /** Linux Edition: [swNext] without the parts in [skip] */
+    /** the game's word for [p] in [s] */
+    fun swWord(s: Sw, p: String): Boolean? = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
+        SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
+    /** PR #533: the game's answer to a tap of [p] - its word and its `set` flag (an answered tap moves one of them) */
+    fun swSig(s: Sw?, p: String): Any? = s?.let { swWord(it, p) to it.set[p] }
+    /** [swNext] without the parts in [skip] (PR #533: switches the game never answers, parked by [TapBackoff]). With every waiting
+     *  part parked this is null, and the HUD steps / meters may go meanwhile; a parked part comes back by itself for its one probe */
     fun swNextSkip(s: Sw, skip: Set<String>, want: (String) -> Boolean): Pair<String, Boolean>? =
         listOf(SW_PLAYER, SW_TARGET, SW_NP, SW_PRD, SW_WM, SW_PARTY, SW_ATK, SW_SHOTF, SW_SHOT, SW_PMODE, SW_UFP, SW_UFT, SW_UFTOT, SW_UFHPP, SW_UFHPT, SW_PS, SW_PET, SW_NBAR, SW_SRES, SW_NPF).filter { it !in skip }.firstOrNull { p ->
-            val now = when (p) { SW_PLAYER -> s.player; SW_TARGET -> s.target; SW_NP -> s.np; SW_WM -> s.wm; SW_PARTY -> s.party
-                                 SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
+            val now = swWord(s, p)
             // hub22: Auto Shot is the game's own saved option: only a CHOICE made here is sent (never the default over the game's)
             val chosen = p != SW_SHOT || character?.let { prefs?.contains("sw.$p.$it") } == true
             // hub28: while "In combat" is wanted (and the add-on knows it), the game's option follows the fight: not tapped
@@ -622,7 +634,7 @@ object GameUi {
         val m = mt
         val h = hs
         if (m == null && h == null) return
-        if (character == null || s == null || !live || !s.current || now < helloAt + GameUiPolicy.SETTLE_MS) return
+        if (character == null || s == null || !live || !s.current || now < settleAt()) return
         if (pad?.optJSONObject("rows")?.has(MT_ROW) != true || layOpen()) return
         // split-hud: the parts' words first (the same row, one tap at a time), then the meters'
         val col = h?.let { hsCol(it) } ?: m?.let { mtCol(it, dmgChosen(), cdmChosen(), partsChosen()) } ?: return
@@ -729,6 +741,8 @@ object GameUi {
         pad = h.optJSONObject("pad")
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
+        // hub67: the one-tap memory (absent from an older add-on set: no restore tap, nothing held)
+        rst = h.optJSONObject("rst")?.let { o -> if (o.has("col")) HubRestore(o.optInt("col", -1), o.optInt("n", 0), o.optBoolean("q", false)) else null }
         // hub17: the split switches (absent from an older add-on: no rows, no taps)
         sw = h.optJSONObject("sw")?.let { o ->
             val cols = HashMap<String, Int>()
@@ -795,7 +809,23 @@ object GameUi {
         val live = GameInput.live(now)
         // a state the game wrote before it went quiet says nothing about now
         val s = state?.let { if (live) it else it.copy(current = false) }
-        val step = policy.step(s, room.name, eff, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+        // hub67: this load's ONE restore tap goes before any other top-screen tap; the others wait for its answer (at most 3 s), then
+        // tap only what still differs from this character's choices
+        val r = rst
+        // Linux Streaming Edition (2026-11-19): while streaming, the restore (and every tap behind it) waits for the key handshake, at
+        // most KEY_WAIT_MS past the settle: a click right after world entry is often lost on Linux, and a lost restore costs ~20 taps
+        if (r != null && r.col >= 0 && r.n == 0 && !r.q && s != null && live && s.current &&
+            now >= settleAt() && now < settleAt() + KEY_WAIT_MS &&
+            TapBridge.keysPending(ctx, pad)) {
+            last = UiStep.Wait("Restoring this character's top screen"); return
+        }
+        val rcol = restore.step(r, s, live, now, settleAt())
+        if (rcol != null) {
+            last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait("The game has not published its tap pad")
+            return
+        }
+        if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
+        val step = policy.step(s, room.name, eff, live, now, settleAt())
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
             return
@@ -806,30 +836,27 @@ object GameUi {
         try {
             val sws0 = sw; val nx = sws0?.let { swNext(it) { p -> swWant(p) } }
             val why = "step=${step.javaClass.simpleName} char=${character != null} sw=${sws0 != null} next=$nx col=${if (sws0 != null && nx != null) swCol(sws0, nx.first, nx.second) else null} " +
-                "state=${s != null} current=${s?.current} live=$live settled=${now >= helloAt + GameUiPolicy.SETTLE_MS}"
+                "state=${s != null} current=${s?.current} live=$live settled=${now >= settleAt()}"
             if (why != swWhy) { swWhy = why; android.util.Log.i("DSFTAP", "switches: $why") }
         } catch (t: Throwable) { android.util.Log.i("DSFTAP", "switches: diag threw $t") }
         if (step !is UiStep.Tap) {
-            val col = castBar.step(castBarHidden, castBarHide(), eff, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
+            val col = castBar.step(castBarHidden, castBarHide(), eff, s, live, now, settleAt())
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
             // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
             else if (character != null) {
                 // hub17: the split switches first, one absolute tap at a time on their own row, the next after the game's answer (or 1.5 s)
                 val sws = sw
-                // Linux Edition (added 2026-11-17): a switch the game never answers (seen: the target frame) is parked after MISS_MAX
-                // tries so the ones after it (resource bar, nameplates...) still go; parked ones get another go every MISS_SLOW_MS
-                if (now - swParkedAt > MISS_SLOW_MS) swParked.clear()
-                val next = sws?.let { swNextSkip(it, swParked) { p -> swWant(p) } ?: swNext(it) { p -> swWant(p) } }
+                // PR #533: a part the game answered since its last tap is forgotten; a parked one sits out its slow wait
+                swBack.answered { p -> swSig(sws, p) }
+                val next = sws?.let { swNextSkip(it, swBack.parked(now)) { p -> swWant(p) } }
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
-                    now >= helloAt + GameUiPolicy.SETTLE_MS) {
+                    now >= settleAt()) {
+                    // one tap, the next only after this part's own answer (its word / set) or 1.5 s; after 3 unanswered taps one
+                    // probe every 30 s (TapBackoff). s.n (every tap on the row) no longer stands in for this part's answer
                     val part = next!!.first
-                    if (s.n != swTapN || part != swPart) swMiss = 0
-                    if (swMiss >= MISS_MAX && part !in swParked) { swParked.add(part); swParkedAt = now; swMiss = 0 }
-                    else if (s.n != swTapN || part != swPart || now - swTapAt > (if (swMiss >= MISS_MAX || part in swParked) MISS_SLOW_MS else 1500L)) {
-                        if (s.n == swTapN && part == swPart) swMiss++
-                        swPart = part
-                        swTapN = s.n; swTapAt = now
+                    if (swBack.due(part, now)) {
+                        swBack.tapped(part, swSig(sws, part), now); swTapAt = now
                         GameInput.tap(ctx, pad, sws.row, swCol)
                     }
                 }
@@ -842,11 +869,12 @@ object GameUi {
                         "y" -> Want("y", prdY, hudHeight(), prdDef, prdStep); "w" -> Want("w", prdW, hudWidth(), wDef, wStep)
                         else -> Want("s", prdS, hudScale(), sDef, sStep) } }
                         .firstOrNull { it.cur != null && it.want != null && it.cur != it.want }
+                    // PR #533: answered = the selected setting or a value moved; 3 unanswered taps, then one every 30 s
+                    val hudSig = listOf(prdSel, prdY, prdW, prdS)
+                    hudBack.answered { hudSig }
                     if (todo != null && s != null && live && s.current && s.hasRow &&
-                        (s.n != hudHTapN || now - hudHTapAt > (if (hudMiss >= MISS_MAX) MISS_SLOW_MS else 1500L)) &&
-                        now >= helloAt + GameUiPolicy.SETTLE_MS) {
-                        if (s.n == hudHTapN) hudMiss++ else hudMiss = 0
-                        hudHTapN = s.n; hudHTapAt = now
+                        hudBack.due(HUD_KEY, now) && now >= settleAt()) {
+                        hudBack.tapped(HUD_KEY, hudSig, now)
                         val cur = todo.cur!!; val want = todo.want!!
                         val selNow = prdSel ?: "y"
                         // the default is one tap (col 38); otherwise one step toward the choice
@@ -923,7 +951,8 @@ object GameUi {
     private fun changed() { for (l in listeners) l() }
 
     private const val ROW = "ui"      // Hub.lua ROW
-
-    private const val MISS_MAX = 3            // Linux Edition
-    private const val MISS_SLOW_MS = 30_000L  // Linux Edition
+    private const val HUD_KEY = "hud" // PR #533: hudBack's one key
+    private const val LOAD_REPORTS_KEY = "load.reports"
+    private const val LOAD_SETTLE_MS = 1_000L  // Linux Streaming Edition: after the loading screen went
+    private const val KEY_WAIT_MS = 15_000L  // Linux Streaming Edition: the restore waits this long for the key handshake
 }

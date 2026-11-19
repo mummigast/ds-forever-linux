@@ -25,7 +25,7 @@ if ENV_FILE.exists():
             os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
 
 import websockets
-import wow_linux
+import paircode, wow_linux
 import addons
 from websockets.asyncio.server import serve
 
@@ -223,6 +223,8 @@ def new_code():
         misses.pop(ip)                              # a new code: full attempts again, except addresses still locked out
     pairing["locked_at"] = 0.0
     log(f"*** Pairing code for the Thor: {pairing['code'][:3]} {pairing['code'][3:]} ***")
+    net = paircode.encode_tail(lan_addresses(), PORT)
+    if net: log(f"*** Other network (Thor on WireGuard / another subnet): {paircode.groups(net)} ***")
     code_file = STATE.parent / "pairing-code.txt"
     write_private(code_file, pairing["code"] + "\n")
 
@@ -678,8 +680,12 @@ async def tail_loop():
             await broadcast(msgs)
         await asyncio.sleep(0.05 if msgs else 0.2)   # quick while docs flow, light when idle
 
+# a WoW the Thor used is closed after this long with no Thor connected (swiping the app away leaves it running); 0 = never
+IDLE_CLOSE_S = int(float(os.environ.get("DSF_IDLE_CLOSE_MIN", "10")) * 60)
+
 async def wow_loop():
     last = None
+    thor_seen, alone_since = False, None             # idle close: a Thor used this WoW run; since when none is connected
     texts = {"none": "WoW isn't running on your PC", "starting": "Starting WoW on your PC…", "login": "WoW is at its login screen",
              "signing_in": "Signing in…", "charselect": "At character select", "world": "WoW is running on your PC"}
     while True:
@@ -687,6 +693,19 @@ async def wow_loop():
             w = await asyncio.to_thread(wow_now)
         except Exception as e:
             log("WoW check:", e); await asyncio.sleep(5); continue
+        now = time.monotonic()
+        if not w["running"]:
+            thor_seen, alone_since = False, None
+        elif sessions:
+            thor_seen, alone_since = True, None
+        elif thor_seen and alone_since is None:
+            alone_since = now
+        if wow_linux.idle_close_due(w["running"], thor_seen, alone_since, now, IDLE_CLOSE_S) and STEAM_PREFIX:
+            log(f"No Thor for {IDLE_CLOSE_S // 60} min: closing WoW and Battle.net")
+            n = await asyncio.to_thread(close_prefix, *STEAM_PREFIX)
+            log(f"closed {n} process(es)")
+            thor_seen, alone_since = False, None
+            await asyncio.sleep(2); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
         if key != last:
             if sessions and w["running"] and (last is None or last[0] != "running"):
@@ -874,6 +893,8 @@ def cli():
         f = STATE.parent / "pairing-code.txt"
         if f.exists() and subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True).returncode == 0:
             c = f.read_text().strip(); print(f"Pairing code: {c[:3]} {c[3:]}")
+            net = paircode.encode_tail(lan_addresses(), PORT)
+            if net: print(f"Other network (Thor on WireGuard / another subnet): {paircode.groups(net)}")
             pf = STATE.parent / "moonlight-pin.txt"
             if pf.exists() and time.time() - pf.stat().st_mtime < 600:
                 print(f"Moonlight PIN for Sunshine (last pairing): {pf.read_text().strip()}  → https://localhost:{SUNSHINE_WEB} → PIN")

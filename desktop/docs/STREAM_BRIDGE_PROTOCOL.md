@@ -68,6 +68,50 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
    If Moonlight paired but `pair_stream` never came (15 s), the Thor keeps the pairing (Moonlight's own PAIRED is the proof).
 8. The Thor remembers: address, Sunshine's ports and certificate (from the handshake), the bridge port, `token`, `host_id`, `pc_name`.
 
+### 3a. Other network: the PC's address as a second code (Desktop 0.2.37; the user's picks 2026-11-18, design B "Two steps")
+
+Everyone types the 6-digit secret exactly as before. A Thor that can't see the `_dsforever` advert (another subnet, a guest / mesh
+Wi-Fi that drops multicast, Tailscale / WireGuard) also types the **network code** Desktop shows under it, quieter, as "Other network"
+(a globe, then smaller boxes). The Thor's pairing panel has the same words and globe: an "Other network" button beside the keypad
+(touch; the controller reaches it with D-pad down past the boxes, A presses it), and Pair with no PC found opens the row by itself,
+the cursor in it, with "PC not found" under it. Both sides draw the codes as boxes, groups of 3.
+
+    net   = entry+ check                                        (digits only; always whole groups of 3)
+    entry = 1 + 5 digits: 192.168.0.0/16 (the offset in the range) | 2 + 8: 10.0.0.0/8 | 3 + 7: 172.16.0.0/12
+          | 4 + 7: 100.64.0.0/10 (Tailscale) | 5 + 10: any IPv4 | 6 + 5: the bridge port when it is not 48210 (at most once, first)
+          | 7 + 5 + 7: 192.168.0.0/16 then 100.64.0.0/10 (home, then Tailscale: the common pair)
+          | 0, 8, 9: reserved (the Thor refuses the code)
+    check = 1 to 3 digits bringing the code to whole groups of 3; the last is always Damm's check digit over everything before it:
+            1 = Damm | 2 = Damm of the entries read backwards, then Damm | 3 = ISO 7064 MOD 97-10's two, then Damm
+            none for a lone "1" entry: the commonest code stays 6 digits
+
+The entries are 6 digits or more and the check 3 at most, so the code's length says where the entries stop. Desktop carries at most two
+addresses: the home network's IPv4 on the interface with a default gateway (not a Hyper-V / WSL switch), then the first Tailscale IPv4.
+Examples: LAN 192.168.1.23 = `100 279` (6 digits, no check); with Tailscale 100.71.133.93 too = `700 279 049 289 390` (15).
+Vectors: `PairAddressTests.cs` (Desktop) and `PairCodeTest.kt` (Thor). Typos: wherever there is a check, Damm over the whole code
+catches every single wrong digit and every swap of neighbours, even a wrong kind digit that moves where the entries end. The 6-digit
+home code (the user's call: two groups, no separate check digit) catches only a wrong kind digit or an offset past 65535; another
+home address simply doesn't answer as this PC (below).
+
+The Thor joins the two (secret + network digits) as one code internally: a code with an address pairs with the PC mDNS found at one of
+its addresses; else it asks `GET /v1/info` at each address (at once, 2.5 s) and pairs with the first Desktop answer exactly as with an
+advert (its `fp` must then match the wss certificate); else with the PC picked on the screen; else it says "PC not reachable at
+<addresses>". A typo is refused before anything is dialled ("Check the Other network code."). A wrong secret clears the six boxes and
+keeps the network digits.
+
+**Trust is unchanged.** The address is only where to dial, as an mDNS answer is (unauthenticated in both cases). The proof is keyed by
+the 6 secret digits alone (step 3), so the code's strength and the bridge's attempt limits are what they were; the network digits are
+public facts about the PC and add nothing to guess. A program at a wrong or spoofed address is in the place a spoofed advert is
+today, with the same checks: its certificate must be the one its `/v1/info` names; another Desktop there answers `wrong_code`. What
+it can get is the Thor's HMAC over its own nonce, which, as today, a 6-digit secret can't protect from an offline search (why the
+code is single-use, lives 10 minutes and shows each new device in Desktop's list; a PAKE would close it). Over Tailscale the address
+is better than an advert: Tailscale itself binds 100.x to the PC's node key. After pairing, every route is pinned (the bridge's
+certificate, Sunshine's certificate), so a later impostor at that address fails the pin.
+Compatibility: an older Thor app types the 6 digits and pairs by mDNS as before (it has no Other network row); a new Thor with an
+older Desktop gets a 6-digit code and pairs as before. The Thor remembers the address it paired at (`Route.after`), and the welcome's
+`lan` / `tailscale` lists fill in the other routes, so reconnects need no mDNS; `AddressPolicy` still moves to the home LAN when mDNS
+sees the PC there.
+
 ## 4. A session (every connection after pairing)
 
 1. Thor → `{"t":"hello","proto":1,"device_id":"<id>","token":"<token>"}` (the first frame).
@@ -144,6 +188,91 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   that does not sign in gives `needs_you` true and a `status` "Sign-in needs you on the PC's Battle.net", and no new attempt for 2
   minutes. The Thor keeps its loading curtain over the stream until `screen` is `charselect` / `world` and `focused` (an older
   Desktop without `screen`: `focused` alone), and lifts it only for Battle.net's sign-in while `bnet` is `signin_needed`.
+- **[0.2.33] Battle.net's sign-in on the Thor again (the user, 2026-11-17: "we had it clipping the Battlenet screen before").**
+  0.2.8 to 0.2.32 sent `bnet` = `unknown` always and never started Battle.net, so the Thor's clipped sign-in (its `show` rectangle,
+  the zoom, the saved login typed after `bnet_ready`) could not happen. From 0.2.33 `bnet` is the PC's real state again, except
+  that `signin_needed` is never sent while WoW is at character select or in the world. On a connect, before WoW starts (and at WoW's
+  login screen): Battle.net not running = started (WoW waits up to 90 s for it, then starts without it); signed out = its sign-in
+  window in front on the streamed monitor, with `show`, until signed in; then WoW starts plainly (no `-launcherlogin`). WoW is not
+  pulled to the front over Battle.net's sign-in. `needs_you`'s `status` is now "Press Play in Battle.net".
+- **[0.2.33] A 309 is one neutral `connect` = `failed`.** 0.2.31 and 0.2.32 sent `region` = `refused` for WoW's "Fatal login
+  error (309)" after its region (super district) screen. The game's log does not say whether the district was refused or its realm
+  was out of reach: its `subRegionCount` is Battle.net's sub-region count (1 on the user's PC 2026-11-17 22:57 and 22:58, though the
+  region screen offered districts and `superDistrictID` 2 was asked for), and the district list logs no count. So from 0.2.33 every
+  309 is `login_error` `309` plus `connect` = `failed` (the Thor: "WoW can't reach its servers"; a newer Thor reads an older
+  Desktop's `region` = `refused` the same way), and `region` is never sent. After a 309 Desktop starts WoW again for a connected
+  Thor without using its one retry, at most `RegionRetryMax` (5) times per connect: WoW closed itself = started again; WoW stayed at
+  its own login screen (not the region screen) with its `login.txt` used up = restarted, so the new run asks the Thor
+  (`login_again`) for the login. With the PC's Battle.net signed out, its sign-in comes up on the Thor first. Whether a signed-out
+  PC Battle.net causes the 309 is not known (WoW's own Glue logon had succeeded before it).
+- **[0.2.33] A disabled SudoVDA.** Apollo's SudoVDA adapter present but disabled in Windows reads as there, not missing: no install
+  is offered; the `status` line (and, headless, `sunshine.problem` `screen_disabled` with its `why`) is "Enable SudoMaker display
+  adapter in Device Manager". Desktop never enables a device. The one-time install question waits until no Thor is connected or
+  streaming.
+- **[0.2.34] Stop and show it (the user's ruling 2026-11-18; 0.2.33 restarted WoW every ~20 s while Blizzard said "no servers
+  available").** The 0.2.33 restarts after a 309 are gone (WoW closed itself = started again; WoW back at its login after a
+  `login.txt` run = restarted, `RegionRetryMax`). After a server error the supervisor stops; the `wow` message keeps `connect` =
+  `failed`, adds `connect_code` (WoW's own code, `309`: `login_error` goes with the next screen switch) and `stopped` = `true` while
+  WoW is not signed in. The Thor shows the error in red ("WoW can't reach its servers (309)") with "Retry (A)" (A or a tap; nothing
+  else of the pad reaches the PC meanwhile) and sends **`{"t":"wow_retry"}`**: Desktop clears the error, asks Blizzard's version
+  again, then starts WoW, or restarts it at its login screen, ONCE per press (the new run asks the Thor for the login again,
+  `login_again`, as before; with the PC's Battle.net signed out its sign-in comes first). An older Thor app ignores `stopped`
+  and shows the 0.2.33 line over WoW's screen; an older Desktop ignores `wow_retry` (it never says `stopped`).
+- **[0.2.34] An outdated PC game.** Before WoW is started (and every tick while a Thor is connected) Desktop compares the active
+  `wowf` row of `<WoW>/.build.info` (its `Version`; its `Branch` = the region) with Blizzard's patch server
+  (`http://<region>.patch.battle.net:1119/wowf/versions`, `VersionsName` of that region; cached 5 minutes, 1 minute after no answer,
+  read in the background). Older = WoW is NOT started; the `wow` message says `pc_game` = `outdated`, `game_installed`,
+  `game_current` (full versions) and `stopped` = `true`; the Thor: "PC game needs an update (70938 -> 70959)" with "Retry (A)",
+  which checks again (`wow_retry`). No answer (offline) never blocks a start; a first check under way holds the start a few
+  seconds at most. Desktop patching the game itself (from Blizzard's CDN, no Battle.net) comes later.
+- **[0.2.35] One start per press; an older Thor.** A `wow_retry` while the last one's restart or start is still under way is that
+  same one (dropped); the press's own client closing again without a server error is "Press Play in Battle.net", never a second
+  start. A Retry not answered yet goes when the Thor disconnects or a new connect begins. The Thor says **`"wow_stop": true`** in
+  `hello` / `pair_hello` when it shows the stop with its own Retry. An older Thor (none; Thor 1487) reads neither `stopped` nor
+  `pc_game`, so while Desktop is stopped with WoW not running the `wow` message also says `state` = `start_failed` ("WoW didn't
+  start", not "Starting WoW" for ever) and the reason as `why`; WoW at its login keeps `running`. That older Thor's reconnect counts
+  as its Retry while Desktop is stopped, at most once every 2 minutes. Blizzard's version is asked only while a Thor is connected
+  (or a stream wants WoW). The start timeout's `why` is "no WoW window after 180 s" (never "sign in on the PC").
+- **[0.2.35] A missing install record.** `_forever_\Wow.exe` there but no `wowf` row in `.build.info` (the Agent dropped it on the
+  user's PC, 2026-11-18 06:32), or a row of another build than Wow.exe's own version (FileVersionInfo's text, read only) = WoW is NOT
+  started: `pc_game` = `repair`, `game_installed` = Wow.exe's version, `stopped` = `true`; the Thor: "PC game needs a repair" with
+  "Retry (A)". Desktop keeps its own copy of the last good row (`<data>\patch\wowf_row.json`, saved when the row's Version is
+  Wow.exe's); whenever it reads the install (every 10 s while a Thor is connected, and again right before every start), a MISSING row is added back from that copy when it is for Wow.exe's build (the file's other lines
+  byte for byte, its line ending kept, `.build.info.dsf-bak` beside it). A row that is there is never replaced. Never `.product.db`,
+  never the CASC store.
+- **[0.2.36] Desktop patches the PC game itself.** An outdated game (or one missing its install record) is patched from Blizzard's
+  CDN with no Battle.net, BY ITSELF as soon as Desktop sees it while a Thor is connected: one automatic attempt per Thor connect,
+  then one attempt per `wow_retry`. The method is the Thor's own updater's (the build's install manifest picked by the row's tags,
+  each changed `_forever_` file checked by its MD5); it writes only the configs in `Data/config`, missing `Data/indices/*.index`, the
+  changed `_forever_` files (Utils first, `Wow.exe` last; a file of the same content key in another flavor folder is COPIED) and the
+  `wowf` row of `.build.info` (last, read again right before). Never `Data/data`, never `.product.db`. It waits (up to 5 minutes)
+  while the Battle.net Agent is at work on the folder, never patches under a running WoW, and keeps ONE backup of the replaced
+  files (`_forever_\.dsf-backup\<old build>`) until the first login on the new build reaches character select, then deletes it; a
+  first start that crashes puts the old files back. A Desktop killed mid-install undoes it at its next start (its journal,
+  `<data>\patch\journal.json`). The `wow` message carries **`pc_patch`**: `{"state": checking | waiting | downloading | installing
+  | loading | failed | cancelled, "from": "70938", "to": "70959", "done": bytes, "total": bytes, "file", "file_no", "files",
+  "code", "need_mb", "eta_s"}` (`waiting` + `code` `agent` = Blizzard's updater is busy; `loading` = done, the new client starts;
+  `failed` codes: `no_answer`, `missing`, `checksum`, `space` (+ `need_mb`), `busy` (WoW running or a file in use), `agent_busy`,
+  `no_write`, `format`, `new_failed`, `error`). The Thor shows a bar ("Updating the game 70938 -> 70959", "64 / 127 MB") with
+  "Cancel (B)", which sends **`{"t":"pc_patch_cancel"}`** (refused once installing began: it is short), and a failure as a red row
+  with "Retry (A)" (`wow_retry`). An older Thor (no bar) gets the patch's line as `why`. The patch over, WoW is started once.
+  While it runs (and the new client loads) `state` is `starting`, never `start_failed` (1487 put "sign in on the PC" next to a
+  `start_failed`); a failed or cancelled patch stays a stop. A WoW open at its login is CLOSED by the attempt (never one signed
+  in); none starts by itself while WoW is signed in. The Agent is asked again right before the install. Any put-back follows what
+  is on disk (a half-done `File.Replace`, a crash right after a swap); one that can't finish keeps its journal for the next try.
+  A patch while an install still waits for its first login folds into it (the one backup kept). A failed or cancelled `pc_patch`
+  goes once the game is current by another route.
+- **[0.2.37] The virtual screen, quiet by default (the user's ruling 2026-11-18).** "Stream on its own screen" is OFF by default
+  (a 0.2.32-0.2.36 settings file's "on" was that version's default and reads as off; the player's own pick from 0.2.37 on is kept).
+  A PC with a monitor on and the setting off streams that monitor with no question, no pop-up and nothing about drivers to the
+  Thor; no driver is even looked for. A headless PC (or the setting on) gets the setup in Desktop's own window: SudoVDA turned off
+  = "Turn on" (pnputil /enable-device with the adapter's instance id found by its hardware id, through Windows' admin prompt, on
+  the player's click only), no driver = the Virtual Display Driver's install, a driver ready = a one-time test of our screen, "Start
+  Desktop when I sign in" (the HKCU Run entry, off by default) and a note that a headless PC must sign in to Windows by itself.
+  The one-time install question box is gone. To the Thor, every headless screen problem goes as `sunshine.problem` `needs_screen`
+  with `why` "pc needs a virtual screen: set it up in Desktop" (never `screen_disabled` / `no_screen` any more; a Thor reads all
+  three as that one line); the `status` line carries only a screen being made ("Making the stream's own screen", "Virtual screen
+  ready"), never a driver's absence.
 - **[S3] The streamed monitor.** Sunshine captures one monitor (the primary unless told otherwise). When no stream is running and WoW
   is on another monitor, Desktop points Sunshine at WoW's monitor (Sunshine restarts, ~25 s, and a `status` says so); during a stream
   it moves the WoW window onto the streamed monitor instead.
@@ -180,6 +309,23 @@ Moonlight PIN). **S2 adopted S3's wire format**; this file describes it as the T
   streamed, or a headless PC says "PC needs a virtual screen" (`problem` "needs_screen") - and tries again only when the Thor
   reconnects, on this message, or on a Test. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
+- **Settings follow** *(Desktop 0.2.37; the user's pick 2026-11-18; build 1489 ruling: ours only, WoW's own sync CVars are left to the game - on by default on both installs)* — DS Forever's OWN two saved tables
+  (WowCompanionDB, WowCompanionSpellsDB) between the Thor's kept copy (SvKeep) and the PC, only down a pinned wss connection, only while
+  WoW is not running on the PC. Merging is the Thor's alone (SvSync / SvMerge: per entry, the Thor's local entries win the first sync and
+  every conflict, nothing is ever dropped - the user's hard rule "dont delete my current hunters settings on local"); Desktop only reads
+  and writes the two files (WowSvSync).
+  - Thor → `{"t":"sv_read","v":1,"acct":"<sha-256 hex of the Thor's account folder name, lower-cased; never the name>"}`
+    after a welcome with WoW not running. Desktop picks the account folder (the hash's, else the remembered game account's "!" pick
+    from login_file, else the only one; else none) and answers
+    `{"t":"sv_files","state":"ok"|"none"|"running","why","acct","files":[{"var","exists","text","hash":"<sha-256 of the file>","at"}]}`.
+  - Thor → `{"t":"sv_write","v":1,"acct","docs":[{"var","n","lua":"{...}","if_hash"}]}` (sent after every `ok`, `docs`
+    possibly empty). Desktop writes `
+<var> = <lua>
+` only if the file's hash is still `if_hash` ("" = still missing), `n` > 0 and
+    the text is a bare table, a dated backup first (SavedVariables/dsf-sync-backups, the newest 5), temp + replace; it answers
+    `{"t":"sv_written","results":[{"var","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`. `written` /
+    `same` = the PC holds the table: the Thor's base for its later three-way merges of the PC's live `svkeep` documents.
+  - A start waits up to 6 s for a `sv_write` still owed.
 
 ## 8. What the Thor tells the player
 

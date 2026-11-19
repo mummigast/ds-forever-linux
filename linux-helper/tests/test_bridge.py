@@ -68,6 +68,25 @@ class Units(unittest.TestCase):
         self.assertEqual(wow_linux.short_error("Status has no name. (14400)"), "Status has no name (14400)")
 
 
+class IdleCloseAndPairCode(unittest.TestCase):
+    def test_idle_close(self):
+        due = wow_linux.idle_close_due
+        self.assertTrue(due(True, True, 0.0, 600.0, 600))
+        self.assertFalse(due(True, True, 0.0, 599.0, 600))     # not yet 10 min
+        self.assertFalse(due(True, False, 0.0, 9999.0, 600))   # started on the PC alone: never
+        self.assertFalse(due(True, True, None, 9999.0, 600))   # a Thor is connected
+        self.assertFalse(due(False, True, 0.0, 9999.0, 600))   # not running
+        self.assertFalse(due(True, True, 0.0, 9999.0, 0))      # turned off
+
+    def test_pair_code_matches_the_app(self):                   # PairCodeTest.kt's vectors
+        import paircode
+        self.assertEqual(paircode.encode_tail(["192.168.1.23"]), "100279")
+        self.assertEqual(paircode.encode_tail(["192.168.1.23", "100.71.133.93"]), "700279049289390")
+        self.assertEqual(paircode.mod97("32142829123456987654321611"), "82")
+        self.assertEqual(paircode.groups("700279049289390"), "700 279 049 289 390")
+        self.assertEqual(paircode.encode_tail(["127.0.0.1"]), "")
+
+
 class EndToEnd(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

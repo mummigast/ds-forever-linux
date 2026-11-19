@@ -77,6 +77,34 @@ namespace DsfDesktop.Tests
             A.Eq(ScreenPlan.Step.RemoveOurs, ScreenPlan.Decide(true, true, true, true, false, false), "no Thor: ours goes");
         }
 
+        /// <summary>
+        /// the user's PC 2026-11-17: Apollo's SudoVDA there but disabled in Windows (CM_PROB_DISABLED) read as "no driver", so Desktop
+        /// offered to install a third one, in a modal box on the PC during the Thor's sign-in. Now: no offer, one line naming the fix
+        /// (0.2.37: no question box at all; the window's Turn on, ScreenSetupTests)
+        /// </summary>
+        [Test]
+        public static void ADisabledSudoVdaIsNamedNeverOffered()
+        {
+            A.True(ScreenPlan.Offered(false, false, true), "disabled SudoVDA: nothing to offer");
+            A.False(ScreenPlan.Offered(false, false, false), "no driver at all: still asked once");
+            A.True(ScreenPlan.Offered(true, false, false));
+            A.Eq(ScreenPlan.Step.Fallback, ScreenPlan.Decide(true, true, false, false, true, ScreenPlan.Offered(false, false, true)), "a real screen is streamed");
+            A.Eq(ScreenPlan.Step.NeedsInstall, ScreenPlan.Decide(true, false, false, false, true, ScreenPlan.Offered(false, false, true)), "headless: says so");
+            A.Eq((ScreenPlan.EnableSudoVda, (string)null), ScreenPlan.NoDriverLine(true, true), "a real screen: the line, no problem");
+            A.Eq((ScreenPlan.EnableSudoVda, ScreenPlan.ProblemScreenDisabled), ScreenPlan.NoDriverLine(false, true), "headless: the Thor's curtain says it");
+            A.Eq((ScreenPlan.FallbackNote, (string)null), ScreenPlan.NoDriverLine(true, false), "as before without one");
+            A.Eq((ScreenPlan.Install, ScreenPlan.ProblemNeedsScreen), ScreenPlan.NoDriverLine(false, false));
+            A.True(ScreenPlan.EnableSudoVda.Length <= 60, "terse");
+            // 0.2.37: the Thor never gets the Device Manager line; headless it gets the one "set it up in Desktop" word
+            A.Eq(ScreenPlan.ProblemNeedsScreen, ScreenPlan.ThorWord(ScreenPlan.ProblemScreenDisabled));
+            A.True(SudoVda.HasId("ROOT\\SudoMaker\\SudoVDA\0\0"), "its hardware id, any case");
+            A.False(SudoVda.HasId("root\\parsec\\vdd\0\0"), "Parsec's adapter is not ours to use");
+            A.False(SudoVda.HasId(null));
+            // read only, on this PC: whatever it finds, it never throws
+            var problem = SudoVda.AdapterProblem();
+            A.True(problem == null || problem >= 0);
+        }
+
         [Test]
         public static void OwnOffIsThe0231HeadlessRule()
         {

@@ -37,20 +37,19 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | The video decoder is not forced to its top clock (heat); low latency and realtime priority stay | `dsforever/.../stream/StreamMedia.kt` |
 | Clicks land in the game world when streaming from Linux (not yet while a WoW window is open, see *Known problems*): a 4 px relative nudge (out, pause, back) before each click so WoW sees real mouse motion and hands its controller cursor to the mouse; a +1/-1 nudge sums to zero within one frame and does nothing | `dsforever/.../stream/StreamKeys.kt` |
 | Quiet-pad wait +90 ms while streaming (controller and mouse travel separately) | `companion/.../TapQuiet.kt`, `TapSink.kt` |
-| **PC address…** on the pairing screen: pair by IP where mDNS can't reach (VPN) | `dsforever/.../stream/StreamTop.kt`, `StreamScreens.kt` |
 | Update check and problem reports point at this fork, not upstream | `app/build.gradle.kts`, `companion/.../ProblemReport.kt` |
 | Reload UI works while streaming: F12 (the add-on's ReloadUI key) is let through; other F-keys stay blocked | `dsforever/.../stream/StreamKeys.kt` |
-| Unanswered game-switch taps back off to every 30 s after 3 tries (was every 2 s forever: ghost clicks with WoW's settings open) | `companion/.../GameUi.kt` |
 | `DSFTAP` log line per tap with its caller (diagnostics) | `TapBridge.kt`, `StreamKeys.kt` |
 | Click positions +1 screen px: on Linux the pointer landed ~1 px up-left (measured in WoW), on the edge of the tap pad's ~2 px rows, so the row above took the press | `dsforever/.../stream/StreamKeys.kt` |
 | The character is taken from a replayed document until a live one comes (a Thor joining a running game never learned it, so no per-character switch was sent) | `companion/.../CompanionHost.kt`, `GameUi.kt` |
-| A switch the game never answers is parked after 3 tries so the rest still go | `companion/.../GameUi.kt` |
 | The Linux PC helper (replaces DS Forever Desktop); it installs the add-ons from this repository, so they match the app built from the same checkout | `linux-helper/` |
+| The helper shows DS Forever's **Other network** code (the PC's address) under the pairing code, for a Thor on a VPN | `linux-helper/paircode.py`, `dsf_bridge.py` |
+| The helper closes WoW and Battle.net after 10 min with no Thor connected (only a WoW a Thor used; `DSF_IDLE_CLOSE_MIN`, 0 = never) | `linux-helper/dsf_bridge.py`, `wow_linux.py` |
 | **Keyboard shortcuts instead of clicks** (the key channel, off upstream, is on): CTRL-SHIFT + row key + column key presses the add-ons' hidden buttons without WoW's cursor, so quests, vendor (Sell junk, Repair), and the top-screen switches work with a WoW window open | `TapBridge.kt` (`KEYS_ON`), `TapKeys.kt`, `WowCompanion/TapPad.lua` |
 | Live-game key fixes: CTRL-SHIFT-PAGEDOWN is bound in WoW, so the HUD switch row takes the test row's RIGHT; with no row key left, a row key pressed **twice** picks a second row (RIGHT RIGHT + column = the layout row: minimap, chat, tracker) | `TapPad.lua` (`KEY_HOT`, `KEY_PAGE2`), `TapKeys.kt` |
-| **HUD switches, layout and cast bar remembered per character** by the add-on and put back at login: a relog no longer replays ~20 taps | `WowCompanionHub/Hub.lua` (hub58, hub59) |
 | **Fewer taps after login**: the Start button's mode and B's pet follow are derived or kept by the add-ons instead of told by the app | `WowCompanionQuests/Quests.lua`, `WowCompanionSpells` |
 | **Normal game UI** switch (Settings > Top screen > Game windows): minimap, chat, tracker and cast bar back in one tap; `/wcui reset` typed in the game's chat brings back the whole UI | `GameUi.kt`, `GameUiSection.kt`, `Hub.lua` |
+| No top-screen taps under a loading screen (`LoadGate`, from the add-on's loading-screen reports); while streaming the login's one restore tap waits for the key handshake (at most 15 s) | `companion/.../LoadGate.kt`, `GameUi.kt`, `TapBridge.kt` |
 | The app never downloads a game client onto the device (no automatic update for the local game) | `StartMode.kt` (`STREAM_ONLY`), `WoWForeverScreen.kt` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
@@ -76,8 +75,7 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
 - **Chat commands typed in the app's chat** (`/reload`, `/wcui ...`) are not sent: that button is a secure click, which keys can't
   press yet. Turn on *Normal game UI* and type them in the game's own chat window. Plain chat works from the app.
 - **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
-- **XP bar switch** (new in 1.0.34) does nothing yet (Thor, 2026-11-18).
-- Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled).
+- Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled; not being worked on).
 
 ## Untested
 
@@ -96,7 +94,7 @@ nameplates, Reload UI, 1.0.34's Edit layout (move + Save), Buffs and Cooldown Ma
 
 - Window focus: **Top screen**. With auto-lock, touching the bottom screen moves focus there and controller presses
   (L/R in the bottom menus, game buttons) stop arriving.
-- Pairing over a VPN: Streaming → **PC address…** → the PC's LAN IP.
+- Pairing over a VPN: tap **Other network** on the pairing screen and type the second code `dsf-bridge code` shows.
 
 ## Build
 

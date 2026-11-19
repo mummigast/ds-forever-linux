@@ -19,7 +19,9 @@ class StreamPartsTest {
         assertEquals(CodeEntry.Check.Ok("123456"), CodeEntry.validate("123-456"))
         assertEquals(CodeEntry.Check.Empty, CodeEntry.validate("   "))
         assertEquals(CodeEntry.Check.TooShort, CodeEntry.validate("12345"))
-        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1234567"))
+        // digits after the first 6 are the Other network code (PairCode): one Desktop never makes is refused, never cut off
+        assertEquals(CodeEntry.Check.BadAddress, CodeEntry.validate("1234567"))
+        assertEquals(CodeEntry.Check.TooLong, CodeEntry.validate("1".repeat(PairCode.MAX + 1)))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12a456"))
         assertEquals(CodeEntry.Check.NotDigits, CodeEntry.validate("12.456"))
         assertNull(CodeEntry.message(CodeEntry.Check.Ok("123456")))
@@ -43,15 +45,16 @@ class StreamPartsTest {
         val e = CodeEntry()
         e.up(); e.up(); e.up()                        // empty -> 0 -> 1 -> 2
         assertEquals(2, e.digits[0])
-        e.right(); e.down()                           // empty -> 9
-        assertEquals(9, e.digits[1])
-        e.down(); e.down()                            // 9 -> 8 -> 7
-        e.up(); e.up(); e.up(); e.up()                // 7 -> 8 -> 9 -> 0 -> 1 (wraps)
+        e.right(); repeat(11) { e.up() }              // empty -> 0 .. 9 -> 0 (wraps)
+        assertEquals(0, e.digits[1])
+        e.up()
         assertEquals(1, e.digits[1])
+        e.down()                                      // design B: D-pad down goes past the boxes, to Other network
+        assertTrue(e.onButton); e.up(); assertEquals(2, e.cursor)
         e.left(); e.left()                            // stops at the first box
         assertEquals(0, e.cursor)
         repeat(10) { e.right() }
-        assertEquals(5, e.cursor)
+        assertEquals(5, e.cursor)                     // the last box (the Other network row is closed)
         assertTrue(e.fill("000 111")); assertEquals("000111", e.code)
         assertFalse(e.fill("12")); assertEquals("000111", e.code)
     }
@@ -286,10 +289,12 @@ class StreamPartsTest {
         val hello = JSONObject(BridgeProtocol.hello("c1", "tok"))
         assertEquals("hello", hello.getString("t")); assertEquals("c1", hello.getString("device_id")); assertEquals("tok", hello.getString("token"))
         assertFalse(hello.has("addon_set"))                                   // unknown set: not sent
+        assertTrue("it shows Desktop's stop with its Retry (Desktop 0.2.35)", hello.getBoolean("wow_stop"))
         BridgeProtocol.addonSet = 391
         try { assertEquals(391, JSONObject(BridgeProtocol.hello("c1", "tok")).getInt("addon_set")) } finally { BridgeProtocol.addonSet = 0 }
         val ph = JSONObject(BridgeProtocol.pairHello("c1", "AYN Thor"))
         assertEquals("pair_hello", ph.getString("t")); assertEquals("AYN Thor", ph.getString("name")); assertTrue(ph.getBoolean("stream"))
+        assertTrue(ph.getBoolean("wow_stop"))
         // the proof as Desktop's PairingCodes.Proof computes it: HMAC-SHA256(code, "dsf-pair-v1|nonce|device"), lower-case hex
         val mac = javax.crypto.Mac.getInstance("HmacSHA256").apply { init(javax.crypto.spec.SecretKeySpec("123456".toByteArray(), "HmacSHA256")) }
         val want = mac.doFinal("dsf-pair-v1|abc|c1".toByteArray()).joinToString("") { "%02x".format(it) }

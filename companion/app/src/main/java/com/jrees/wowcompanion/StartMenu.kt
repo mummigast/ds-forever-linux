@@ -81,7 +81,7 @@ object StartMenu {
         }
         if (noLogin) Unit
         else if (game) {
-            if (SetupBridge.openStreamSettings != null) put(half(true), "Stream settings", STREAM, true)
+            if (SetupBridge.streamSettings != null) put(half(true), "Stream settings", STREAM, true)
             else put(half(true), "Restart game", RESTART, canRestart())
             y += bh + gap
             put(half(false), "Report issue", REPORT, true)
@@ -223,7 +223,7 @@ object StartMenu {
             }
             CHANGE -> { open = false; onChangeLogin?.invoke() }
             STREAM -> { open = false
-                val now = SetupBridge.openStreamSettings
+                val now = SetupBridge.openStreamSettings?.takeIf { SetupBridge.streamSettings != null }
                 if (now != null) now() else { SetupBridge.qualityFirst = true; ModeBridge.pick(StartMode.Mode.STREAM) } }
             RESTART -> { open = false; onRestart?.invoke() }
             SWITCH -> { open = false; onSwitch?.invoke() }
