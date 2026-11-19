@@ -75,7 +75,7 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
   press yet. Turn on *Normal game UI* and type them in the game's own chat window. Plain chat works from the app.
 - **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
 - **XP bar switch** (new in 1.0.34) does nothing yet (Thor, 2026-11-18).
-- Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled).
+- Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled; not being worked on).
 
 ## Untested
 
