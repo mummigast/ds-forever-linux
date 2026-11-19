@@ -9,8 +9,9 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 >
 > - **Not the official app.** To play WoW installed on the Thor, or to stream from Windows, use the official
 >   [DS Forever](https://github.com/Jreese702/DS-Forever): it does those better.
-> - **No support, no warranty.** Made and tested on one setup. You are welcome to try it, but please don't report its problems
->   to DS Forever's author.
+> - **Issues and pull requests are welcome here**, about this edition: [open an issue](https://github.com/mummigast/ds-forever-linux/issues).
+>   It is a hobby project tested on one setup, so answers come when there is time, and there is no warranty. Please don't report
+>   this edition's problems to DS Forever's author; changes that belong in DS Forever itself are best sent upstream.
 > - **No APKs here.** Build it yourself (see *Build*).
 > - Not affiliated with or endorsed by DS Forever's author, Blizzard Entertainment, WoW Forever or GameNative. World of Warcraft
 >   and Battle.net are trademarks of Blizzard Entertainment; you need your own game and account.
@@ -51,6 +52,9 @@ options: [FORK.md](FORK.md#build).
   enemies, not friendly units or NPCs.
 - Right after connecting, the camera may turn by itself until the right stick is moved.
 - More, and what is still untested: [FORK.md](FORK.md#known-problems).
+
+Found another one? [Open an issue](https://github.com/mummigast/ds-forever-linux/issues) with what you did, what you expected and
+what happened (the helper's log, `journalctl --user -u dsf-bridge`, helps).
 
 ## Licence and credits
 

@@ -8,9 +8,10 @@ to an AYN Thor, at home or over a VPN such as WireGuard, with the Linux helper i
 Desktop. It is not meant for playing WoW installed on the Thor itself: **for that, and for streaming from Windows, use
 the official [DS Forever](https://github.com/Jreese702/DS-Forever)** - it does those better.
 
-**A personal project.** Made to work on one setup. Anyone is free to try it, build it and change it under the GPL-3.0, but it
-comes with no support, no promises and no warranty (GPL-3.0 sections 15-16). Please don't report problems with this fork to
-DS Forever's author.
+**A personal project.** Made to work on one setup. Anyone is free to try it, build it and change it under the GPL-3.0.
+Issues and pull requests about this edition are welcome on [its own repository](https://github.com/mummigast/ds-forever-linux/issues)
+and answered when there is time; there are no promises and no warranty (GPL-3.0 sections 15-16). Please don't report problems with
+this fork to DS Forever's author; a fix that belongs in DS Forever itself is best offered upstream.
 
 Unofficial: not affiliated with or endorsed by DS Forever's author, Blizzard Entertainment, WoW Forever or GameNative.
 World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you need your own game and account.
