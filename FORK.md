@@ -49,6 +49,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Live-game key fixes: CTRL-SHIFT-PAGEDOWN is bound in WoW, so the HUD switch row takes the test row's RIGHT; with no row key left, a row key pressed **twice** picks a second row (RIGHT RIGHT + column = the layout row: minimap, chat, tracker) | `TapPad.lua` (`KEY_HOT`, `KEY_PAGE2`), `TapKeys.kt` |
 | **Fewer taps after login**: the Start button's mode and B's pet follow are derived or kept by the add-ons instead of told by the app | `WowCompanionQuests/Quests.lua`, `WowCompanionSpells` |
 | **Normal game UI** switch (Settings > Top screen > Game windows): minimap, chat, tracker and cast bar back in one tap; `/wcui reset` typed in the game's chat brings back the whole UI | `GameUi.kt`, `GameUiSection.kt`, `Hub.lua` |
+| No top-screen taps under a loading screen (`LoadGate`, from the add-on's loading-screen reports); while streaming the login's one restore tap waits for the key handshake (at most 15 s) | `companion/.../LoadGate.kt`, `GameUi.kt`, `TapBridge.kt` |
 | The app never downloads a game client onto the device (no automatic update for the local game) | `StartMode.kt` (`STREAM_ONLY`), `WoWForeverScreen.kt` |
 | Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
 | One-command Linux build | `linux-build.sh` |
