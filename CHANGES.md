@@ -12,6 +12,7 @@ Newest first. Based on DS Forever 1.0.35 (upstream add-on set 404). What differs
   helper's log) now show it under the 6-digit code; type both on the Thor.
 - The helper closes WoW and Battle.net after 10 minutes with no Thor connected (swiping the app away left the game running).
   A WoW started on the PC alone is never closed. Setting: `DSF_IDLE_CLOSE_MIN` (0 = never).
+- The **XP bar switch** works now (Thor, 2026-11-19).
 - Also from 1.0.35: crash fixes, stream settings on the bottom screen, settings sync safety, low-memory work; indoor maps build
   while the local game is closed (streaming: while the app is open and not streaming, as before).
 
