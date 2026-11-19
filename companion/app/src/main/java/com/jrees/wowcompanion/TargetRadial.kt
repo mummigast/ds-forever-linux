@@ -20,6 +20,30 @@ object TargetRadial {
     }
     val ROOT = Page()
 
+    /**
+     * A PICK THAT ASKS FIRST (an entry with `cf`: Abandon Pet's "Abandon Rex? Permanent.", Uninvite's, Promote's, Reset's) opens a REAL
+     * Yes / No pop-up over the wheel (the user on test 1502: "this needs to have a real yes no buttons pop up and a should not jump on that
+     * prompt"; it was a line "A yes, B no" and the second A jumped). Its two lines: the question, then what follows it (terse).
+     */
+    fun confirmLines(cf: String): Pair<String, String?> {
+        val t = cf.trim()
+        val q = t.indexOf("? ")
+        return if (q in 1 until t.length - 2) t.substring(0, q + 1) to t.substring(q + 2).trim() else t to null
+    }
+
+    /** what a press does while the Yes / No pop-up is up: A = Yes, B = No, every other press nothing (held from the game: PopupHold.Wheel) */
+    enum class Answer { YES, NO, NONE }
+    fun answer(k: String): Answer = when (k) { "PAD1" -> Answer.YES; "PAD2" -> Answer.NO; else -> Answer.NONE }
+
+    /** Quests q69: the pet's Rename (`ap` "rename") opens the app's keyboard pop-up; the game's own rename takes at most 12 letters
+     *  (StaticPopupDialogs RENAME_PET maxLetters) */
+    const val RENAME_MAX = 12
+    /** Quests q69's fixed run id that closes the rename field (cancel): never a menu entry's (two base-8 digits reach 63; the menu's
+     *  entries stop at 61, 63 is Abandon Pet's) */
+    const val RENAME_OFF_ID = 62
+    /** a greyed pick says why: the entry's own word (`wy`, e.g. "Can't rename this pet"), else the wheel's */
+    fun greyWhy(e: PlayerMenu.Entry): String = e.why ?: "Not available here"
+
     /** what the wheel's own controller reader takes for its opener's [input]. HOLD / READ: the sticks and the buttons. KEYS (Party
      *  mode: the PartyPad hands the presses in by `key`): the sticks only, so no press counts twice (the user, 2026-11-16: "the control
      *  sticks arent working on the party inspect radials, they are still walking and looking around"; the add-on keeps both sticks

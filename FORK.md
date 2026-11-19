@@ -56,6 +56,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Loot window "top screen" holds in fights too (upstream's i144 sends fight loot to the bottom screen) | `WowCompanionInteract/Interact.lua` (i166, `LOOT.top`) |
 | Friendly plates On = every friendly plate, through fights (upstream: only the target's, alpha 0 for the rest) | `WowCompanion/Trail.lua` (ag15) |
 | Soft-target object tooltip on; account macros *DSF Soft On/Off* for the tooltip settings WoW Forever accepts; `/wcsoft` | `WowCompanionHub/Hub.lua` (hub71) |
+| Upstream's Reset knows this edition's saved switches (`dotBoxOff`, `softTgtOff` = settings; `softTgt`, `dotBox` = never) | `companion/.../ResetPlan.kt` |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 

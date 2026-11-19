@@ -108,6 +108,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private lateinit var pauseView: HomePauseView
     /** the TARGET radial (Y out of a fight with a target; PadMap m101 / Quests q51) */
     private lateinit var targetRadial: TargetRadialView
+    private lateinit var targetRadialKb: ChatKeyboard
     /** 1.0.18: LB held on Home pictures the game's party targeting (LbPartyView) */
     private lateinit var lbView: LbPartyView
     private fun tradOpen() = ::targetRadial.isInitialized && targetRadial.isOpen
@@ -147,6 +148,39 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var lastBook: SpellsModel.Book? = null
     /** m62: the latest padmap (Settings' Smart Y section reads its Smart buffs) */
     private var lastPadMap: PadMapModel.Map? = null
+
+    /** General > Reset: the character playing now, else the one the radials' kept lists last belonged to (the game not up yet) */
+    private fun resetWho(): String? = GameUi.character?.takeIf { it.isNotEmpty() }
+        ?: getSharedPreferences("wc_radial", MODE_PRIVATE).getString("who", null)?.takeIf { ResetPlan.isCharKey(it) }
+
+    private val resetRun by lazy {
+        ResetRun({ getSharedPreferences(it, MODE_PRIVATE) }, svKeptDir(),
+            java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "DS Forever/combat")) { Log.i("WCSETUP", it) }
+    }
+    private val resetFlow by lazy {
+        ResetFlow(
+            live = { LauncherHooks.gameUp() && GameInput.live() },
+            gameUp = { LauncherHooks.gameUp() },
+            tap = { col -> TapBridge.tap(this, questsPad, HomePauseModel.ROW, col) { why -> Log.i("WCSETUP", "settings reset: tap refused ($why)") } },
+            apply = { b, all -> resetApply(b, all) },
+            reload = { if (GameInput.reload()) reloadStarted() },
+            clock = { SystemClock.elapsedRealtime() },
+            log = { Log.i("WCSETUP", it) })
+    }
+
+    /** the app's half of a reset, then every room reads its values again */
+    private fun resetApply(b: ResetPlan.Button, all: Boolean): ResetRun.Result {
+        val who = resetWho()
+        // the Thor's own game runs only in Local (streaming, the PC's does: the Thor's Config.wtf can be written now)
+        val localGame = LauncherHooks.gameUp() && PlayModes.current != PlayMode.STREAM
+        val r = resetRun.run(b, who, all, localGame)
+        val kinds = b.kinds
+        if (ResetPlan.Kind.SETTINGS in kinds) { Theme.use("classic"); Tr.setChoice(this, "auto"); Settings.resetDone(); FrameGen.resetDone() }
+        HomeSettings.resetDone(); GameUi.resetDone()
+        if (ResetPlan.Kind.SKILLS in kinds) { RadialMeta.reload(); if (::combatKeep.isInitialized) combatKeep.resetDone(if (all) null else who) }
+        if (ResetPlan.Kind.LAYOUTS in kinds && ::settings.isInitialized) settings.homeSection.dpadChanged()
+        return r
+    }
     private var lastGameMenu: JSONObject? = null
     private var lastAddonAt = 0L
     private var gmAckAt = 0L          // the game menu row's last answer (Radial.lua r12 "gmack") and its cell
@@ -986,6 +1020,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         settingsView.onReportSendNow = { DiagLog.stopRecording(); sendReport(ReportFlow.description.ifBlank { "(sent from Settings while recording)" }) }
         settingsView.onReportOpenSaved = { openSavedReport() }
+        // General > Support the Project (the user, 2026-11-19): the Ko-fi page, opened as the report's issue opens (openUrlOnTop)
+        settingsView.onOpenUrl = { url -> openUrlOnTop(url).also { DiagLog.event("app", "support link opened: $it") } }
+        // General > Reset (the user, 2026-11-19: "reset to defaults buttons, split into four"; ResetPlan / ResetRun / ResetFlow): the
+        // pop-up's Yes runs it - the add-on's half first while the game takes taps (the pause row's 20-27), then the app's, then Reload
+        settingsView.onReset = { b, all -> resetFlow.start(b, all); settingsView.invalidate() }
+        settingsView.resetWho = { resetWho() }
+        settingsView.resetWord = { b -> resetFlow.word(b) }
+        settingsView.resetBusy = { resetFlow.busy }
         settings.pad.padOverride = { k ->
             (::reportPage.isInitialized && reportPage.isOpen && run { reportPage.padKey(k); true }) ||
                 (::pathReview.isInitialized && pathReview.isOpen && run { pathReview.padKey(k); true }) ||
@@ -1098,13 +1140,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Log.i("WCLOG", "class radial: $what capHolder=${capHolder.ifEmpty { "-" }} room=${room.name} pause=${pauseView.isOpen} " +
                 "wheel=${radialView.isOpen} tool=${homeView.toolWanted()} barCursor=${barSelect.open}")
         }
-        castView.overlayOpen = {
-            radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
-                setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
-                (::dialogView.isInitialized && dialogView.covers()) ||
-                (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
-                (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
-        }
+        castView.overlayOpen = { overlayUp() }
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
@@ -1145,6 +1181,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
+        // Quests q69: the pet's Rename types on its own keyboard (Chat's borrowed field, as the Macros room's), over the wheel
+        targetRadialKb = targetRadial.makeKeyboard()
+        targetRadial.tapSpaced = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) { w -> Log.i("WCHOME", "context radial: rename taps: $w") } }
         // 1.0.18 (the user: "When holding LB i want the bottom screen to shift around like when opening a radial ... the players bar with
         // the A button glyph ... a cross layout of the other 4 party members with the dpad glyphs ... We are just visualizing it"): on
         // Home, LB alone held (CastView's reader) slides Home's panels aside - Party mode's view with them - and shows the targeting
@@ -1223,6 +1262,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(targetRadial, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(targetRadialKb, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
             addView(lbView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the radial's pin picker: over the room only (the bar stays below it)
@@ -1450,6 +1491,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // which room the app itself left, and when: a "B" release echoing this leave is not the player's B (HomeBack.isOwnLeave)
         if (r != was) { leftIds = HomeBack.leftOf(was.name, r.name); leftAt = SystemClock.uptimeMillis() }
         room = r
+        // fix/lb-home-only: a room opening while LB is held drops the LB picture at once
+        if (r != was && ::lbView.isInitialized && lbView.isShown2) lbEval()
         // Chat's cursor only where presses reach it: the Chat room, not Home's borrowed full-screen chat (chat session's switch)
         chatView.cursorOnShow = r == Room.CHAT
         if (enterProfessions) { enterProfessions = false; professionsView.post { professionsView.enter() } }
@@ -2831,6 +2874,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
                 if (current && ::interactView.isInitialized) interactView.onChatAnswer(msg)     // 1.0.8: an NPC window's field (chat22)
                 if (current && ::macrosView.isInitialized) macrosView.onChatAnswer(msg)           // the Macros room's field (chat22)
+                if (current && tradOpen()) targetRadial.onChatAnswer(msg)                          // q69: the pet's rename field (chat22)
             }
             "quests" -> msg.optJSONObject("q")?.let {
                 it.optJSONObject("pad")?.let { p -> questsPad = p }
@@ -3349,6 +3393,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val line = runCatching { SvKeep.store(svKeptDir(), d, d.variable in svArmed) }.getOrElse { "settings backup: NOT kept (${it.message})" }
                 if (line.isNotEmpty()) Log.i("WCSETUP", line)
             }
+            // PadMap m175: the add-on's half of a Settings > General reset answered (ResetFlow: then the app's half and Reload)
+            "dsfreset" -> if (current) ui.post { resetFlow.onAck(msg.optInt("col", -1), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
+                if (::settingsView.isInitialized) settingsView.invalidate() }
             "padclean" -> {
                 // m45: PadMap's automatic removal of our own old DS macros (no UI): one line per character
                 if (msg.optString("why") == "auto") Log.i("WCSETUP", "padclean: removed ${msg.optInt("removed")} old DS macros (auto; " +
@@ -3805,6 +3852,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             chatView.onPad(JSONObject().put("type", "guestpad").put("id", "chat").put("k", "PADFORWARD").put("n", --directN)); return
         }
         if (room == Room.BAGS && bagsView.ownsStart()) return          // bagsView.onPadKey already had it (the unclaimed route)
+        if (tradOpen() && targetRadial.ownsStart()) return              // the context wheel's pop-up (rename's Done): its own reader had it
         if (::interactView.isInitialized && interactView.ownsStart()) return   // an NPC window's keyboard: its Done (onPadKey had it)
         if (room == Room.MACROS && macrosView.ownsStart()) return      // the Macros room's keyboard: its Done (onPadKey had it)
         if (room == Room.PROFESSIONS && professionsView.ownsStart()) return   // the search's keyboard: its Search (onPadKey had it)
@@ -3901,14 +3949,37 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** LB alone held now (CastView's reader) */
     private var lbAloneNow = false
     /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
-     *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy) */
+     *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy).
+     *  fix/lb-home-only (the user 2026-11-19: "Pressing LB in menus like the auction house shows the party selected. That should only
+     *  appear on the home menu"): Home must be in front - the class wheel's own gate ([overlayUp]: an Interact window (AH, vendor, mail,
+     *  bank, trainer, loot), a dialog, the spells pop-up, a wheel, the keyboard tool, the bar cursor, Home's full-screen chat / map).
+     *  A room or one of those coming up while LB is held drops the picture at once (no fade); what the room does with LB is its own */
     private fun lbEval() {
-        val free = room == Room.HOME && !holdTalk.takesPad && !pauseView.isOpen && !tradOpen() && !(::radialView.isInitialized && radialView.isOpen) &&
+        val free = room == Room.HOME && !holdTalk.takesPad && !overlayUp() && !tradOpen() &&
             // 1.0.21 (the user, streaming: "when I press L it didnt show the party member targetor"): GameLife only knows the Thor's own
             // game; a live add-on stream (Local or Streaming) counts too
             (GameLife.worldNow || GameInput.live(System.currentTimeMillis())) && (!::chooserPanel.isInitialized || chooserPanel.visibility != View.VISIBLE) && !homeView.classBusy()
+        if (lbView.isShown2 && LbPartyView.dropNow(room == Room.HOME, overlayUp() || tradOpen())) {
+            lbView.drop()
+            // Home's sides back at once, unless the pause wheel / target radial now owns that slide
+            if (!pauseView.isOpen && !tradOpen()) homeView.pauseSlide(0f, LbPartyView.SIDE_PX)
+            return
+        }
         lbView.lb(lbAloneNow && free)
+        ui.removeCallbacks(lbWatch)
+        if (lbView.isShown2) ui.postDelayed(lbWatch, LB_WATCH_MS)
     }
+    /** while the picture is up, Home's cover is looked at again (a room / window opening while LB is held has no shoulder change) */
+    private val lbWatch = Runnable { if (!shell.hostGone() && ::lbView.isInitialized) lbEval() }
+    private val LB_WATCH_MS = 100L
+
+    /** b-radial-exclusive: another overlay is up over Home (the class wheel's gate, CastView.overlayOpen; the LB picture's too) */
+    private fun overlayUp(): Boolean =
+        radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || homeView.toolWanted() ||
+            setupView.visibility == View.VISIBLE || loginPrompt.isOpen || barSelect.open ||
+            (::dialogView.isInitialized && dialogView.covers()) ||
+            (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || spellsOverlay.visibility == View.VISIBLE ||
+            (room == Room.HOME && homeView.flow.screen.full.let { it == HomeModule.CHAT || it == HomeModule.MAP })
 
     /** feat/pause-power: the pause menu pushes Home's controller up (set at its open); the target radial keeps it (set at its open) */
     private var slideBarsUp = false

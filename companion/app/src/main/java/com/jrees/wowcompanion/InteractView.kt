@@ -325,11 +325,25 @@ class InteractView(context: Context) : View(context) {
 
     private fun takeKbd(msg: JSONObject) {
         val k = msg.optJSONObject("kbd")
-        if (k == null) { if (docCurrent && kbField != null) hideKeyboard(); return }
+        if (k == null) {
+            if (docCurrent && kbField != null) hideKeyboard()
+            if (docCurrent) {
+                kbClosed = null
+                // i167: a level box handed over by the red Search: now the Search itself
+                if (searchAfterField) {
+                    searchAfterField = false
+                    val col = msg.optJSONObject("auction")?.optJSONObject("act")?.let { slotOf(it, "search") } ?: -1
+                    if (col >= 0) send("ahsearch", col)
+                }
+            }
+            return
+        }
         kbOff = k.optInt("off", -1)
         val name = k.optString("name")
         // #536: a window hidden by X / the disc (the game keeping its own open) never opens the keyboard
         if (!InteractFieldKbd.mayOpen(docCurrent, name, kbField, dismissedSig != null && dismissedSig == sig)) return
+        // i167: a field B just closed is not opened again by a document written before the add-on heard the "kbd off"
+        if (InteractFieldKbd.justClosed(name, kbClosed, System.currentTimeMillis() - kbClosedAt)) return
         val kb = keyboard ?: return
         kbField = name
         kbMax = k.optInt("max", ChatStream.MAX).coerceIn(1, ChatStream.MAX)
@@ -357,9 +371,16 @@ class InteractView(context: Context) : View(context) {
     private var voiceWanted: String? = null
     private var voiceWantedAt = 0L
 
+    /** i167: the field B closed and when (see [InteractFieldKbd.justClosed]); the red Search's level box waiting for its Search */
+    private var kbClosed: String? = null
+    private var kbClosedAt = 0L
+    private var searchAfterField = false
+
     /** B / the keyboard's close: the add-on drops the field (the value stays as it was), the keyboard goes */
     private fun closeField() {
         if (kbOff >= 0 && !dryRun) TapBridge.tap(context, doc?.optJSONObject("pad") ?: padSource(), "iact", kbOff) { }
+        kbClosed = kbField; kbClosedAt = System.currentTimeMillis()
+        searchAfterField = false
         hideKeyboard()
     }
 
@@ -373,7 +394,16 @@ class InteractView(context: Context) : View(context) {
     }
 
     /** the keyboard is up: Start is its Done (the host asks before the pause wheel takes Start) */
-    fun ownsStart(): Boolean = kbField != null && visibility == VISIBLE
+    fun ownsStart(): Boolean = (kbField != null && visibility == VISIBLE) || sellOwnsStart()
+
+    /** i168: the auction house's Sell form with an item in it: Start is its Post (the add-on keeps Start then), never the pause wheel */
+    private fun sellOwnsStart(): Boolean {
+        if (visibility != VISIBLE || kind != Kind.AUCTION) return false
+        val d = doc ?: return false
+        val au = d.optJSONObject("auction") ?: return false
+        return AhSellGrid.ownsStart(d.optJSONObject("nav")?.optBoolean("on") == true, au.optString("tab"),
+            au.optJSONObject("sell")?.optJSONObject("item") != null)
+    }
 
     private var kbRepeat: String? = null
     private val kbTick = object : Runnable {
@@ -724,7 +754,7 @@ class InteractView(context: Context) : View(context) {
             }
             Kind.TRAINER -> {
                 for (sv in arr(d.optJSONObject("trainer"), "services"))
-                    if (sv.optString("cat") != "header") out.add(Entry("train ${sv.optInt("i")}", slotOf(sv), sv, K_TRAIN))
+                    if (sv.optString("cat") != "header") out.add(Entry(trCmd(sv), slotOf(sv), sv, K_TRAIN))
             }
             Kind.TAXI -> {
                 for (n in arr(d.optJSONObject("taxi"), "nodes")) out.add(Entry("taxi ${n.optInt("i")}", slotOf(n), n, K_TAXI))
@@ -787,20 +817,43 @@ class InteractView(context: Context) : View(context) {
      * selection event lands first). The first count seen (a replay, a new window) is only remembered.
      */
     private var petTrainSeen: Int? = null
+    private var petDropSeen: Int? = null
+    private var petScrollSeen: Int? = null
     private fun petTrainSync(msg: JSONObject, current: Boolean) {
         val tr = msg.optJSONObject("trainer")
-        if (tr == null) { petTrainSeen = null; return }
+        if (tr == null) { petTrainSeen = null; petDropSeen = null; petScrollSeen = null; return }
+        // Interact i170: a counted press the add-on dropped (the list changed, the game kept its own selection, a timeout ...): its reason
+        val dn = tr.optInt("ptwn", 0)
+        val dwas = petDropSeen
+        petDropSeen = dn
+        if (current && dwas != null && dn > dwas) str(tr, "ptw")?.let { note(it, false) }
+        // Interact i170b: a service off the game's visible page - the add-on asks for ONE real click on the game's own scroll arrow or
+        // track (trainer.pts: its point in game px; ptsn counts the asks). The game's scroll bar acts on a real mouse-down, so its own
+        // code scrolls (no taint); local and stream alike through tapGame. The add-on looks again and asks for the next (at most 8)
+        val sn = tr.optInt("ptsn", 0)
+        val swas = petScrollSeen
+        petScrollSeen = sn
+        val pts = tr.optJSONObject("pts")
+        if (current && swas != null && sn > swas && pts != null && pts.optInt("n") == sn && tr.optBoolean("pet") && !dryRun
+            && pts.has("x") && pts.has("y"))
+            TapBridge.tapGame(context, msg.optJSONObject("pad"), pts.optDouble("x"), pts.optDouble("y"),
+                "the game's trainer scroll (${pts.optString("step")} ${pts.optString("dir")})") { why -> post { note(why, false) } }
         val n = tr.optInt("ptc", 0)
         val was = petTrainSeen
         petTrainSeen = n
         if (!current || was == null || n <= was || !tr.optBoolean("pet") || dryRun) return
+        // i170: only a press whose row the add-on found (ptr 1) is tapped; the add-on refuses the rest (the old select-then-Train
+        // bought the game window's OWN selection). The Train cell is armed by the add-on only after the game took the row's selection.
+        if (tr.optInt("ptr", 0) != 1) return
         val pad = msg.optJSONObject("pad")
-        if (tr.optInt("ptr", 0) == 1) {
-            // i142: the game's own row click first (its selection, by its own code), then its Train button
-            postDelayed({ TapBridge.tap(context, pad, "itrain", 1) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
-            postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS + PET_ROW_MS)
-        } else postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+        // i142: the game's own row click first (its selection, by its own code), then its Train button
+        postDelayed({ TapBridge.tap(context, pad, "itrain", 1) { why -> post { note(why, false) } } }, PET_TRAIN_MS)
+        postDelayed({ TapBridge.tap(context, pad, "itrain", 0) { why -> post { note(why, false) } } }, PET_TRAIN_MS + PET_ROW_MS)
     }
+
+    /** Interact i170: a trainer service's command and cursor id, "train <i> <k>" (k = the add-on's identity of the service: its index
+     *  moves when the list changes); an add-on before i170 sends no k: "train <i>" */
+    private fun trCmd(sv: JSONObject) = "train ${sv.optInt("i")}" + (str(sv, "k")?.let { " $it" } ?: "")
 
     private var qtModeTapAt = 0L
     private fun qtModeSync(msg: JSONObject) {
@@ -815,24 +868,16 @@ class InteractView(context: Context) : View(context) {
         TapBridge.tap(context, msg.optJSONObject("pad"), "iact", col) { }
     }
 
-    private fun rowOf(cmd: String) = when (cmd.substringBefore(' ')) {
-        "opt", "take", "turnin", "pick", "trhead", "ahcat" -> "ipick"
-        "buy", "train", "pet", "mail", "ahres", "ahrow", "taxi", "bkdo", "loot" -> "ibuy"
-        "sell", "mailtake", "mailmoney", "mailall", "bkpick", "bkput", "lootdelc", "lootdelr", "maildetach", "ahsitem" -> "isell"
-        "lookbag", "ahfilter", "look" -> "ipick"
-        "tradein" -> "ibuy"
-        "tradeout", "tradepick" -> "isell"
-        "mailattach", "ahcancel" -> "ibuy"
-        else -> "iact"
-    }
+    private fun rowOf(cmd: String) = InteractRows.of(cmd)
 
     private var lastTapAt = 0L
 
     /**
      * One tap on the pad: [cmd] is what the addon will run and what its reply will echo.
      * [count] > 1 (a vendor purchase only) sends the count's own cell first, from the same touch.
+     * [pick] > 0 (i172, the auction house's star on a result row) sends the count cell pick-1 first ALWAYS (row 1 too): the row it names.
      */
-    private fun send(cmd: String, slot: Int, count: Int = 1) {
+    private fun send(cmd: String, slot: Int, count: Int = 1, pick: Int = 0) {
         val now = System.currentTimeMillis()
         blocked(now)?.let { note(it, false); return }
         if (slot < 0) { note("The game gave this no tap cell", false); return }
@@ -841,9 +886,9 @@ class InteractView(context: Context) : View(context) {
             note(if (count > 1) "Preview: qty $count, then $cmd" else "Preview: $cmd", true)
             return
         }
-        if (count > 1) {
+        if (count > 1 || pick > 0) {
             // same serial worker as the purchase, so the count always lands first
-            val sent = TapBridge.tap(context, doc?.optJSONObject("pad"), "iqty", count - 1) { why ->
+            val sent = TapBridge.tap(context, doc?.optJSONObject("pad"), "iqty", (if (pick > 0) pick else count) - 1) { why ->
                 post { pendingCmd = null; note(why, false) }
             }
             if (!sent) { note("The game cannot take a quantity yet: reload the game UI", false); return }
@@ -982,12 +1027,24 @@ class InteractView(context: Context) : View(context) {
             hit == "qty:+" -> qty = min(qtyMost, qty + 1)
             // the number itself jumps between one and the most that can be bought
             hit == "qty:max" -> qty = if (qty < qtyMost) qtyMost else 1
+            hit.startsWith("act:ahsearch|") && InteractFieldKbd.searchCommits(kbField) -> {
+                // i167 (the user 2026-11-19: "pressing the red search button does not accept what I typed"): the add-on's Search drops the
+                // field (kbdClose) and searched with the word it HAD; the typed text is handed over first, as the keyboard's own Search
+                // does (the word's Done searches; a level box's Done is followed by the Search itself)
+                if (kbField != "ahtext") searchAfterField = true
+                if (fieldStream.send()) { removeCallbacks(fieldTick); postDelayed(fieldTick, 500L) }
+            }
             hit.startsWith("act:") -> {
                 // a fixed action of the window: accept, decline, continue, repair, junk
                 val parts = hit.substring(4).split('|')
                 send(parts[0], parts[1].toInt())
             }
             hit.startsWith("why:") -> note(hit.substring(4), false)
+            hit.startsWith("fav:") -> {
+                // i172: a result row's star: the row's number through the count cell, then the star's cell ("fav:<row>|<col>")
+                val parts = hit.substring(4).split('|')
+                send("ahfav", parts[1].toInt(), pick = parts[0].toInt())
+            }
             hit.startsWith("voice:") -> {
                 // i161: the field opens (its own cell, as A) and the app opens its voice page on it
                 val parts = hit.substring(6).split('|')
@@ -1674,7 +1731,7 @@ class InteractView(context: Context) : View(context) {
         val rows = ArrayList<TRow>()
         var y = 4f
         if (step > 0) services.firstOrNull { it.optInt("i") == step && it.optString("cat") != "header" }?.let {
-            rows.add(TRow("train $step", y, 0f, lw, it, false)); y += 132f
+            rows.add(TRow(trCmd(it), y, 0f, lw, it, false)); y += 132f
         }
         var col = 0; var folded = false
         for (sv in services) {
@@ -1686,7 +1743,7 @@ class InteractView(context: Context) : View(context) {
                 continue
             }
             if (sv.optInt("i") == step || folded) continue
-            rows.add(TRow("train ${sv.optInt("i")}", y, col * (cw + 14f), cw, sv, false))
+            rows.add(TRow(trCmd(sv), y, col * (cw + 14f), cw, sv, false))
             if (col == 1) { y += 132f; col = 0 } else col = 1
         }
         if (col == 1) y += 132f
@@ -2782,7 +2839,19 @@ class InteractView(context: Context) : View(context) {
             } else {
                 c.drawText(Tr.t("No mail"), w.left, w.top + 30f, UiKit.inkPaint(26f))
             }
-            resultLine(c, inner.left + 24f, bx - 280f, cy, now)
+            // i167 (the user 2026-11-19: "there should be a button to open all of my mail"): Open All (X), the add-on's paced takes;
+            // pressed again (or B) it stops. A letter with a COD charge is never opened by it
+            val all = ml.optJSONObject("all")
+            val oaCol = ml.optJSONObject("act")?.let { slotOf(it, "openall") } ?: -1
+            val canAll = all != null || arr(ml, "mails").any { it.optLong("cod", 0) <= 0 && (it.optLong("money", 0) > 0 || it.optInt("items", 0) > 0) }
+            val oab = RectF(bx - 530f, cy - 55f, bx - 270f, cy + 56f)
+            stripButton(c, oab, if (all != null) "Stop" else "Open All", if (oaCol >= 0) "act:mailopenall|$oaCol" else "why:The game gave this no tap cell",
+                oaCol >= 0 && canAll, all != null, "rev_x", id = "mailopenall")
+            val am = ml.optJSONObject("allMsg")
+            if (am != null && (noteText == null || now - noteAt >= NOTE_MS)) {
+                val p = UiKit.bodyPaint(24f, if (am.optBoolean("ok")) Theme.gold else Theme.unusable)
+                c.drawText(Tr.t(fit(p, am.optString("words"), bx - 560f - inner.left - 24f)), inner.left + 24f, cy + 8f, p)
+            } else resultLine(c, inner.left + 24f, bx - 560f, cy, now)
         }
 
         UiKit.windowFrame(c, r, "Mailbox", UiKit.tex("mm_mailbox"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
@@ -3032,7 +3101,7 @@ class InteractView(context: Context) : View(context) {
      * Accept ([yesHit]: A) and Cancel ([noHit]: B). Nothing under it takes a touch meanwhile.
      */
     private fun ahConfirm(c: Canvas, r: RectF, title: String, lines: List<Pair<String, Int>>, money: List<Pair<String, Long>>,
-                          yesWord: String, yesHit: String, noHit: String) {
+                          yesWord: String, yesHit: String, noHit: String, yesGlyph: String = "rev_a", yesOn: Boolean = !yesHit.startsWith("why:")) {
         hits.clear()
         UiKit.cover(c, r)
         val w = 960f
@@ -3055,7 +3124,7 @@ class InteractView(context: Context) : View(context) {
         val bw = 330f; val bh = 104f
         val yes = RectF(inn.centerX() - 14f - bw, d.bottom - 40f - bh, inn.centerX() - 14f, d.bottom - 40f)
         val no = RectF(inn.centerX() + 14f, yes.top, inn.centerX() + 14f + bw, yes.bottom)
-        stripButton(c, yes, yesWord, yesHit, !yesHit.startsWith("why:"), pendingCmd != null, "rev_a", always = true)
+        stripButton(c, yes, yesWord, yesHit, yesOn, pendingCmd != null, yesGlyph, always = true)
         stripButton(c, no, "Cancel", noHit, true, false, UiKit.backGlyph(), always = true)
     }
 
@@ -3080,34 +3149,41 @@ class InteractView(context: Context) : View(context) {
         c.drawText(Tr.t("Your bags"), left.left + 18f, left.top + 36f, UiKit.bodyPaint(24f, Theme.gold))
         val bags = arr(sl, "bags")
         val view = RectF(left.left, left.top + 52f, left.right, left.bottom - 4f)
-        val rowH = 72f
-        viewB = view; contentB = bags.size * rowH + 8f
-        fun cmdOf(b: JSONObject) = "ahsitem ${b.optInt("bag")} ${b.optInt("s")} ${b.optInt("id")}"
-        val ci = bags.indexOfFirst { cmdOf(it) == cur }
+        // i167 (the user 2026-11-19: "Instead of an item list let's show a grid with collapsible bags"): the Bags room's slot tiles, a header
+        // per bag (A or a touch folds it), the add-on's own column count (AH.SCOLS: its cursor walks exactly these rows). The scroll is
+        // the view's own and only follows the cursor, so a post never sends it back to the top
+        val cells = AhSellGrid.layout(bags, arr(sl, "groups"), sl.optInt("cols", AhSellGrid.COLS), view.width())
+        viewB = view; contentB = AhSellGrid.height(cells)
+        val ci = cells.indexOfFirst { it.cmd == cur }
         if (ci >= 0 && cur != shownCatCur) {
             shownCatCur = cur
-            val top = ci * rowH
-            if (top < scrollB) scrollB = top else if (top + rowH > scrollB + view.height()) scrollB = top + rowH - view.height()
+            scrollB = AhSellGrid.follow(cells[ci].box, scrollB, view.height())
         }
         scrollB = scrollB.coerceIn(0f, max(0f, contentB - view.height()))
         val chosen = item?.let { "ahsitem ${it.optInt("bag")} ${it.optInt("s")} ${it.optInt("id")}" }
         c.save(); c.clipRect(view)
-        for ((k, b) in bags.withIndex()) {
-            val y = view.top + 4f + k * rowH - scrollB
-            if (y + rowH < view.top || y > view.bottom) continue
-            val rr = RectF(left.left + 8f, y, left.right - 8f, y + rowH - 6f)
-            val cmd = cmdOf(b)
-            UiKit.ahRowGround(c, rr, k % 2 == 1)
-            if (cmd == chosen) { pFill.color = Color.argb(70, Color.red(Theme.gold), Color.green(Theme.gold), Color.blue(Theme.gold)); c.drawRect(rr, pFill) }
-            UiKit.slot(c, itemIcon(b), rr.left + 6f, rr.top + 5f, rr.height() - 10f, count = b.optInt("n", 0), dim = b.optBoolean("locked"))
-            val np = UiKit.bodyPaint(23f, Theme.quality(b.optInt("q", 1)))
-            c.drawText(Tr.t(fit(np, b.optString("name", ""), rr.width() - rr.height() - 16f)), rr.left + rr.height() + 6f,
-                rr.centerY() - (np.ascent() + np.descent()) / 2f, np)
-            val s0 = slotOf(b)
-            hits.add(RectF(rr.left, max(rr.top, view.top), rr.right, min(rr.bottom, view.bottom)) to when {
-                b.optBoolean("locked") -> "why:That item is locked"; s0 >= 0 -> "act:$cmd|$s0"; else -> "why:The game gave this no tap cell" })
-            if (cur == cmd) UiKit.focus(c, rr)
+        var curBox: RectF? = null
+        for (cell in cells) {
+            val rr = RectF(view.left + cell.box.left, view.top + cell.box.top - scrollB, view.left + cell.box.right, view.top + cell.box.bottom - scrollB)
+            if (rr.bottom < view.top || rr.top > view.bottom) continue
+            val hr = RectF(rr.left, max(rr.top, view.top), rr.right, min(rr.bottom, view.bottom))
+            val o = cell.o
+            val s0 = slotOf(o)
+            if (cell.head) {
+                bagHead(c, rr, o)
+                hits.add(hr to if (s0 >= 0) "act:${cell.cmd}|$s0" else "why:The game gave this no tap cell")
+                if (cur == cell.cmd) UiKit.focus(c, rr)
+            } else {
+                val shown = JSONObject().put("quality", o.optInt("q", 1)).put("count", o.optInt("n", 1)).put("id", o.optInt("id"))
+                    .put("locked", o.optBoolean("locked"))
+                if (o.has("icon")) shown.put("icon", o.optInt("icon"))
+                BagsView.drawSlot(c, rr, shown, bagPaints, selected = cell.cmd == chosen)
+                hits.add(hr to when {
+                    o.optBoolean("locked") -> "why:That item is locked"; s0 >= 0 -> "act:${cell.cmd}|$s0"; else -> "why:The game gave this no tap cell" })
+                if (cur == cell.cmd) curBox = rr
+            }
         }
+        curBox?.let { UiKit.slotFocus(c, it) }
         c.restore()
         if (bags.isEmpty()) {
             val lay = layout("Nothing in your bags can be sold at auction", UiKit.bodyPaint(24f, Theme.dim), (left.width() - 36f).toInt(), 4f)
@@ -3125,21 +3201,21 @@ class InteractView(context: Context) : View(context) {
         if (item == null) {
             val lay = layout("Choose an item from your bags to sell it", UiKit.bodyPaint(27f, Theme.dim), (f.width() - 60f).toInt(), 6f)
             drawLayout(c, lay, f.left + 30f, f.top + 80f)
-            stripButton(c, postB, "Post", "why:Choose an item to sell", false, false, "rev_a", id = "ahspost")
+            stripButton(c, postB, "Post", "why:Choose an item to sell", false, false, POST_GLYPH, id = "ahspost")
         } else {
             val commodity = item.optBoolean("commodity")
             UiKit.ahItemHeader(c, RectF(f.left + 10f, f.top + 10f, f.right - 10f, f.top + 120f), itemIcon(item),
                 item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
             var y = f.top + 140f
             val gl = cur != null
-            // Quantity: X / Y (- / +), A or a touch on the number = the game's Max
+            // Quantity: Y / X (- / +; Interact i171, the user's ruling: Y is the left button on the Nintendo layout), A or a touch on the number = the game's Max
             val q = sl.optInt("qty", 1); val mx = sl.optInt("max", 1)
             if (mx > 1) {
                 val qy = y + 40f
                 c.drawText(Tr.t("Quantity"), f.left + 24f, qy + 10f, lab)
-                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
+                UiKit.square(c, "minus", f.left + 236f, qy, 72f, if (q > 1) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.LESS_GLYPH.takeIf { gl })
                 c.drawText(Tr.t(q.toString()), f.left + 313f, qy + 12f, UiKit.numberPaint(32f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
+                UiKit.square(c, "plus", f.left + 390f, qy, 72f, if (q < mx) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.MORE_GLYPH.takeIf { gl }, glyphRight = true)
                 if (q > 1) hits.add(RectF(f.left + 192f, qy - 44f, f.left + 280f, qy + 44f) to hitOf("ahsqty less", "sq_less"))
                 if (q < mx) hits.add(RectF(f.left + 346f, qy - 44f, f.left + 434f, qy + 44f) to hitOf("ahsqty more", "sq_more"))
                 hits.add(RectF(f.left + 282f, qy - 40f, f.left + 344f, qy + 40f) to hitOf("ahsqty max", "sq_max"))
@@ -3198,8 +3274,9 @@ class InteractView(context: Context) : View(context) {
             c.drawText(Tr.t("Total Price"), f.left + 24f, y + 10f, lab)
             UiKit.money(c, sl.optLong("total", 0), f.right - 24f, y, 30f, fromRight = true)
             val canPost = why == null && st != "posting" && st != "warn"
+            // i168: Start is Post (the user's pick "Start / Menu"; X / Y stay the quantity, A the fields); the cursor may rest on it greyed
             stripButton(c, postB, "Post", if (canPost) hitOf("ahspost", "spost") else "why:${why ?: "One moment"}", canPost,
-                pendingCmd == "ahspost", "rev_a", id = "ahspost")
+                pendingCmd == "ahspost", POST_GLYPH, id = "ahspost")
             // ---- the listings now, on the right (the game's own search for this item)
             val rows = arr(sl, "listings")
             UiKit.ahHeader(c, mk.left + 10f, mk.right - 10f, mk.top + 30f,
@@ -3227,7 +3304,7 @@ class InteractView(context: Context) : View(context) {
             val msg = sl.optJSONObject("msg")
             val (words, colour) = when {
                 st == "warn" -> "Answer the game's message" to Theme.gold
-                st == "posting" -> "Posting..." to Theme.dim
+                st == "posting" || sl.optBoolean("posting") -> "Posting..." to Theme.dim
                 st == "failed" -> "The game did not post it" to Theme.unusable
                 msg != null -> msg.optString("words") to (if (msg.optBoolean("ok")) Theme.gold else Theme.unusable)
                 item != null && why != null -> why to Theme.dim
@@ -3252,8 +3329,30 @@ class InteractView(context: Context) : View(context) {
             val q = sl.optInt("qty", 1)
             ahConfirm(c, r, "Post Auction", listOf((item.optString("name", "") + if (q > 1) "  x$q" else "") to Theme.quality(item.optInt("q", 1)),
                 (durs?.optString(sl.optInt("dur", 2) - 1) ?: "") to Theme.dim), money,
-                "Post", hitOf("ahspost", "spost"), act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}")
+                // i167: the confirm's Post is its own touch key (the strip's Post waits for its answer under the same command)
+                "Post", hitOf("ahspost", "spost").let { if (it.startsWith("act:")) "$it|confirm" else it }, act?.let { slotOf(it, "back") }?.takeIf { it >= 0 }?.let { "act:ahback|$it" } ?: "why:Press ${Glyphs.name("b")}",
+                // the user on 1502: "the second post button prompt is staying grayed out, it should just be colored" and "should also
+                // prompt with A": the confirm's Post is always the coloured red button while it is up (the add-on armed it, so it can
+                // post), with A's glyph - A posts (the cursor starts on it), Start still posts quietly, B cancels
+                yesGlyph = "rev_a", yesOn = true)
         }
+    }
+
+    /** i167: a bag's header in the Sell grid: the fold arrow (down open, right folded), its name, how many can be sold */
+    private fun bagHead(c: Canvas, r: RectF, g: JSONObject) {
+        UiKit.ahRowGround(c, r, false)
+        val shut = g.optBoolean("shut")
+        val ax = r.left + 20f; val ay = r.centerY()
+        val path = android.graphics.Path()
+        if (shut) { path.moveTo(ax - 6f, ay - 9f); path.lineTo(ax + 7f, ay); path.lineTo(ax - 6f, ay + 9f) }
+        else { path.moveTo(ax - 9f, ay - 6f); path.lineTo(ax + 9f, ay - 6f); path.lineTo(ax, ay + 7f) }
+        path.close()
+        pFill.color = Theme.gold; c.drawPath(path, pFill)
+        val np = UiKit.bodyPaint(23f, Theme.gold)
+        val cp = UiKit.numberPaint(22f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+        val n = g.optInt("n", 0).toString()
+        c.drawText(Tr.t(fit(np, g.optString("name", ""), r.width() - 70f - cp.measureText(n))), r.left + 38f, r.centerY() - (np.ascent() + np.descent()) / 2f, np)
+        c.drawText(Tr.t(n), r.right - 12f, r.centerY() - (cp.ascent() + cp.descent()) / 2f, cp)
     }
 
     private fun timeWord(n: Int) = when (n) { 0 -> "Short"; 1 -> "Medium"; 2 -> "Long"; 3 -> "Very Long"; else -> "" }
@@ -3343,8 +3442,26 @@ class InteractView(context: Context) : View(context) {
         }
 
         // ---- the categories, down the left (dragged / moved by the cursor)
-        val cat = RectF(inner.left + 4f, by0, inner.left + 334f, by1)
-        UiKit.ahPanel(c, cat, "ah_bg_categories")
+        val catP = RectF(inner.left + 4f, by0, inner.left + 334f, by1)
+        UiKit.ahPanel(c, catP, "ah_bg_categories")
+        // i167 (the user 2026-11-19: "There needs to be a reset button above the categories"): Reset (Y), the word / range / filters /
+        // category back to the window's start
+        val resetB = RectF(catP.left + 8f, catP.top + 6f, catP.right - 8f, catP.top + 66f)
+        val rcol = act?.let { slotOf(it, "reset") } ?: -1
+        // i171 (the user on 1502: Reset "graying out for some reason" - its cell was lost to the iact budget): always coloured; nothing
+        // to reset is a harmless no-op
+        stripButton(c, resetB, "Reset", if (rcol >= 0) "act:ahreset|$rcol" else "why:The game gave this no tap cell", true,
+            pendingCmd == "ahreset", "rev_y".takeIf { au.optJSONObject("item") == null }, id = "ahreset")
+        // i172 (the user 2026-11-19: "I should be able to see my favorites list"): Favorites under Reset, the game's star button over its
+        // categories (grey with no favourites); the favourites list shown = selected
+        val favB = RectF(catP.left + 8f, resetB.bottom + 6f, catP.right - 8f, resetB.bottom + 68f)
+        val favCol = act?.let { slotOf(it, "favs") } ?: -1
+        val hasFav = au.optBoolean("hasFav")
+        UiKit.ahNav(c, favB, "Favorites", 0, au.optBoolean("fav"), inset = 36f)
+        UiKit.favStar(c, favB.left + 34f, favB.centerY() - 2f, 34f, hasFav, if (hasFav) 255 else 110)
+        hits.add(favB to if (favCol >= 0) "act:ahcat fav|$favCol" else "why:The game gave this no tap cell")
+        if (cur == "ahcat fav") UiKit.focus(c, favB)
+        val cat = RectF(catP.left, favB.bottom + 6f, catP.right, catP.bottom)
         val cats = arr(au, "cats")
         viewB = cat; contentB = cats.size * 68f + 16f
         val ci = cats.indexOfFirst { "ahcat ${it.optString("i")}" == cur }
@@ -3366,7 +3483,7 @@ class InteractView(context: Context) : View(context) {
         }
         c.restore()
 
-        val rx0 = cat.right + 12f; val rx1 = inner.right - 4f
+        val rx0 = catP.right + 12f; val rx1 = inner.right - 4f
         // 1.0.8: THE GAME'S SEARCH BAR over the results (f-auction-house): the search box, Filter, Search
         searchBar(c, RectF(rx0, by0, rx1, by0 + 84f), au, act)
         val ry0 = by0 + 96f
@@ -3378,8 +3495,9 @@ class InteractView(context: Context) : View(context) {
             // ---- a commodity: the game's CommoditiesBuyFrame and its price tiers
             val bf = RectF(rx0, ry0, rx0 + 450f, by1)
             UiKit.ahPanel(c, bf, "ah_bg_commodities")
-            UiKit.ahItemHeader(c, RectF(bf.left + 10f, bf.top + 10f, bf.right - 10f, bf.top + 120f), itemIcon(item),
-                item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            val hd = RectF(bf.left + 10f, bf.top + 10f, bf.right - 10f, bf.top + 120f)
+            UiKit.ahItemHeader(c, hd, itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)), rightRoom = 104f)
+            favHeader(c, hd, item, act)
             val rows = arr(item, "rows")
             val q = au.optInt("qty", 1)
             var avail = 0
@@ -3395,9 +3513,9 @@ class InteractView(context: Context) : View(context) {
             c.drawText(Tr.t("Quantity"), bf.left + 30f, qy + 10f, lp)
             val canLess = q > 1; val canMore = q < avail
             val gl = cur != null
-            UiKit.square(c, "minus", bf.left + 236f, qy, 76f, if (canLess) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_x".takeIf { gl })
+            UiKit.square(c, "minus", bf.left + 236f, qy, 76f, if (canLess) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.LESS_GLYPH.takeIf { gl })
             c.drawText(Tr.t(q.toString()), bf.left + 313f, qy + 12f, UiKit.numberPaint(34f, Color.WHITE).apply { textAlign = Paint.Align.CENTER })
-            UiKit.square(c, "plus", bf.left + 390f, qy, 76f, if (canMore) UiKit.Button.UP else UiKit.Button.DISABLED, "rev_y".takeIf { gl }, glyphRight = true)
+            UiKit.square(c, "plus", bf.left + 390f, qy, 76f, if (canMore) UiKit.Button.UP else UiKit.Button.DISABLED, AhQty.MORE_GLYPH.takeIf { gl }, glyphRight = true)
             act?.let { slotOf(it, "less") }?.let { if (it >= 0 && canLess) hits.add(RectF(bf.left + 190f, qy - 46f, bf.left + 282f, qy + 46f) to "act:ahqty less|$it") }
             act?.let { slotOf(it, "more") }?.let { if (it >= 0 && canMore) hits.add(RectF(bf.left + 344f, qy - 46f, bf.left + 436f, qy + 46f) to "act:ahqty more|$it") }
             c.drawText(Tr.t("Unit Price"), bf.left + 30f, qy + 110f, lp)
@@ -3425,16 +3543,18 @@ class InteractView(context: Context) : View(context) {
             c.restore()
             val be = entry("ahbuy")
             val ok = be != null && be.slot >= 0 && avail > 0 && total <= purse
-            UiKit.hints(c, bx - 280f, cy, UiKit.backGlyph() to "Back")
+            val hx = UiKit.hints(c, bx - 280f, cy, "rev_minus" to "Favorite", UiKit.backGlyph() to "Back")
             stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && pendingCmd == "ahbuy", "rev_a")
             goCmd = be.takeIf { ok }
             if (!ok) goWhy = if (total > purse) "Not enough money" else "Nothing to buy"
-            resultLine(c, inner.left + 24f, bx - 420f, cy, now)
+            resultLine(c, inner.left + 24f, min(bx - 420f, hx - 24f), cy, now)
             if (buy != null && (buy.optBoolean("armed") || buy.optBoolean("waiting")))
                 box = { ahBox(c, r, item, buy.optInt("qty", q), buy.optLong("total", total), buy.optBoolean("waiting"), be, act) }
         } else if (item != null) {
             // ---- an item: its listings (Buyout, Bid, Time Left); yours dimmed
-            UiKit.ahItemHeader(c, RectF(rx0, ry0, rx1, ry0 + 110f), itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)))
+            val hd = RectF(rx0, ry0, rx1, ry0 + 110f)
+            UiKit.ahItemHeader(c, hd, itemIcon(item), item.optString("name", ""), Theme.quality(item.optInt("q", 1)), rightRoom = 104f)
+            favHeader(c, hd, item, act)
             val list = RectF(rx0, ry0 + 120f, rx1, by1)
             UiKit.ahPanel(c, list, "ah_bg_item_market")
             sortHeads(c, list.top + 30f, au, "item", listOf(Head("Buyout", list.left + 24f, "Buyout"),
@@ -3463,7 +3583,7 @@ class InteractView(context: Context) : View(context) {
             val pe = pick?.let { entry(it) }
             val price = pe?.o?.optLong("price", 0) ?: 0L
             val ok = pe != null && pe.slot >= 0 && price > 0 && !pe.o.optBoolean("mine") && price <= purse
-            UiKit.hints(c, bx - 280f, cy, UiKit.backGlyph() to "Back")
+            val hx = UiKit.hints(c, bx - 280f, cy, "rev_minus" to "Favorite", UiKit.backGlyph() to "Back")
             stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && pendingCmd == pe?.cmd, "rev_a")
             goCmd = pe.takeIf { ok }
             if (!ok) goWhy = when {
@@ -3473,7 +3593,7 @@ class InteractView(context: Context) : View(context) {
                 price > purse -> "Not enough money"
                 else -> "The game gave this no tap cell"
             }
-            resultLine(c, inner.left + 24f, bx - 420f, cy, now)
+            resultLine(c, inner.left + 24f, min(bx - 420f, hx - 24f), cy, now)
             if (buy != null && buy.optString("kind") == "item" && buy.optBoolean("armed")) {
                 val be = entry("ahrow ${buy.optInt("row")}")
                 box = { ahBox(c, r, item, max(1, buy.optInt("qty", 1)), buy.optLong("total", 0), false, be, act) }
@@ -3484,10 +3604,11 @@ class InteractView(context: Context) : View(context) {
             UiKit.ahPanel(c, res, "ah_bg_index")
             // the game's columns: Price, Name, the category's level column (Item Level for weapons and armour), Available
             val lvlWord = if (au.has("levelWord")) au.optString("levelWord") else null
-            sortHeads(c, res.top + 30f, au, "browse", listOfNotNull(Head("Name", res.left + 100f, "Name"),
+            sortHeads(c, res.top + 30f, au, "browse", listOfNotNull(Head("Name", res.left + 128f, "Name"),
                 lvlWord?.let { Head(it, -(res.right - 400f), "Level") },
                 Head("Price", -(res.right - 190f), "Price"), Head("Available", -(res.right - 24f), null)))
             val rows = arr(au, "results")
+            val favCell = act?.let { slotOf(it, "fav") } ?: -1
             val view = RectF(res.left, res.top + 58f, res.right, res.bottom - 4f)
             viewA = view; contentA = rows.size * 84f
             scrollA = scrollA.coerceIn(0f, max(0f, contentA - view.height()))
@@ -3499,8 +3620,11 @@ class InteractView(context: Context) : View(context) {
                 val row = RectF(res.left + 8f, ry, res.right - 8f, ry + 78f)
                 UiKit.ahRowGround(c, row, k % 2 == 1)
                 UiKit.slot(c, itemIcon(l), row.left + 14f, row.top + 10f, 58f)
+                UiKit.favStar(c, row.left + 100f, row.centerY(), 34f, l.optBoolean("fav"))         // i172: the game's favourite column
+                // i172b: Select turns the cursor's row's star: its glyph beside it
+                if (cur == "ahres ${l.optInt("i")}") UiKit.pad(c, "rev_minus", row.left + 100f, row.top + 12f, 34f)
                 val np = UiKit.bodyPaint(26f, Theme.quality(l.optInt("q", 1)))
-                c.drawText(Tr.t(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 560f else 400f))), row.left + 92f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
+                c.drawText(Tr.t(fit(np, l.optString("name", ""), row.width() - (if (lvlWord != null) 596f else 436f))), row.left + 128f, row.centerY() - (np.ascent() + np.descent()) / 2f, np)
                 if (lvlWord != null && l.optInt("lvl", 0) > 0) {
                     val lp = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                     c.drawText(Tr.t(l.optInt("lvl").toString()), row.right - 400f, row.centerY() - (lp.ascent() + lp.descent()) / 2f, lp)
@@ -3509,21 +3633,31 @@ class InteractView(context: Context) : View(context) {
                 val ap = UiKit.numberPaint(26f, Color.WHITE).apply { textAlign = Paint.Align.RIGHT }
                 c.drawText(Tr.t(l.optInt("count", 0).toString()), row.right - 16f, row.centerY() - (ap.ascent() + ap.descent()) / 2f, ap)
                 hits.add(RectF(row.left, max(row.top, view.top), row.right, min(row.bottom, view.bottom)) to "do:ahres ${l.optInt("i")}")
+                // i172: a finger on the star turns it (the row's number rides the count cell: rows past its 40 take Select)
+                val li = l.optInt("i")
+                hits.add(RectF(row.left + 74f, max(row.top, view.top), row.left + 126f, min(row.bottom, view.bottom)) to when {
+                    favCell < 0 -> "why:The game gave this no tap cell"
+                    li !in 1..FAV_PICK_MAX -> "why:Press ${Glyphs.name("select")}"
+                    else -> "fav:$li|$favCell" })
                 if (cur == "ahres ${l.optInt("i")}") { UiKit.focus(c, row); tipRowY = row.top }
             }
             c.restore()
             if (rows.isEmpty()) {
                 val searched = (au.optJSONArray("path")?.length() ?: 0) > 0 || au.optJSONObject("search")?.optString("text").orEmpty().isNotEmpty()
-                val words = if (searched) "Nothing found" else "Choose a category, or search"
-                c.drawText(Tr.t(words), res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
+                // i172b: the opening Favorites search still on its way (no results asked back yet): no words
+                val words = if (au.optBoolean("fav")) (if (au.has("results")) "No favorites" else "") else if (searched) "Nothing found" else "Choose a category, or search"
+                if (words.isNotEmpty()) c.drawText(Tr.t(words), res.left + 30f, view.top + 50f, UiKit.bodyPaint(26f, Theme.dim))
             }
-            resultLine(c, inner.left + 24f, bx - 300f, cy, now)
-            UiKit.hints(c, inner.right - 16f, cy, "rev_a" to "Open", UiKit.backGlyph() to "Back")
+            // i172b: Select = the star of the row under the cursor
+            val hx = UiKit.hints(c, inner.right - 16f, cy, "rev_a" to "Open", "rev_minus" to "Favorite", UiKit.backGlyph() to "Back")
+            resultLine(c, inner.left + 24f, min(bx - 300f, hx - 24f), cy, now)
         }
         // ---- THE TOOLTIP (user, 2026-09-30: "we need tool tips in the ah"), as at the vendor: two thirds of a half, over
         // the half away from the cursor (the categories), level with the cursor's row; X held: Currently Equipped on the
         // cursor's half. The result under the cursor, or the item opened (with or without a cursor).
-        val tipKey = cur?.takeIf { it.startsWith("ahres ") || it.startsWith("ahrow ") || it == "ahbuy" } ?: if (item != null) "ahbuy" else null
+        // i167: a finger's chosen listing shows its tooltip as the cursor's does (its own link, its stats)
+        val tipKey = cur?.takeIf { it.startsWith("ahres ") || it.startsWith("ahrow ") || it == "ahbuy" }
+            ?: selected?.takeIf { it.startsWith("ahrow ") } ?: if (item != null) "ahbuy" else null
         if (tipKey != null && box == null) tipFor(tipKey)?.let { t ->
             val res = if (tipKey.startsWith("ahres ")) arr(au, "results").firstOrNull { "ahres ${it.optInt("i")}" == tipKey } else null
             val nm = res?.optString("name", "") ?: item?.optString("name", "") ?: ""
@@ -3535,6 +3669,15 @@ class InteractView(context: Context) : View(context) {
         UiKit.windowFrame(c, r, name, UiKit.tex("mm_auctioneer"), Theme.gold, closeDown = pressed == "x", closeB = closeB())
         box?.invoke()
         au.optJSONObject("search")?.let { sr -> if (sr.optBoolean("open")) filterList(c, r, sr, act) }
+    }
+
+    /** i172: the item opened's favourite star at its header's right (the game's ItemDisplay.FavoriteButton); a finger turns it */
+    private fun favHeader(c: Canvas, hd: RectF, item: JSONObject, act: JSONObject?) {
+        val cx = hd.right - 44f
+        UiKit.favStar(c, cx, hd.centerY(), 40f, item.optBoolean("fav"))
+        if (cur != null) UiKit.pad(c, "rev_minus", cx - 50f, hd.centerY(), 40f)          // i172b: Select turns it
+        val col = act?.let { slotOf(it, "fav") } ?: -1
+        hits.add(RectF(cx - 40f, hd.top, cx + 40f, hd.bottom) to if (col >= 0) "act:ahfav|$col" else "why:The game gave this no tap cell")
     }
 
     /** a column header: its words, where they stand (negative = right-aligned at -x), the game's sort it stands for (null = none) */
@@ -5235,6 +5378,8 @@ class InteractView(context: Context) : View(context) {
         /** a finger on a field's microphone: its voice page when the field opens this soon after */
         const val VOICE_WANT_MS = 4000L
         const val SPK_EVERY_MS = 3_000L
+        /** i172: the auction rows a finger can star (the add-on's iqty cells name rows 1..40, QTY_MAX); past it, Select */
+        const val FAV_PICK_MAX = 40
         const val PAPER_GOLD = 2            // UI Art's gold selection look; the user's pick replaces it
         const val CLOSE_B_LOOK = 1
         const val TIP_STEP = 90f                // px the tooltip stack moves per right-stick step
@@ -5258,6 +5403,8 @@ class InteractView(context: Context) : View(context) {
         const val TRUST_GAP_MS = 6_000L       // and the least time between two of them
         const val LIVE_MS = 25_000L       // actions need a document this recent
         const val PENDING_TIMEOUT_MS = 8_000L
+        /** i168: the Sell form's Post is Start (the kit's Start / Menu glyph, as DialogView draws PADFORWARD) */
+        const val POST_GLYPH = "rev_plus"
         const val PENDING_FOLD_MS = 1_500L    // no document at all this long after an action: the window folds away
         const val PRESS_MIN_MS = 160L         // a press stays visibly DOWN at least this long
         private val PAD_FACES = setOf("PAD1", "PAD2", "PAD3", "PAD4")

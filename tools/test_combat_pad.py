@@ -436,8 +436,9 @@ W.execute('LootFrame:Hide(); fire("LOOT_CLOSED"); advance(1)')
 pull(W)
 W.execute('LootFrame:Show(); fire("LOOT_OPENED"); advance(1)')
 d = idoc(W)
-check(d.get('loot') and (d.get('enter') or {}).get('for') == 'npc' and W.eval('LootFrame:GetAlpha()') == 0,
-      "S2[loot on top] in a fight the loot is mirrored on the bottom whatever the switch (the user's decision 2; i144 LOOT.top)",
+# Linux Edition i166 (the user, 2026-11-19: "drop the combat rule, always use top screen"): the switch holds in a fight too
+check(not d.get('loot') and W.eval('LootFrame:GetAlpha()') != 0,
+      "S2[loot on top] in a fight the switch still holds: the game's own window (Linux Edition i166; upstream i144 mirrored it)",
       (bool(d.get('loot')), d.get('enter'), W.eval('LootFrame:GetAlpha()')))
 check(clean(W) == {}, "S2[loot on top] no lockdown breach, no spied call, no handle / snippet error", clean(W))
 # the NPC-windows bit off: loot in a fight still on the bottom with the D-pad (the design: rooms no longer depend on the Hub's bit)

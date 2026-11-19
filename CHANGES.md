@@ -1,6 +1,16 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.36 (upstream add-on set 407; this edition's set 413). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 414). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## 2026-11-20: DS Forever 1.0.37, add-on set 414
+
+- **Merged DS Forever 1.0.37**: *Settings > General > Reset* (settings, layouts, skills or everything, each asks first), a
+  *Support the Project* button (DS Forever's Ko-fi), auction house favourites and a sell grid with Post on Start, mailbox Open All,
+  Abandon Pet and pet trainer fixes, confirm pop-ups that hold the controller, filter and Send glyphs that follow the controller
+  layout, the Home info block (ammo at 0, bags used/total), and the cast bar's display text.
+- This edition's own settings (box under the dot, soft target) go back to their defaults with *Reset settings*.
+- Not in this edition: Desktop 0.2.45-0.2.46 (DS Forever Desktop is Windows-only; the Linux helper already never closes a WoW you
+  started yourself).
 
 ## 2026-11-19 (late): add-on set 413
 

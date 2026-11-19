@@ -9,6 +9,7 @@ import android.graphics.LightingColorFilter
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
@@ -1630,7 +1631,7 @@ object UiKit {
      * caller), 2 a tertiary filter (no button: the game's filter line and the words); [selected] = the game's gold edge, the
      * category browsed now. Its [label] in gold (white when selected).
      */
-    fun ahNav(c: Canvas, r: RectF, label: String, level: Int = 0, selected: Boolean = false) {
+    fun ahNav(c: Canvas, r: RectF, label: String, level: Int = 0, selected: Boolean = false, inset: Float = 0f) {
         val p = bodyPaint(if (level == 2) 24f else 26f, if (selected) Color.WHITE else Theme.gold)
         val ty = r.centerY() - (p.ascent() + p.descent()) / 2f
         if (level >= 2) {
@@ -1643,7 +1644,31 @@ object UiKit {
         if (b != null) slice3(c, b, if (level == 0) 4 else 18, if (level == 0) 268 else 262, 0, 42, 22, r)
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(34, 30, 26); c.drawRoundRect(r, 6f, 6f, pFlat) }
         if (selected) tex(if (level == 0) "ah_nav_select" else "ah_nav2_select")?.let { slice3(c, it, 0, it.width, 0, it.height, 22, r) }
-        c.drawText(Tr.t(TextUtils.ellipsize(label, p, r.width() - 40f, TextUtils.TruncateAt.END).toString()), r.left + 22f, ty, p)
+        c.drawText(Tr.t(TextUtils.ellipsize(label, p, r.width() - 40f - inset, TextUtils.TruncateAt.END).toString()), r.left + 22f + inset, ty, p)
+    }
+
+    /**
+     * i172: THE AUCTION HOUSE'S FAVOURITE STAR ([on] = favourited: the game's "auctionhouse-icon-favorite", gold; off = its
+     * "-favorite-off", a faint outline), [size] px centred on ([cx], [cy]). The kit's gold star (friendslist-favorite) when it is there.
+     */
+    fun favStar(c: Canvas, cx: Float, cy: Float, size: Float, on: Boolean, alpha: Int = 255) {
+        val r = RectF(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f)
+        if (on) tex("mark_favourite")?.let { pBmp.alpha = alpha; c.drawBitmap(it, null, r, pBmp); pBmp.alpha = 255; return }
+        val path = Path()
+        val ro = size / 2f; val ri = ro * 0.42f
+        for (k in 0 until 10) {
+            val a = Math.PI * k / 5.0 - Math.PI / 2.0
+            val rad = if (k % 2 == 0) ro else ri
+            val x = cx + (rad * Math.cos(a)).toFloat(); val y = cy + 0.06f * size + (rad * Math.sin(a)).toFloat()
+            if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        pFlat.style = if (on) Paint.Style.FILL else Paint.Style.STROKE
+        pFlat.strokeWidth = 3f
+        pFlat.color = if (on) Theme.gold else Color.argb(150, 200, 190, 160)
+        pFlat.alpha = if (on) alpha else alpha * 150 / 255
+        c.drawPath(path, pFlat)
+        pFlat.style = Paint.Style.FILL; pFlat.alpha = 255
     }
 
     /** a panel's ground: the game's picture for it ("ah_bg_categories", "ah_bg_index", "ah_bg_commodities", "ah_bg_market",
@@ -1675,14 +1700,14 @@ object UiKit {
 
     /** the item at the head of a buy frame (AuctionHouseItemDisplay): the game's item header frame over [r], the [icon] in its
      *  slot at the left, the [name] in its quality [colour] */
-    fun ahItemHeader(c: Canvas, r: RectF, icon: Bitmap?, name: String, colour: Int, count: Int = 0) {
+    fun ahItemHeader(c: Canvas, r: RectF, icon: Bitmap?, name: String, colour: Int, count: Int = 0, rightRoom: Float = 0f) {
         val f = tex("ah_item_header")
         if (f != null) c.drawBitmap(f, null, r, pBmp)
         else { pFlat.style = Paint.Style.FILL; pFlat.color = Color.rgb(24, 22, 20); c.drawRect(r, pFlat) }
         val s = r.height() - 40f
         slot(c, icon, r.left + 24f, r.top + 20f, s, count = count)
         val p = bodyPaint(32f, colour)
-        c.drawText(Tr.t(TextUtils.ellipsize(name, p, r.width() - s - 70f, TextUtils.TruncateAt.END).toString()), r.left + s + 52f,
+        c.drawText(Tr.t(TextUtils.ellipsize(name, p, r.width() - s - 70f - rightRoom, TextUtils.TruncateAt.END).toString()), r.left + s + 52f,
             r.centerY() - (p.ascent() + p.descent()) / 2f, p)
     }
 
@@ -2924,7 +2949,7 @@ object UiKit {
     /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value (the clock and the gold line stay clockChip) */
     sealed class BandItem {
         /** an icon over its short value ("" = the icon alone); [cooling] = the icon dimmed; [glow] = the soft ready halo (the Hearthstone) */
-        class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false) : BandItem()
+        class Icon(val icon: Bitmap?, val value: String, val cooling: Boolean = false, val glow: Boolean = false, val out: Boolean = false) : BandItem()
     }
 
     private const val BAND_VALUE = 18f
@@ -2961,11 +2986,73 @@ object UiKit {
             when (it) {
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, alpha)
-                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, pv)
+                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, if (it.out) bandOut(pv) else pv)
                 }
             }
             c.restore()
         }
+    }
+
+    /** feat/home-info-block: a value at its OUT tone (no ammo left, the bags full): the battery's low red, same size and shadow */
+    private val OUT_RED = Color.rgb(210, 50, 40)
+    private fun bandOut(pv: Paint): Paint = Paint(pv).apply { color = OUT_RED; alpha = pv.alpha }
+
+    /** the clock chip's size at scale 1 (as [clockChip] covers it): (width, height from its top) */
+    fun clockChipSize(time: String, battery: Int, gold: Long?): FloatArray {
+        val pt = numberPaint(32f, Theme.text); val pp = numberPaint(21f, Theme.textDim)
+        val row = 28f + 3f + 9f + pp.measureText("$battery%")
+        var w = maxOf(pt.measureText(time), row) + 2f * 20f
+        if (gold != null) w = maxOf(w, coinsWidth(gold, goldPaint()) + 2f * 20f)
+        return floatArrayOf(w, ClockBand.chipBottom(gold != null) - ClockBand.CHIP_TOP)
+    }
+
+    /** an extras cell's width at scale 1 (the icon over its value: the wider of the two), as the grown row scales it */
+    fun clockCellGrown(it: BandItem): Float = bandWidth(it, bandPaint(255))
+
+    /**
+     * THE CENTRE INFO BLOCK (feat/home-info-block; the user, 2026-11-19: "these (block, battery gold and menu choices) need to fill out
+     * that space and shrink when a cast bar pops up or L+R"): the clock chip from [chipTop] centred on [cx] and the extras row in
+     * [spot], between today's SMALL look ([clockChip] + [clockBand], [g] = 0) and the GROWN one ([ClockBand.grow], [g] = 1): every
+     * piece's place and size eased between the two, so the block scales smoothly. [rowAlpha] = the row's own fade (the triggers).
+     */
+    fun clockBlock(c: Canvas, cx: Float, chipTop: Float, time: String, battery: Int, charging: Boolean, gold: Long?, spot: FloatArray?,
+                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255) {
+        val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
+        val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
+        val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
+        if (chipAlpha > 0) {
+            val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
+            c.save(); c.scale(s, s, cx, chipTop)
+            clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold)
+            c.restore()
+        }
+        if (spot == null || items.isEmpty() || rowAlpha <= 0) return
+        if (grown == null || e <= 0f) { clockBand(c, spot, items, floor, rowAlpha); return }
+        val pv = bandPaint(rowAlpha)
+        val small = clockBandBoxes(spot, items, floor)
+        for ((i, it) in items.withIndex()) {
+            // a plain scale: today's cell (icon over its value) from its place and size today to its grown place and size
+            val sb = small[i]
+            val w = bandWidth(it, pv)
+            val k0 = sb.height() / ClockBand.CELL_H
+            val k = k0 + (grown.rowScale - k0) * e
+            val left = sb.left + (grown.lefts[i] - sb.left) * e
+            val top = sb.top + (grown.rowTop - sb.top) * e
+            c.save(); c.translate(left, top); c.scale(k, k)
+            when (it) {
+                is BandItem.Icon -> {
+                    bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, rowAlpha)
+                    if (it.value.isNotEmpty()) c.drawText(Tr.t(it.value), w / 2f, BAND_BASE, if (it.out) bandOut(pv) else pv)
+                }
+            }
+            c.restore()
+        }
+    }
+
+    /** the grown layout for these pieces ([ClockBand.grow] with their measured sizes) */
+    fun clockGrown(spot: FloatArray, chipTop: Float, time: String, battery: Int, gold: Long?, items: List<BandItem>): ClockBand.Grown? {
+        val cs = clockChipSize(time, battery, gold)
+        return ClockBand.grow(spot, chipTop, cs[0], cs[1], FloatArray(items.size) { clockCellGrown(items[it]) })
     }
 
     /** the extras row's placement, its fit to the band's height and its top (shared by [clockBand] and [clockBandBoxes]) */

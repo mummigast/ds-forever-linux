@@ -1980,6 +1980,16 @@ CAPTURE_V21_LINES = {
     (r'\bSetOverrideBinding\s*\(', 'for k in pairs(N.npcExtra) do pcall(function() SetOverrideBinding(padOwner, true, k, nil) end) end'),
 }
 hits = [(p, ln) for (p, ln) in hits if (p, ln) not in CAPTURE_V21_LINES]
+# LINUX EDITION hub71 (the user, 2026-11-19: "i need that soft target window enabled" / "can you create the macro?"): the soft-target
+# object tooltip (one CVar, put back by /wcsoft off) and the edition's OWN two account macros "DSF Soft On" / "DSF Soft Off" (written,
+# never pressed; the player's own macros are never touched)
+LX_SOFT_LINES = {
+    (r'\bSetCVar\b', 'local function stSet(n, v) return pcall(function() C_CVar.SetCVar(n, v) end) end'),
+    (r'\bCreateMacro\b', 'if type(CreateMacro) ~= "function" or type(GetMacroIndexByName) ~= "function" then return end'),
+    (r'\bCreateMacro\b', 'if n < (MAX_ACCOUNT_MACROS or 120) then pcall(CreateMacro, name, "INV_MISC_QUESTIONMARK", body, nil) end'),
+    (r'\bEditMacro\b', 'if cur ~= body then pcall(EditMacro, i, name, nil, body) end'),
+}
+hits = [(p, ln) for (p, ln) in hits if (p, ln) not in LX_SOFT_LINES]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",
       hits[:3])
 check(not any('SetOverrideBindingClick' in ln and 'hdr' not in ln and 'owner' not in ln for ln in code),

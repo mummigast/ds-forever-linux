@@ -97,7 +97,7 @@ local S, CALL = WC.S, WC.CALL
 
 -- i150 (int/1429): combat-nav i144-i148 (combat-proof input, the leave cells, pop-ups with the pad) + accept-space i144-i145
 -- (Make Space only when the quest gives an item, QuestieDB first)
-local IV = "i167"     -- bump on every change; i165 THE 11-16 TEST BUILD MERGE, part 3: feat/big-voice tagged i161 as well (= i161v here, voice on the mail and auction boxes), kept on top of i164; i161v (voice1, the user 2026-11-16: voice to text in the message box and ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Every box that takes words ... auction search, mail subject and letter ... Not numbers, mail 'To' names"): X on Send Mail's Subject and letter and on the auction house's search box opens the SAME field as A (ACT.mailedit / ACT.ahedit, the keyboard's field from Chat.lua) with a voice flag, and doc.kbd says v = 1 so the app's keyboard opens on its voice page; the words are copied into the field by the app as typed ones are. Mail's To, the money and the level boxes keep X as before; no game call is added; i164 THE 11-16 TEST BUILD MERGE, part 2: feat/big-disenchant tagged i161 as well (= i161d here, the Disenchant grid's capture spec.lootPass), kept with i161c's spec.lootUnder / resumed: capture v21 carries both; i161d (review of i161d, before release: the auto-loot flag is LOOT.autoOn - as LOOT.auto it overwrote Make Space's auto-loot function of that name at the first LOOT_OPENED, so its delete-then-loot threw; a take made in a fight keeps spec.lootPass too); i161d (bags-de1, the Disenchant grid; the user's list 2026-11-16: "It stays open after each one; B closes it", and their pick 3a: "With your Auto Loot on, the mats go straight to your bags and a small strip shows what you got. With it off, our loot pop-up comes up ... then the grid comes back"): capture v21 spec.lootPass - a holder that asks (the Bags room's Disenchant grid) KEEPS the pad through an AUTO loot window (LOOT_OPENED's autoLoot): no guestLost, no pop-up in the document (the game's window stays dimmed while Auto Loot takes the mats); a loot window still open LOOT.PASS_S after it opened (full bags) takes the ordinary path (the pop-up, Make Space). A loot that is not auto, or any holder that did not ask, is unchanged; nothing written, no Blizzard call; i163 THE 11-16 TEST BUILD MERGE: the 1.0.33 merge (i162m) and feat/loot-popups (i162p) both tagged i162, both kept; i162p (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): a NEW roll's cells are in its very FIRST dialogs document (WC.rollCells gives a roll without cells its cells at once, LOOT.rollCellsFor: START_LOOT_ROLL looked at the dialogs a frame before this file's own document gave the roll its cells, so a touch in that gap found "no tap cell" and had to be made again); the cells skip a roll the player answered (Dialogs d34's WC.dialogs.rolled) as Dialogs' list does, so the two count the same four; ACT.roll refuses a roll already answered ("already rolled": a second press never calls RollOnLoot again); i162m THE 1.0.33 TEST BUILD MERGE (code 1475): feat/wk-containers and fix/wk-bufftips both tagged i161, both kept (capture v21, a loot window over its own room = i161c; the tooltip-hold counts for Trail tt4 = i161t); i161c (wk-containers; the user, 2026-11-16: "opening containers from my bags is a little cluncky, there is not a button although weirdly x does work to open them, it opens the loot menu back in the home room, it should just open the loot menu inside of the bags and then keep the player inside of the bag room."): CAPTURE v21, A LOOT WINDOW OVER ITS OWN ROOM. A room whose spec says the loot is its own (spec.lootUnder(), Bags: a bag item of its own opened a moment ago) is SUSPENDED under the loot window instead of lost: its windows stay hidden, its keys are the loot window's (our sink, its extra keys back to the game), the document says under = the room, and when the loot window closes (looted, B, walked away) the room RESUMES exactly as it was (rel by "resume", spec.resumed("loot"); never "B", so the app stays in the room). Out of a fight only: a fight that starts while it is suspended lets the room go as before (lost "npc"), and a loot window opening in a fight is today's; a waiting take waits on behind the resumed room (an overlay goes over it); the room letting go meanwhile keeps the loot window hidden. Nothing new is called in the game. Review of i161 (the user's words above: "keep the player inside of the bag room"): (1) a take waiting at the resume no longer WINS it (the room told lost "taken", the app sent Home): N.wait does not say when it queued, so a pop-up already waiting behind Bags before the box was opened sent the player Home after every loot - it now waits on behind the resumed room, as v20's resume leaves it; (2) THE DOUBLE B: the loot window's B is our secure close acting on the PRESS (ActionButtonUseKeyDown), so a resume before that B's release handed the release to the room as its own B (Bags left, Home): N.release marks it (N.resumeEat) and the frame / the binding route hand that one release on as its press went (N.resumeEaten), never to the room; nothing else changed; i161t (Trail tt4; the user, 2026-11-16: "tooltips for buffs are still popping up on the top screen even though they are off"): proof.tipc.st = WC.tips.stats(), the counts of what each tooltip hold caught (adopted frames, type hooks on, catches at show / every frame / layout / fillers / type hooks, hover shields up, the last frame a per-frame hold caught) - read only, nothing else changed; i160 (issue #233, a player at a vendor: "I cannot compare whether an item is stronger or weaker than the one I have equipped, or see its sell value"; the user, 2026-11-13: "yes on the triage things"): THE SELL PRICE. The game draws an item's "Sell Price:" as coins from its own tooltip line (C_TooltipInfo line type SellPrice: the copper in `price`, no text of its own - TooltipDataRules.SellPrice -> GameTooltip_OnTooltipAddMoney), and linesOf kept only lines with a left text, so every tooltip we sent (vendors, the Bags room, loot, chat links) lost it. Now that line is kept as { t = the game's SELL_PRICE word + ":", m = the copper } and the app draws the coins (TipStack -> UiKit.TipLine.money); read-only, nothing else changed. Review of i160: a WORN piece's tooltip (the compare entries' lines) leaves it out, as the game's own shopping tooltip does (TooltipDataRules.SellPrice: only when not tooltip.isShopping); i159 (bags-nocmp1, the user 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see the stat changes at the bottom of that weapon if I equip it"): N.tipOf(key, opt) - opt.nw (the Bags room only, through WC.tipOf) leaves the WORN pieces' tooltips unread: each compare entry carries only the game's stat-change lines (the blank, the header, the changes; dn as before) and nw = true, and the app takes a worn piece's own text from the bags document's equipped rows (read once per gear change) for the Compare sheet; every other caller (vendors, loot rolls, chat links) is unchanged; i158 (bags-act2, review of i157; the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together"): a build that ignores the paired GetItemComparisonDelta's extra arguments answers the main hand's changes alone - the same lines as the plain form are taken as "not given", so the app counts against both hands instead of labelling the main hand's as the pair's; nothing else changed; i157 (bags-act1, the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together; empty slot shows all gains"): N.tipOf's compare - a two-hander shows BOTH worn hands, its stat changes against the pair (the game's paired GetItemComparisonDelta; the off hand's entry pair = 16, the main hand's with = 17), an off-hand piece while a two-hander is worn compares with that two-hander, and each compare entry says how many of its last lines are the game's changes (dn) so the app counts its own only where the game gave none; nothing else changed; i156 (bags-tip1, the user 2026-11-13: "the tool tip shows one thing for a half second and has to load the rest"): N.tipOf reads an item's tooltip ONCE - the compare's item (its guid / link) comes from that same read, it was read a second time for it (bags_design_1113.md fix 3); nothing else changed; i155 (issue #88, 1.0.21: "Unable to post items on auctionhouse. button is gray on ever item i try to post"): DIAGNOSTICS ONLY - the cause is not in the report (its summary keeps numbers one level deep, so the Sell form was invisible); the auction document now carries the Sell form in numbers (tn the tab, sb sellable stacks, sw what stops Post: AH.sellWhy's code, sst the post status, sp / sq / sbo / sauto), no behaviour change; i154 (issue #50, 1.0.16: "the ingame mailbox interface itemselection has a problem whn you try to put multiple items into a single mail its very dificult to select the items"): SEND MAIL'S BAG LIST STAYS UP for the next attachment, as the game's own bags do (each right-click attaches one more): after an item goes onto the letter the list closes only when the letter is full; the cursor moves on to the next item that can still go (the one just attached is locked in its slot); when the list closes (B, Close, full) the cursor is on the letter's attachments ("+" or the last one), not back on the tab row; i153 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log had no Interact document and every hold "no controller capture"): WC.interactStage marks how far this file ran (top / guard / cap / end) and WC.interactIV its version, so Chat.lua's login probe can tell "never ran" from "stopped halfway" (nothing else changed); i152 (router-heal): THE ROUTER NEVER STAYS IN ROOM MODE OUT OF A FIGHT (the user, 2026-11-12: "I died and then my jump input just stopped working", "its not just a, inputs work like I can see the button pushing but its not actually doing anything in game"): the player died in a fight, the app's ENTER for the DEATH pop-up landed just AFTER PLAYER_REGEN_ENABLED, its FLIP set wc-mode "room" on all 8 router buttons and N.fightEntered (out of combat) left it - every routed press went to our empty sink until the next fight's end. Now an ENTER out of a fight (N.fight nil: the pull's pre-lockdown window keeps its room mode) clears it at once, and N.modeHeal clears any out-of-fight room mode at every document, PLAYER_REGEN_ENABLED, PLAYER_DEAD / ALIVE / UNGHOST / ENTERING_WORLD and a 1 s watchdog (doc.modeFix counts them); the document always reports doc.routerMode, doc.routerLeave (no fight, no holder) and doc.dead, so the app's reconciler taps LEAVE itself and never ENTERs for a dead player's DEATH pop-up alone; i151 (b-home): B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in the Bags room did nothing after the pull): a room whose own B at its top level lets go through capture.release(id, "B") (Bags, Character, the Spellbook / Talents / Controller book, Calendar, Group Finder, Social, Quests) was answered "tap leave" in a fight and nobody told the app, so Bags stayed on screen holding the pad; now that release asks the app to go Home (doc.fightHome = { n, who }; nothing written, the room still holds until the app's LEAVE tap, which closes its window as before); i150: int/1429, both above; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148 (combat-nav): COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
+local IV = "i173"     -- bump on every change; i173 (Linux Edition, the 1.0.37 merge): the edition's i166 (loot top in fights) + i167 (dotbox cells) on upstream's i172; i172 (THE 11-19 TEST BUILD MERGE, code 1504: feat/ah-favorites, built on i169 and tagged i172 / i172b, merged on top of i171; i172 = the AH favorites; every i171 change (L / R over the three tabs, Reset on every tab, the Sell form's 14 cells on isell for the whole visit, Y less / X more, Start = Post on Sell) and every i172 / i172b change kept. The cell budget: isell asks the form's 14 cells then "ahfav" (15 fixed cells, the Sell tab's bag items after them); ipick asks "ahcat fav" before the categories, the Filter list and the bag headers; Select is held on the Buy tab only, Start on Sell with an item only, L / R on every tab); i172b (the user's two calls, 2026-11-19): the star is on SELECT, not RT (held the trainer's way, npcExtra PADBACK: the bar's Select listener stands aside while an NPC window holds, and its sink refuses a press while the window keeps Select), RT the game's again; the window OPENS on Favorites when HasFavorites() (the game's QueryAll(AllFavorites) on show; a busy throttle asks again on AUCTION_HOUSE_THROTTLED_SYSTEM_READY); i172 (feat/ah-favorites, the user 2026-11-19: "I should be able to see my favorites list to star in the AH, and also be able to set favorites on things"): the Browse list gets Favorites under Reset (the game's C_AuctionHouse.SearchForFavorites, its results as the browse results; A again folds it, B goes back), and Select (i172b; RT in i172) / a finger on a row's star toggles the item's favourite (C_AuctionHouse.SetFavoriteItem(itemKey, not IsFavoriteItem): NOT restricted, no HasRestrictions, called like SendBrowseQuery through run()); a finger names the row through the iqty cell (k-1 = row k) then the isell "ahfav" cell; both new cells (isell "ahfav", ipick "ahcat fav") stay claimed on every tab while the window is open, so a tab change never frees them into quarantine; i171 (fix/ah-tabs-lr, the user 2026-11-19 on 1502): L / R visit the AH's three tabs in the game's order (Buy, Sell, Auctions; AH.tabStep, no wrap; Sell was skipped); the AH's cell budget - Reset asked on every tab, the Sell form's 14 cells on isell for the whole visit (Duration / Buyout only / Post had no iact column, so the confirm's Post drew grey and Reset lost its cell after a tab change); the quantity is Y less / X more (the user's ruling: Y is the left button on the Nintendo layout); i170 (THE 11-19 TEST BUILD MERGE, code 1502: fix/pet-trainer, built on i165 and tagged i170, merged on top of i169; i170 = the pet trainer; every i169 change (the AH grid, Start Post, Reset, Open All, tooltips, the stay cell) and every i170 / i170b change kept); i170b (same tag, the coordinator 2026-11-19: everything from the bottom screen): a service off the game's visible page is SCROLLED into it first - the add-on asks the app (doc.trainer.pts / ptsn: up or down, rows, the arrow / track / list boxes, the click point) for a real click on the game's own scroll arrow (one row) or track (one page), the shield passing the mouse meanwhile; it looks again every 0.15 s, at most 8 clicks, then "Couldn't reach it in the game's list"; i170 (fix/pet-trainer; the user, 2026-11-19: "the pet training in general is super inconsistent, it opens and doesnt work halfd the time or shows stuff thats already know for the pet regardless of the filter"): every trainer command names its service by identity (name + rank, TRN.key: "train <i> <k>", the slot keyed so too) and the index is looked up again at press time; the list honours the game's three filters by kind, and at a PET trainer a service the pet's own book already has at that rank or higher is known ("used", pk); the pet press is a checked chain (N.petTrain: the game's row looked up again after every list rebuild, the Train cell armed only after the game took OUR selection, disarmed after one Train / a timeout / any doubt; a service off the game's visible page, a tainted window or a press while one is on its way is refused with its reason, never the old select-then-Train that bought the window's own selection); TRAINER_DESCRIPTION_UPDATE / TRAINER_SERVICE_INFO_NAME_UPDATE / UNIT_PET_TRAINING_POINTS / SPELLS_CHANGED refresh an open trainer and TRAINER_SHOW looks again at 0.5 s; i165 THE 11-16 TEST BUILD MERGE, part 3: feat/big-voice tagged i161 as well (= i161v here, voice on the mail and auction boxes), kept on top of i164; i161v (voice1, the user 2026-11-16: voice to text in the message box and ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Every box that takes words ... auction search, mail subject and letter ... Not numbers, mail 'To' names"): X on Send Mail's Subject and letter and on the auction house's search box opens the SAME field as A (ACT.mailedit / ACT.ahedit, the keyboard's field from Chat.lua) with a voice flag, and doc.kbd says v = 1 so the app's keyboard opens on its voice page; the words are copied into the field by the app as typed ones are. Mail's To, the money and the level boxes keep X as before; no game call is added; i164 THE 11-16 TEST BUILD MERGE, part 2: feat/big-disenchant tagged i161 as well (= i161d here, the Disenchant grid's capture spec.lootPass), kept with i161c's spec.lootUnder / resumed: capture v21 carries both; i161d (review of i161d, before release: the auto-loot flag is LOOT.autoOn - as LOOT.auto it overwrote Make Space's auto-loot function of that name at the first LOOT_OPENED, so its delete-then-loot threw; a take made in a fight keeps spec.lootPass too); i161d (bags-de1, the Disenchant grid; the user's list 2026-11-16: "It stays open after each one; B closes it", and their pick 3a: "With your Auto Loot on, the mats go straight to your bags and a small strip shows what you got. With it off, our loot pop-up comes up ... then the grid comes back"): capture v21 spec.lootPass - a holder that asks (the Bags room's Disenchant grid) KEEPS the pad through an AUTO loot window (LOOT_OPENED's autoLoot): no guestLost, no pop-up in the document (the game's window stays dimmed while Auto Loot takes the mats); a loot window still open LOOT.PASS_S after it opened (full bags) takes the ordinary path (the pop-up, Make Space). A loot that is not auto, or any holder that did not ask, is unchanged; nothing written, no Blizzard call; i163 THE 11-16 TEST BUILD MERGE: the 1.0.33 merge (i162m) and feat/loot-popups (i162p) both tagged i162, both kept; i162p (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): a NEW roll's cells are in its very FIRST dialogs document (WC.rollCells gives a roll without cells its cells at once, LOOT.rollCellsFor: START_LOOT_ROLL looked at the dialogs a frame before this file's own document gave the roll its cells, so a touch in that gap found "no tap cell" and had to be made again); the cells skip a roll the player answered (Dialogs d34's WC.dialogs.rolled) as Dialogs' list does, so the two count the same four; ACT.roll refuses a roll already answered ("already rolled": a second press never calls RollOnLoot again); i162m THE 1.0.33 TEST BUILD MERGE (code 1475): feat/wk-containers and fix/wk-bufftips both tagged i161, both kept (capture v21, a loot window over its own room = i161c; the tooltip-hold counts for Trail tt4 = i161t); i161c (wk-containers; the user, 2026-11-16: "opening containers from my bags is a little cluncky, there is not a button although weirdly x does work to open them, it opens the loot menu back in the home room, it should just open the loot menu inside of the bags and then keep the player inside of the bag room."): CAPTURE v21, A LOOT WINDOW OVER ITS OWN ROOM. A room whose spec says the loot is its own (spec.lootUnder(), Bags: a bag item of its own opened a moment ago) is SUSPENDED under the loot window instead of lost: its windows stay hidden, its keys are the loot window's (our sink, its extra keys back to the game), the document says under = the room, and when the loot window closes (looted, B, walked away) the room RESUMES exactly as it was (rel by "resume", spec.resumed("loot"); never "B", so the app stays in the room). Out of a fight only: a fight that starts while it is suspended lets the room go as before (lost "npc"), and a loot window opening in a fight is today's; a waiting take waits on behind the resumed room (an overlay goes over it); the room letting go meanwhile keeps the loot window hidden. Nothing new is called in the game. Review of i161 (the user's words above: "keep the player inside of the bag room"): (1) a take waiting at the resume no longer WINS it (the room told lost "taken", the app sent Home): N.wait does not say when it queued, so a pop-up already waiting behind Bags before the box was opened sent the player Home after every loot - it now waits on behind the resumed room, as v20's resume leaves it; (2) THE DOUBLE B: the loot window's B is our secure close acting on the PRESS (ActionButtonUseKeyDown), so a resume before that B's release handed the release to the room as its own B (Bags left, Home): N.release marks it (N.resumeEat) and the frame / the binding route hand that one release on as its press went (N.resumeEaten), never to the room; nothing else changed; i161t (Trail tt4; the user, 2026-11-16: "tooltips for buffs are still popping up on the top screen even though they are off"): proof.tipc.st = WC.tips.stats(), the counts of what each tooltip hold caught (adopted frames, type hooks on, catches at show / every frame / layout / fillers / type hooks, hover shields up, the last frame a per-frame hold caught) - read only, nothing else changed; i160 (issue #233, a player at a vendor: "I cannot compare whether an item is stronger or weaker than the one I have equipped, or see its sell value"; the user, 2026-11-13: "yes on the triage things"): THE SELL PRICE. The game draws an item's "Sell Price:" as coins from its own tooltip line (C_TooltipInfo line type SellPrice: the copper in `price`, no text of its own - TooltipDataRules.SellPrice -> GameTooltip_OnTooltipAddMoney), and linesOf kept only lines with a left text, so every tooltip we sent (vendors, the Bags room, loot, chat links) lost it. Now that line is kept as { t = the game's SELL_PRICE word + ":", m = the copper } and the app draws the coins (TipStack -> UiKit.TipLine.money); read-only, nothing else changed. Review of i160: a WORN piece's tooltip (the compare entries' lines) leaves it out, as the game's own shopping tooltip does (TooltipDataRules.SellPrice: only when not tooltip.isShopping); i159 (bags-nocmp1, the user 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see the stat changes at the bottom of that weapon if I equip it"): N.tipOf(key, opt) - opt.nw (the Bags room only, through WC.tipOf) leaves the WORN pieces' tooltips unread: each compare entry carries only the game's stat-change lines (the blank, the header, the changes; dn as before) and nw = true, and the app takes a worn piece's own text from the bags document's equipped rows (read once per gear change) for the Compare sheet; every other caller (vendors, loot rolls, chat links) is unchanged; i158 (bags-act2, review of i157; the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together"): a build that ignores the paired GetItemComparisonDelta's extra arguments answers the main hand's changes alone - the same lines as the plain form are taken as "not given", so the app counts against both hands instead of labelling the main hand's as the pair's; nothing else changed; i157 (bags-act1, the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together; empty slot shows all gains"): N.tipOf's compare - a two-hander shows BOTH worn hands, its stat changes against the pair (the game's paired GetItemComparisonDelta; the off hand's entry pair = 16, the main hand's with = 17), an off-hand piece while a two-hander is worn compares with that two-hander, and each compare entry says how many of its last lines are the game's changes (dn) so the app counts its own only where the game gave none; nothing else changed; i156 (bags-tip1, the user 2026-11-13: "the tool tip shows one thing for a half second and has to load the rest"): N.tipOf reads an item's tooltip ONCE - the compare's item (its guid / link) comes from that same read, it was read a second time for it (bags_design_1113.md fix 3); nothing else changed; i155 (issue #88, 1.0.21: "Unable to post items on auctionhouse. button is gray on ever item i try to post"): DIAGNOSTICS ONLY - the cause is not in the report (its summary keeps numbers one level deep, so the Sell form was invisible); the auction document now carries the Sell form in numbers (tn the tab, sb sellable stacks, sw what stops Post: AH.sellWhy's code, sst the post status, sp / sq / sbo / sauto), no behaviour change; i154 (issue #50, 1.0.16: "the ingame mailbox interface itemselection has a problem whn you try to put multiple items into a single mail its very dificult to select the items"): SEND MAIL'S BAG LIST STAYS UP for the next attachment, as the game's own bags do (each right-click attaches one more): after an item goes onto the letter the list closes only when the letter is full; the cursor moves on to the next item that can still go (the one just attached is locked in its slot); when the list closes (B, Close, full) the cursor is on the letter's attachments ("+" or the last one), not back on the tab row; i153 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log had no Interact document and every hold "no controller capture"): WC.interactStage marks how far this file ran (top / guard / cap / end) and WC.interactIV its version, so Chat.lua's login probe can tell "never ran" from "stopped halfway" (nothing else changed); i152 (router-heal): THE ROUTER NEVER STAYS IN ROOM MODE OUT OF A FIGHT (the user, 2026-11-12: "I died and then my jump input just stopped working", "its not just a, inputs work like I can see the button pushing but its not actually doing anything in game"): the player died in a fight, the app's ENTER for the DEATH pop-up landed just AFTER PLAYER_REGEN_ENABLED, its FLIP set wc-mode "room" on all 8 router buttons and N.fightEntered (out of combat) left it - every routed press went to our empty sink until the next fight's end. Now an ENTER out of a fight (N.fight nil: the pull's pre-lockdown window keeps its room mode) clears it at once, and N.modeHeal clears any out-of-fight room mode at every document, PLAYER_REGEN_ENABLED, PLAYER_DEAD / ALIVE / UNGHOST / ENTERING_WORLD and a 1 s watchdog (doc.modeFix counts them); the document always reports doc.routerMode, doc.routerLeave (no fight, no holder) and doc.dead, so the app's reconciler taps LEAVE itself and never ENTERs for a dead player's DEATH pop-up alone; i151 (b-home): B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in the Bags room did nothing after the pull): a room whose own B at its top level lets go through capture.release(id, "B") (Bags, Character, the Spellbook / Talents / Controller book, Calendar, Group Finder, Social, Quests) was answered "tap leave" in a fight and nobody told the app, so Bags stayed on screen holding the pad; now that release asks the app to go Home (doc.fightHome = { n, who }; nothing written, the room still holds until the app's LEAVE tap, which closes its window as before); i150: int/1429, both above; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148 (combat-nav): COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd); i169 (THE 11-19 TEST BUILD MERGE, code 1501: fix/stream-cursor and feat/ah-post-grid BOTH tagged i167; here = i167s, the stay cell, and i167a, the AH grid, with i168 on top of i167a; all kept; i166 stays retired); i168 (the user's rulings on i167, 2026-11-19: "keep x as the stack quantity use a different button for post", then "Start / Menu"): X / Y are the Sell tab's quantity again (- / +, A on it = Max) and Left from its row goes to the grid as before; Post is START (PADFORWARD, kept from the game while an item is in the Sell form, as the trainer keeps Select): press 1 the confirm, Start again (or A) posts; Open All goes on while the next item fits anywhere (a free slot of a bag whose family takes it - profession and reagent bags too - or room on a stack of it) and stops only when it fits nowhere; i167a (ah-post-grid, the user 2026-11-19: "We need to seriously improve the ah experience"): THE SELL TAB is a grid with a folding header per bag (AH.SCOLS a row; A or a touch on a header folds it, ahsfold); picking an item puts the cursor on Post; X is Post (A stays for the fields; the quantity steps with D-pad Left / Right on its row); after a post the form clears at once as the game's own ClearPost and the cursor goes back to the grid cell it came from (or the nearest left), the scroll kept; the throttle ("One moment") is looked at again every half second while it greys Post (the ready event can be missed); a B that closed the keyboard never also steps back (N.kbdB eats its release); a second tap on the selected category goes up a level (collapse / deselect); Reset (ahreset, Y) clears the word, the category and the filters; the item rows' tooltips come from the row's own link and the item key asks with its required level, again when the item data arrives; the mailbox's Open All (mailopenall, X on the inbox) takes every letter's money and items one paced call at a time, never a COD letter, stopping when the bags are full; i167s (fix/stream-cursor; i166 was bags-take4's, taken out, so not reused, the user 2026-11-19 streaming: "the cursor keeps randomly showing on the game"): the iact cell "stay" (ACT.stay -> Dialogs d35's WC.dialogs.stay), the stream's ONE sign of life per newly drawn set of dialogs instead of a click every 5 s; nothing else changed; i165 THE 11-16 TEST BUILD MERGE, part 3: feat/big-voice tagged i161 as well (= i161v here, voice on the mail and auction boxes), kept on top of i164; i161v (voice1, the user 2026-11-16: voice to text in the message box and ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Every box that takes words ... auction search, mail subject and letter ... Not numbers, mail 'To' names"): X on Send Mail's Subject and letter and on the auction house's search box opens the SAME field as A (ACT.mailedit / ACT.ahedit, the keyboard's field from Chat.lua) with a voice flag, and doc.kbd says v = 1 so the app's keyboard opens on its voice page; the words are copied into the field by the app as typed ones are. Mail's To, the money and the level boxes keep X as before; no game call is added; i164 THE 11-16 TEST BUILD MERGE, part 2: feat/big-disenchant tagged i161 as well (= i161d here, the Disenchant grid's capture spec.lootPass), kept with i161c's spec.lootUnder / resumed: capture v21 carries both; i161d (review of i161d, before release: the auto-loot flag is LOOT.autoOn - as LOOT.auto it overwrote Make Space's auto-loot function of that name at the first LOOT_OPENED, so its delete-then-loot threw; a take made in a fight keeps spec.lootPass too); i161d (bags-de1, the Disenchant grid; the user's list 2026-11-16: "It stays open after each one; B closes it", and their pick 3a: "With your Auto Loot on, the mats go straight to your bags and a small strip shows what you got. With it off, our loot pop-up comes up ... then the grid comes back"): capture v21 spec.lootPass - a holder that asks (the Bags room's Disenchant grid) KEEPS the pad through an AUTO loot window (LOOT_OPENED's autoLoot): no guestLost, no pop-up in the document (the game's window stays dimmed while Auto Loot takes the mats); a loot window still open LOOT.PASS_S after it opened (full bags) takes the ordinary path (the pop-up, Make Space). A loot that is not auto, or any holder that did not ask, is unchanged; nothing written, no Blizzard call; i163 THE 11-16 TEST BUILD MERGE: the 1.0.33 merge (i162m) and feat/loot-popups (i162p) both tagged i162, both kept; i162p (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): a NEW roll's cells are in its very FIRST dialogs document (WC.rollCells gives a roll without cells its cells at once, LOOT.rollCellsFor: START_LOOT_ROLL looked at the dialogs a frame before this file's own document gave the roll its cells, so a touch in that gap found "no tap cell" and had to be made again); the cells skip a roll the player answered (Dialogs d34's WC.dialogs.rolled) as Dialogs' list does, so the two count the same four; ACT.roll refuses a roll already answered ("already rolled": a second press never calls RollOnLoot again); i162m THE 1.0.33 TEST BUILD MERGE (code 1475): feat/wk-containers and fix/wk-bufftips both tagged i161, both kept (capture v21, a loot window over its own room = i161c; the tooltip-hold counts for Trail tt4 = i161t); i161c (wk-containers; the user, 2026-11-16: "opening containers from my bags is a little cluncky, there is not a button although weirdly x does work to open them, it opens the loot menu back in the home room, it should just open the loot menu inside of the bags and then keep the player inside of the bag room."): CAPTURE v21, A LOOT WINDOW OVER ITS OWN ROOM. A room whose spec says the loot is its own (spec.lootUnder(), Bags: a bag item of its own opened a moment ago) is SUSPENDED under the loot window instead of lost: its windows stay hidden, its keys are the loot window's (our sink, its extra keys back to the game), the document says under = the room, and when the loot window closes (looted, B, walked away) the room RESUMES exactly as it was (rel by "resume", spec.resumed("loot"); never "B", so the app stays in the room). Out of a fight only: a fight that starts while it is suspended lets the room go as before (lost "npc"), and a loot window opening in a fight is today's; a waiting take waits on behind the resumed room (an overlay goes over it); the room letting go meanwhile keeps the loot window hidden. Nothing new is called in the game. Review of i161 (the user's words above: "keep the player inside of the bag room"): (1) a take waiting at the resume no longer WINS it (the room told lost "taken", the app sent Home): N.wait does not say when it queued, so a pop-up already waiting behind Bags before the box was opened sent the player Home after every loot - it now waits on behind the resumed room, as v20's resume leaves it; (2) THE DOUBLE B: the loot window's B is our secure close acting on the PRESS (ActionButtonUseKeyDown), so a resume before that B's release handed the release to the room as its own B (Bags left, Home): N.release marks it (N.resumeEat) and the frame / the binding route hand that one release on as its press went (N.resumeEaten), never to the room; nothing else changed; i161t (Trail tt4; the user, 2026-11-16: "tooltips for buffs are still popping up on the top screen even though they are off"): proof.tipc.st = WC.tips.stats(), the counts of what each tooltip hold caught (adopted frames, type hooks on, catches at show / every frame / layout / fillers / type hooks, hover shields up, the last frame a per-frame hold caught) - read only, nothing else changed; i160 (issue #233, a player at a vendor: "I cannot compare whether an item is stronger or weaker than the one I have equipped, or see its sell value"; the user, 2026-11-13: "yes on the triage things"): THE SELL PRICE. The game draws an item's "Sell Price:" as coins from its own tooltip line (C_TooltipInfo line type SellPrice: the copper in `price`, no text of its own - TooltipDataRules.SellPrice -> GameTooltip_OnTooltipAddMoney), and linesOf kept only lines with a left text, so every tooltip we sent (vendors, the Bags room, loot, chat links) lost it. Now that line is kept as { t = the game's SELL_PRICE word + ":", m = the copper } and the app draws the coins (TipStack -> UiKit.TipLine.money); read-only, nothing else changed. Review of i160: a WORN piece's tooltip (the compare entries' lines) leaves it out, as the game's own shopping tooltip does (TooltipDataRules.SellPrice: only when not tooltip.isShopping); i159 (bags-nocmp1, the user 2026-11-13: "the bag items are still showing currently equipped, I dont want to see that, but I do want to see the stat changes at the bottom of that weapon if I equip it"): N.tipOf(key, opt) - opt.nw (the Bags room only, through WC.tipOf) leaves the WORN pieces' tooltips unread: each compare entry carries only the game's stat-change lines (the blank, the header, the changes; dn as before) and nw = true, and the app takes a worn piece's own text from the bags document's equipped rows (read once per gear change) for the Compare sheet; every other caller (vendors, loot rolls, chat links) is unchanged; i158 (bags-act2, review of i157; the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together"): a build that ignores the paired GetItemComparisonDelta's extra arguments answers the main hand's changes alone - the same lines as the plain form are taken as "not given", so the app counts against both hands instead of labelling the main hand's as the pair's; nothing else changed; i157 (bags-act1, the user's pick 2026-11-13: "a two-hander compares vs main hand + off hand together; empty slot shows all gains"): N.tipOf's compare - a two-hander shows BOTH worn hands, its stat changes against the pair (the game's paired GetItemComparisonDelta; the off hand's entry pair = 16, the main hand's with = 17), an off-hand piece while a two-hander is worn compares with that two-hander, and each compare entry says how many of its last lines are the game's changes (dn) so the app counts its own only where the game gave none; nothing else changed; i156 (bags-tip1, the user 2026-11-13: "the tool tip shows one thing for a half second and has to load the rest"): N.tipOf reads an item's tooltip ONCE - the compare's item (its guid / link) comes from that same read, it was read a second time for it (bags_design_1113.md fix 3); nothing else changed; i155 (issue #88, 1.0.21: "Unable to post items on auctionhouse. button is gray on ever item i try to post"): DIAGNOSTICS ONLY - the cause is not in the report (its summary keeps numbers one level deep, so the Sell form was invisible); the auction document now carries the Sell form in numbers (tn the tab, sb sellable stacks, sw what stops Post: AH.sellWhy's code, sst the post status, sp / sq / sbo / sauto), no behaviour change; i154 (issue #50, 1.0.16: "the ingame mailbox interface itemselection has a problem whn you try to put multiple items into a single mail its very dificult to select the items"): SEND MAIL'S BAG LIST STAYS UP for the next attachment, as the game's own bags do (each right-click attaches one more): after an item goes onto the letter the list closes only when the letter is full; the cursor moves on to the next item that can still go (the one just attached is locked in its slot); when the list closes (B, Close, full) the cursor is on the letter's attachments ("+" or the last one), not back on the tab row; i153 (#183, 1.0.25: "Not able to send messages in chat/guild/whisper/party/etc"; its log had no Interact document and every hold "no controller capture"): WC.interactStage marks how far this file ran (top / guard / cap / end) and WC.interactIV its version, so Chat.lua's login probe can tell "never ran" from "stopped halfway" (nothing else changed); i152 (router-heal): THE ROUTER NEVER STAYS IN ROOM MODE OUT OF A FIGHT (the user, 2026-11-12: "I died and then my jump input just stopped working", "its not just a, inputs work like I can see the button pushing but its not actually doing anything in game"): the player died in a fight, the app's ENTER for the DEATH pop-up landed just AFTER PLAYER_REGEN_ENABLED, its FLIP set wc-mode "room" on all 8 router buttons and N.fightEntered (out of combat) left it - every routed press went to our empty sink until the next fight's end. Now an ENTER out of a fight (N.fight nil: the pull's pre-lockdown window keeps its room mode) clears it at once, and N.modeHeal clears any out-of-fight room mode at every document, PLAYER_REGEN_ENABLED, PLAYER_DEAD / ALIVE / UNGHOST / ENTERING_WORLD and a 1 s watchdog (doc.modeFix counts them); the document always reports doc.routerMode, doc.routerLeave (no fight, no holder) and doc.dead, so the app's reconciler taps LEAVE itself and never ENTERs for a dead player's DEATH pop-up alone; i151 (b-home): B GOES HOME FROM EVERY ROOM IN A FIGHT (the user, 2026-11-12: "ALL ROOMS SHOULD ALWAYS GO HOME WITH B EVEN IN COMBAT"; on 1429 B in the Bags room did nothing after the pull): a room whose own B at its top level lets go through capture.release(id, "B") (Bags, Character, the Spellbook / Talents / Controller book, Calendar, Group Finder, Social, Quests) was answered "tap leave" in a fight and nobody told the app, so Bags stayed on screen holding the pad; now that release asks the app to go Home (doc.fightHome = { n, who }; nothing written, the room still holds until the app's LEAVE tap, which closes its window as before); i150: int/1429, both above; i145 (accept-space): (the user, 2026-11-11, i144 follow-up) QuestieDB is asked BEFORE the starter shortcut: the server checks room for the item a quest hands out before it uses up the starter, so an item-begun quest that hands out ANOTHER item still opens Make Space first with full bags (LOOT.acceptNeedsRoom); i144 (accept-space): ACCEPT WITH FULL BAGS ASKS FOR SPACE ONLY WHEN THE QUEST GIVES AN ITEM (the user, 2026-11-11: "Accepting that quest with a full bag asked me to delete an Item but I didn't actually need more space"; [Ripped Missive] started it): a quest begun from a bag item frees that item's slot, so it is accepted at once; otherwise QuestieDB (when installed) says whether the quest hands out an item (its sourceItemId); unknown = Make Space first as before (LOOT.acceptNeedsRoom); i148 (combat-nav): COMBAT NAV REVIEW FIXES (the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): a stray ENTER's "app" holder ends with the fight (released at PLAYER_REGEN_ENABLED, never re-bound); Step 5a's "left behind" looks only at the held window's own frames, counts a fading loot window as closed and looks again every half second of the fight (N.behindCheck), the shields of what closed go at once; a fight that began in the game menu stays the game's to its end (no ENTER, doc.gmFight); while the app shows a pop-up as its box in a fight, A and B are the app's alone (Dialogs d28 WC.dialogs.mirrored); i147: COMBAT NAV STEP 5 (combat_nav_design.md; the user, 2026-11-11: "If I am looting ... my dpad should not stop working"): 5a the fight's leave never unhides a window it could not close (hidden by alpha, the shields kept, N.release waits) until PLAYER_REGEN_ENABLED, when the out-of-combat path takes it back (an NPC window held again, anything else released); 5c a pre-aimed leave per game window (WowCompanionRoomLeave1..7 on Dialogs d27's cells: loot, map, gossip, quest, merchant, trainer, bank; aimed out of combat at each window's own close) and doc.fightLeave names the held window's own one (an npc hold, a room taken mid-fight) - the pull's generic leave stays with the holder it was aimed for (N.fcFor); i146: COMBAT NAV STEP 4 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): B in room mode goes to our sink as PAD2 like every other key (wc-room-dest), so the app's own B chain decides; LT + RT + B is the secure escape (wc-esc = the leave button, PadMap m135); B at a held window's top level in a fight never runs the game's close from our code - it steps doc.fightBack and the app taps the LEAVE; doc.npcLeft says a window left with B wants the pad no more; i145: COMBAT NAV STEP 3 (combat_nav_design.md; the user, 2026-11-11: "If I am in combat and press B I should be able to fully navigate everything like normal"): the document reports who has the pad in a fight (fightMode "room" / "game", read back from the router's wc-mode) and the ENTER cell always (fightEnter) for the app's reconciler (PadOwnerSync); room to room in a fight is an IN-PLACE SWAP for every guest holder (the old one lost "taken", nothing written, its window kept hidden by alpha); a stray ENTER holds as the guest "app" (keys swallowed, never the orphan-NPC leave); i144: COMBAT NAV STEP 2 (combat_nav_design.md; the user, 2026-11-11: "everything on the bottom screen breaks in combat"): every pull keeps what holds - a room whatever the Hub's NPC-windows bit, an "npc" hold with it - and ONLY the game menu open at the pull lets go (its lock: doc.gmLock while it shows); the fight hold is built (F.make) and armed (N.armIdle) out of combat at every document, so a /reload in a fight blocks nothing and arms at its end; loot in a fight is the bottom screen's whatever the loot-on-top switch (LOOT.top reads off in the lockdown) and the NPC-windows bit (N.fightLoot); the fight's end gives an "npc" holder its bindings and the grab back (N.check); i143: A QUEST WINDOW ANOTHER ADD-ON CLOSED NEVER STICKS (the user, 2026-11-11: "polestar forced me into accepting a quest ... now my bottom screen is stuck with a blank quest page that wont close"; the log: quest stage "detail", id 0, title "" every 15 s): Polestar accepts INSIDE the game's QUEST_DETAIL, its nested QUEST_FINISHED reached us before our own QUEST_DETAIL, so the window read open forever with nothing in it, and B (Decline: "no quest id") could not close it. Now the game's own quest state decides: no quest (id 0, no title; a greeting with nothing offered) = closed, whatever the order of the events (LOOT.questGone), the open events skip a window already gone, and B on such a window just closes it; i142: PET TRAINING SELECTS THROUGH THE GAME'S OWN ROW (the user, 2026-11-10: "its not doing anything when I train my pet"; the log 17:40: five selects counted, five itrain taps sent, nothing learned - the game's window never took the selection, so its Train button stayed off): the skill's row in the game's trainer list is clicked by a secure "click" cell (itrain col 1) before the Train button (col 0), and a pet skill's cost is checked against the pet's TRAINING POINTS; i141: PET TRAINING by the game's own Train button (issue 90: "Pet training causes an addon error and requires a restart": BuyTrainerService from our code is FORBIDDEN at a pet trainer) - "train <i>" only selects there, the secure row "itrain" clicks ClassTrainerTrainButton; i140: B on an NPC window is a SECURE click of the window's own close button (N.closeAim; ACT.close's CloseMail / CloseLoot ... from our code tainted the controller: the loot-close SetPreferredGamepadInteractTarget error); i139: the trade's bags without soulbound items; the seventh slot opens your soulbound items (equipped first) to be enchanted; the app shows it, so a stale addon is visible. i138: the trade window's controller (the user on test15): X = Trade, Y = the gold, B = Cancel, the left stick moves the cursor, the right stick scrolls the bags; no Trade / Cancel stops; i137: THE TRADE WINDOW (N.trd)
 
 local function say(s)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cffffd100WowCompanion|r " .. s) end
@@ -381,7 +381,67 @@ WC.interactWindows = WINDOWS      -- the harness switches them on
 -- ClassTrainerFrame (Forever's camelot cut, blizzard_trainerui). Read only: name, sub text, icon, the
 -- game's category ("available" / "unavailable" / "used"; "header" rows are the game's groups), required
 -- level, cost, required skill. The spell's own words come as the tooltip (doc.tip, "look train <i>").
-local TRAINER_MAX = 80
+-- i170 (the user, 2026-11-19: "the pet training in general is super inconsistent, it opens and doesnt work halfd the time or shows stuff
+-- thats already know for the pet regardless of the filter"): the trainer's helpers live in this ONE table (the file is at Lua's
+-- 200-local limit; N is declared further down). MAX = the services read (was TRAINER_MAX).
+local TRN = { MAX = 80 }
+-- A SERVICE'S IDENTITY: its name and rank text, hashed to one word (a command is split on spaces). The game's index of a service
+-- moves whenever its list changes (a buy drops a learned rank out of the list while "used" is filtered off, a filter or the
+-- categories re-sort it), so every command names the identity too ("train <i> <k>") and the index is looked up again at press time.
+function TRN.key(name, sub)
+    local s = tostring(name or "") .. "|" .. tostring(sub or "")
+    local h = 5381
+    for k = 1, #s do h = (h * 33 + s:byte(k)) % 16777213 end
+    return string.format("%x", h)
+end
+-- the service with identity k NOW: its index and GetTrainerServiceInfo's answer (packed), the index i tried first; no k = the old
+-- "train <i>" (the index as given). nil when it is no longer in the game's list.
+function TRN.resolve(i, k)
+    local function at(j)
+        local r = R(function() return GetTrainerServiceInfo(j) end)
+        if r and real(r[1]) and PS(r[2]) ~= "header" then return TRN.key(PS(r[1]), PS(r[5])), r end
+    end
+    local ki, ri = nil, nil
+    if i then ki, ri = at(i) end
+    if not k then return ri and i or nil, ri end
+    if ki == k then return i, ri end
+    local n = TN(function() return GetNumTrainerServices() end) or 0
+    for j = 1, math.min(n, TRN.MAX) do
+        local kj, rj = at(j)
+        if kj == k then return j, rj end
+    end
+end
+-- THE PET'S OWN BOOK (the game's Pet tab: C_SpellBook, bank Enum.SpellBookSpellBank.Pet): what the pet already knows, name -> its
+-- highest rank number (0 = a book entry without a rank). A pet trainer's "known" is the PET's, and this client's list does not
+-- always say "used" for it (the user's report above), so a pet trainer's service the book already has at that rank or higher is
+-- shown as known ("used", pk) - and so hidden while the game's "used" filter is off.
+function TRN.petKnown()
+    local out = {}
+    local n = TN(function() return (C_SpellBook.HasPetSpells()) end) or 0
+    local bank = TN(function() return Enum.SpellBookSpellBank.Pet end) or 1
+    for slot = 1, math.min(n, 60) do
+        local info = T(function() return C_SpellBook.GetSpellBookItemInfo(slot, bank) end)
+        local nm = type(info) == "table" and PS(info.name) or nil
+        if nm then
+            local sub = PS(info.subName)
+            if not sub and PN(info.spellID) then sub = TS(function() return C_Spell.GetSpellSubtext(info.spellID) end) end
+            local rk = tonumber(sub and sub:match("(%d+)") or "") or 0
+            if (out[nm] or -1) < rk then out[nm] = rk end
+        end
+    end
+    return out
+end
+-- a service's command and cursor id: "train <i> <k>" (i170: the identity rides along)
+function TRN.cmd(sv) return "train " .. tostring(sv.i) .. (sv.k and (" " .. sv.k) or "") end
+-- does the pet's book (TRN.petKnown) hold this service? A ranked service needs that rank or higher; a book entry without a rank
+-- only answers a service without one (unsure = not known: a row is never hidden on a guess)
+function TRN.petHas(book, name, sub)
+    local have = name and book[name]
+    if not have then return false end
+    local want = tonumber(sub and sub:match("(%d+)") or "")
+    if not want then return true end
+    return have > 0 and have >= want
+end
 -- a PROFESSION trainer (the game's rank bar has a maximum): no Spellbook there (the user, 2026-09-30: "Profession
 -- trainer ... should not work like the class trainer. The spellboook should not be there.")
 -- What decides it holds WITHOUT the skill too (user bug 2026-09-30: a Blacksmith showed the Spellbook to a player with no
@@ -417,20 +477,33 @@ local function collectTrainer()
         t.filters[k] = TB(function() return GetTrainerServiceTypeFilter(k) end)
     end
     local n = TN(function() return GetNumTrainerServices() end) or 0
-    for i = 1, math.min(n, TRAINER_MAX) do
+    local book = nil                              -- i170: the pet's book, read once (pet trainers only)
+    for i = 1, math.min(n, TRN.MAX) do
         local r = R(function() return GetTrainerServiceInfo(i) end)
         if r and real(r[1]) then
             local sv = { i = i, name = PS(r[1]), cat = PS(r[2]), icon = PN(r[3]), lvl = PN(r[4]), sub = PS(r[5]) }
             if sv.cat ~= "header" then
+                sv.k = TRN.key(sv.name, sv.sub)          -- i170: the identity the commands carry
                 local c = R(function() return GetTrainerServiceCost(i) end)
                 if c then sv.cost = PN(c[1]); sv.prof = PB(c[2]) end
                 local k = R(function() return GetTrainerServiceSkillReq(i) end)
                 if k and real(k[1]) then sv.skill = PS(k[1]); sv.rank = PN(k[2]); sv.skillOk = PB(k[3]) end
             end
-            t.services[#t.services + 1] = sv
+            -- i170: a pet trainer's service the PET already knows is known, whatever the list says (TRN.petKnown)
+            if t.pet and sv.cat ~= "header" and sv.cat ~= "used" then
+                book = book or TRN.petKnown()
+                if TRN.petHas(book, sv.name, sv.sub) then sv.cat, sv.pk = "used", true end
+            end
+            -- i170: THE LIST HONOURS THE GAME'S FILTERS: a service whose kind the game's filter has off is left out, as the game's own
+            -- list leaves it out (its "used" = already known); the game's index stays on every row that is kept
+            if sv.cat ~= "header" and t.filters[sv.cat] == false then
+                t.hid = (t.hid or 0) + 1
+            else
+                t.services[#t.services + 1] = sv
+            end
         end
     end
-    if n > TRAINER_MAX then t.more = n - TRAINER_MAX end
+    if n > TRN.MAX then t.more = n - TRN.MAX end
     -- UI Art's TRAINER_SPEC section 8: the profession's rank bar, the next rank drawn first, the player's level,
     -- which profession it teaches, and ability requirements
     local rv = R(function() return GetTrainerTradeskillRankValues() end)
@@ -594,6 +667,10 @@ local function collectMail()
         end
     end
     ml.more = n > MAIL_MAX and (n - MAIL_MAX) or nil
+    -- i167: Open All running (its steps), or its last word for 4 s (the bags full)
+    if MAIL.all then ml.all = { on = true, n = MAIL.all.steps } end
+    local am = MAIL.allMsg
+    if am and (TN(function() return GetTime() end) or 0) - am.t <= 4 then ml.allMsg = { ok = am.ok or nil, words = am.words } end
     local o = MAIL.open
     if o and o <= n then
         local open = { i = o, items = {} }
@@ -632,6 +709,10 @@ local AH = { path = {}, results = nil, key = nil, qty = 1, buy = nil, owned = ni
 -- most (the game's AddSortType). All kept for the session here; the game's own saved filters and sorts are never written.
 AH.search = { text = "", min = "", max = "", filters = nil }      -- filters: Enum.AuctionHouseFilter -> on (nil until first read)
 AH.filtersOpen = false
+-- i172: FAVORITES (Blizzard_AuctionHouseUI: AuctionHouseFavoritesSearchButtonMixin, AuctionHouseFavoriteButtonBaseMixin). AH.fav = the
+-- favourites list is the browse shown (the game's AuctionHouseSearchContext.AllFavorites); AH.pick = a finger's row number (the iqty
+-- cell k-1 = row k), used once by the "ahfav" that follows within AH.PICK_S
+AH.fav, AH.pick, AH.PICK_S = nil, nil, 3
 AH.FIELD = { text = 64, min = 3, max = 3 }
 function AH.sortEnum(name) return TN(function() return Enum.AuctionHouseSortOrder[name] end) end
 AH.sorts = {
@@ -743,6 +824,11 @@ end
 local function ahKeyInfo(itemKey)
     local ok, info = CALL(function() return C_AuctionHouse.GetItemKeyInfo(itemKey) end)
     if ok and type(info) == "table" then return info end
+end
+-- i172: is this item one of the player's favourites (the game's own star)
+function AH.isFav(itemKey)
+    if type(itemKey) ~= "table" then return nil end
+    return TB(function() return C_AuctionHouse.IsFavoriteItem(itemKey) end) == true or nil
 end
 -- ---------------------------------------------------------------- the flight master
 -- THE FLIGHT MASTER (user, 2026-09-30: "1, the game's view: the whole continent"; UI Art's FLIGHT_SPEC 2). Forever's
@@ -1108,6 +1194,9 @@ local function collectAuction()
     ah.levelWord = AH.detailColumn(AH.path)
     ah.nOwned = TN(function() return C_AuctionHouse.GetNumOwnedAuctions() end)
     ah.catName = cat and TS(function() return cat.name end) or nil
+    -- i172: the favourites list shown, and whether there is one (the game greys its star button without)
+    ah.fav = AH.fav or nil
+    ah.hasFav = TB(function() return C_AuctionHouse.HasFavorites() end) == true or nil
     -- the browse results of the last category asked for
     if AH.results then
         ah.results = {}
@@ -1121,7 +1210,7 @@ local function collectAuction()
                     name = info and TS(function() return info.itemName end), icon = info and TN(function() return info.iconFileID end),
                     q = info and TN(function() return info.quality end), price = TN(function() return r.minPrice end),
                     count = TN(function() return r.totalQuantity end), commodity = info and TB(function() return info.isCommodity end),
-                    lvl = TN(function() return key.itemLevel end) }
+                    lvl = TN(function() return key.itemLevel end), fav = AH.isFav(key) }
             end
             AH.rs = rs
         end
@@ -1132,7 +1221,7 @@ local function collectAuction()
         local info = ahKeyInfo(key)
         local it = { id = TN(function() return key.itemID end), name = info and TS(function() return info.itemName end),
                      icon = info and TN(function() return info.iconFileID end), q = info and TN(function() return info.quality end),
-                     commodity = info and TB(function() return info.isCommodity end), rows = {} }
+                     commodity = info and TB(function() return info.isCommodity end), rows = {}, fav = AH.isFav(key) }
         if it.commodity and it.id then
             local n = TN(function() return C_AuctionHouse.GetNumCommoditySearchResults(it.id) end) or 0
             local avail = 0
@@ -1497,16 +1586,31 @@ local function assignSlots(doc)
         au.act = { browse = slot("iact", "ahtab browse"), owned = slot("iact", "ahtab owned"), back = slot("iact", "ahback"),
                    buy = slot("iact", "ahbuy"), less = slot("iact", "ahqty less"), more = slot("iact", "ahqty more"),
                    sell = slot("iact", "ahtab sell") }
+        -- i171 THE AH'S CELL BUDGET (the user on 1502: the Sell confirm's Post "is staying grayed out", Reset "graying out for some
+        -- reason"): iact has 40 columns and a freed one sits out 30 s (TapPad's quarantine). With the always-on cells (15), the AH's own,
+        -- the search's and the sorts, a Sell form's 14 cells went over: Duration, Buyout only and Post (asked last) got none - the
+        -- confirm's Post drew grey (no cell) - and a tab change freed cells into the quarantine, so Reset back on Buy had none either.
+        -- Now (1) Reset is asked on EVERY tab, right after the tabs, so it is never freed while the AH is open; (2) the Sell form's 14
+        -- cells live on isell (idle on the AH's other tabs), asked FIRST there and kept for the whole AH visit, so a tab change never
+        -- frees them. A tap on a form cell with no item answers "choose an item to sell" (the ACT's own refusal)
+        au.act.reset = slot("iact", "ahreset")
+        do
+            local a2 = au.act
+            for _, k in ipairs({ "less", "more", "max" }) do a2["sq_" .. k] = slot("isell", "ahsqty " .. k) end
+            for _, k in ipairs({ "pg", "ps", "pc", "bg", "bs", "bc" }) do a2["se_" .. k] = slot("isell", "ahsedit " .. k) end
+            for d = 1, 3 do a2["sd_" .. d] = slot("isell", "ahsdur " .. d) end
+            a2.sbo, a2.spost = slot("isell", "ahsbo"), slot("isell", "ahspost")
+        end
+        -- i172: the favourite star (isell, the row a Browse leaves empty) and the Favorites list (ipick, with the categories); asked on
+        -- EVERY tab while the window is open, so a tab change never frees them into the pad's 30 s rest. i172 merged on i171: asked
+        -- right after the Sell form's 14 cells (isell's 15th fixed cell, before the Sell tab's bag items) and before the categories, the
+        -- Filter list and the bag headers on ipick (its 1st), so neither can lose its cell to a long list on any tab
+        au.act.fav, au.act.favs = slot("isell", "ahfav"), slot("ipick", "ahcat fav")
         -- 1.0.9: the Sell tab's cells (touch = the controller's A on them), your auctions' Cancel
         if au.sell then
-            local sl, a2 = au.sell, au.act
+            local sl = au.sell
             for _, b in ipairs(sl.bags or {}) do b.slot = slot("isell", "ahsitem " .. b.bag .. " " .. b.s .. " " .. b.id) end
-            if sl.item then
-                for _, k in ipairs({ "less", "more", "max" }) do a2["sq_" .. k] = slot("iact", "ahsqty " .. k) end
-                for _, k in ipairs({ "pg", "ps", "pc", "bg", "bs", "bc" }) do a2["se_" .. k] = slot("iact", "ahsedit " .. k) end
-                for d = 1, 3 do a2["sd_" .. d] = slot("iact", "ahsdur " .. d) end
-                a2.sbo, a2.spost = slot("iact", "ahsbo"), slot("iact", "ahspost")
-            end
+            for _, g in ipairs(sl.groups or {}) do g.slot = slot("ipick", "ahsfold " .. g.bag) end       -- i167: a bag's header folds it
         end
         for _, o in ipairs(au.owned or {}) do if o.can then o.slot = slot("ibuy", "ahcancel " .. o.i) end end
         if au.tab ~= "owned" and au.tab ~= "sell" then
@@ -1515,6 +1619,7 @@ local function assignSlots(doc)
         -- 1.0.8: the search bar, the Filter list and the column headers (touch = the controller's A on them)
         local a = au.act
         a.search, a.edit_text = slot("iact", "ahsearch"), slot("iact", "ahedit text")
+        -- i167: Reset over the categories (i171: its cell asked above, on every tab)
         a.filters_on, a.filters_off = slot("iact", "ahfilters on"), slot("iact", "ahfilters off")
         if au.search and au.search.open then
             a.edit_min, a.edit_max, a.fclear = slot("iact", "ahedit min"), slot("iact", "ahedit max"), slot("iact", "ahfclear")
@@ -1585,6 +1690,7 @@ local function assignSlots(doc)
         any = true
         -- the tabs' cells are tabInbox / tabSend (a.send below is the Send button: one key each, never shared)
         ml.act = { tabInbox = slot("iact", "mailtab inbox"), tabSend = slot("iact", "mailtab send") }
+        if not ml.send then ml.act.openall = slot("iact", "mailopenall") end                            -- i167: Open All
         local sd = ml.send
         if sd then
             -- the Send Mail tab: every field and button is one cell (touch = the controller's A on it)
@@ -1647,8 +1753,8 @@ local function assignSlots(doc)
         for _, sv in ipairs(tr.services) do
             if sv.cat == "header" then sv.slot = slot("ipick", "trhead " .. sv.i) end
             if sv.cat ~= "header" then
-                sv.slot = slot("ibuy", "train " .. sv.i)
-                sv.look = slot("ipick", "look train " .. sv.i)
+                sv.slot = slot("ibuy", TRN.cmd(sv))           -- i170: keyed by the identity too: a stale tap never lands on another service
+                sv.look = slot("ipick", "look " .. TRN.cmd(sv))
             end
         end
     end
@@ -1688,6 +1794,8 @@ local function assignSlots(doc)
         doc.spoken.cells = { closeOn = slot("iact", "spkopt close on"), closeOff = slot("iact", "spkopt close off"),
                              acceptOn = slot("iact", "spkopt accept on"), acceptOff = slot("iact", "spkopt accept off") }
     end
+    -- i167: the stream's one sign of life per drawn set (Dialogs d35 reads its column); asked for last, so no column above moves
+    slot("iact", "stay")
     local ok, d = pcall(pad.describe)
     padNow = ok and d or nil
     if any or doc.spoken or doc.questtrail then doc.pad = padNow end
@@ -2071,15 +2179,33 @@ function N.build(doc)
             -- bottom as the game draws it (Quantity, Buyout only, Bid, the price, the duration, Post). A Post armed: its confirm alone.
             local sl = au.sell or {}
             local it = sl.item
-            sig = "ah|sell|" .. (it and (it.bag .. ":" .. it.s .. ":" .. tostring(it.id)) or "") .. (sl.armed and "|armed" or "")
+            -- i167: the item is NOT in the window's signature any more (a new one reset the cursor to the top of the list); ACT.ahsitem puts
+            -- the cursor on Post itself, and a post / B lands it back on the grid (AH.gridLand)
+            sig = "ah|sell" .. (sl.armed and "|armed" or "")
             if sl.armed then
                 local zc = navZone("ahsconfirm", 1)
                 navAdd(zc, "ahspost")
                 N.zones = { zc }
                 first = "ahspost"
             else
-                local zb = navZone("ahsbags", 1)
-                for _, b in ipairs(sl.bags or {}) do navAdd(zb, "ahsitem " .. b.bag .. " " .. b.s .. " " .. b.id, not b.locked) end
+                -- i167: THE GRID - a header per bag (A folds it), its items AH.SCOLS a row; AH.gridRows is the rows as drawn, for the moves.
+                -- A locked item is still a stop (an item just posted stays under the cursor until it goes)
+                local zb = navZone("ahsbags", AH.SCOLS)
+                local rows, byBag = {}, {}
+                for _, b in ipairs(sl.bags or {}) do byBag[b.bag] = byBag[b.bag] or {}; table.insert(byBag[b.bag], b) end
+                for _, g in ipairs(sl.groups or {}) do
+                    local hid = "ahsfold " .. g.bag
+                    navAdd(zb, hid); rows[#rows + 1] = { hid }
+                    if not g.shut then
+                        local row
+                        for k, b in ipairs(byBag[g.bag] or {}) do
+                            if (k - 1) % AH.SCOLS == 0 then row = {}; rows[#rows + 1] = row end
+                            local id = "ahsitem " .. b.bag .. " " .. b.s .. " " .. b.id
+                            navAdd(zb, id); row[#row + 1] = id
+                        end
+                    end
+                end
+                AH.gridRows = rows
                 if it then
                     local zq = navZone("ahsq", 1)
                     if (sl.max or 1) > 1 then navAdd(zq, "ahsq") end
@@ -2092,13 +2218,14 @@ function N.build(doc)
                     local zd = navZone("ahsdur", 3)
                     navAdd(zd, "ahsdur 1"); navAdd(zd, "ahsdur 2"); navAdd(zd, "ahsdur 3")
                     local zpo = navZone("ahspost", 1)
-                    navAdd(zpo, "ahspost", sl.why == nil)
+                    navAdd(zpo, "ahspost")             -- i167: always a stop (greyed, X / A on it says why)
                     N.zones = { tabs, zb, zq, zo, zbid, zp, zd, zpo }
-                    -- an item chosen: the cursor on Post when it can go (the game's price is already in), else on the price
-                    first = (sl.why == nil) and "ahspost" or "ahsedit pg"
+                    -- i167: an item chosen: the cursor on Post (the user: "the cursor needs to start on the post button")
+                    first = "ahspost"
                 else
                     N.zones = { tabs, zb }
-                    first = navFirst(zb) or "ahtab sell"
+                    -- the form went (a post, B): the cursor that was on it lands here (the keep-place below finds its zone gone)
+                    first = AH.gridLand(zb) or "ahtab sell"
                 end
             end
         elseif au.tab == "owned" and au.cancel then
@@ -2118,6 +2245,9 @@ function N.build(doc)
             local zs = navZone("ahbar", 3)
             navAdd(zs, "ahedit text"); navAdd(zs, "ahfilters on"); navAdd(zs, "ahsearch")
             local zc = navZone("ahcats", 1)
+            navAdd(zc, "ahreset")                  -- i167: Reset over the categories
+            navAdd(zc, "ahcat fav")                -- i172: Favorites under Reset (the game's star button)
+            if au.fav then N.ahSel = "ahcat fav" end
             for _, c in ipairs(au.cats) do
                 navAdd(zc, "ahcat " .. c.i)
                 if c.sel then N.ahSel = "ahcat " .. c.i end
@@ -2133,12 +2263,12 @@ function N.build(doc)
             else
                 -- browsing: the cursor stays on the category asked for (right goes to its results); back from an item,
                 -- on the result that was opened
-                sig = "ah|b|" .. table.concat(au.path or {}, ".")
+                sig = "ah|b|" .. (au.fav and "fav" or table.concat(au.path or {}, "."))
                 for _, r in ipairs(au.results or {}) do navAdd(zr, "ahres " .. r.i) end
                 local back
                 for _, r in ipairs(au.results or {}) do if r.i == AH.lastRes then back = "ahres " .. r.i end end
                 AH.lastRes = nil
-                first = back or N.ahSel or navFirst(zc)
+                first = back or N.ahSel or (zc.items[3] and zc.items[3].id) or navFirst(zc)      -- i167: the first category, not Reset (i172: nor Favorites)
             end
             N.zones = zh and { tabs, zs, zc, zh, zr } or { tabs, zs, zc, zr }
         end
@@ -2270,12 +2400,12 @@ function N.build(doc)
             local z = navZone("trlist", 2)
             local lines, firstAvail = {}, nil
             local function svc(sv)
-                navAdd(z, "train " .. sv.i)
-                if not firstAvail and sv.cat == "available" then firstAvail = "train " .. sv.i end
+                navAdd(z, TRN.cmd(sv))
+                if not firstAvail and sv.cat == "available" then firstAvail = TRN.cmd(sv) end
             end
             if tr.step then
                 for _, sv in ipairs(tr.services) do
-                    if sv.i == tr.step then svc(sv); lines[#lines + 1] = { "train " .. sv.i } end
+                    if sv.i == tr.step then svc(sv); lines[#lines + 1] = { TRN.cmd(sv) } end
                 end
             end
             local head, row = nil, nil
@@ -2287,8 +2417,8 @@ function N.build(doc)
                     row = nil
                 elseif sv.i ~= tr.step and not (head and N.trFold[head]) then
                     svc(sv)
-                    if row and #row < 2 then row[#row + 1] = "train " .. sv.i
-                    else row = { "train " .. sv.i }; lines[#lines + 1] = row end
+                    if row and #row < 2 then row[#row + 1] = TRN.cmd(sv)
+                    else row = { TRN.cmd(sv) }; lines[#lines + 1] = row end
                 end
             end
             N.trLines = lines
@@ -2428,7 +2558,9 @@ local function buildDoc()
     if isOpen("quest") and questStage then doc.quest = collectQuest() end
     if doc.quest and LOOT.ms == "quest" and LOOT.full then doc.quest.space = LOOT.buildSpace() end
     if isOpen("merchant") then doc.merchant = collectMerchant() end
-    if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer(); doc.trainer.ptc = N.ptc; doc.trainer.ptr = N.ptr end   -- i141: the pet selects
+    if WINDOWS.trainer and isOpen("trainer") then doc.trainer = collectTrainer(); doc.trainer.ptc = N.ptc; doc.trainer.ptr = N.ptr   -- i141: the pet selects
+        doc.trainer.ptw, doc.trainer.ptwn, doc.trainer.ptt = N.ptw, N.ptwn, N.ptTaint      -- i170: why a counted press was dropped; a taint seen
+        doc.trainer.ptsn, doc.trainer.pts = N.ptsn or 0, N.ptScroll end                    -- i170b: the scroll click asked for (InteractView)
     if WINDOWS.stable and isOpen("stable") then doc.stable = collectStable() end
     if WINDOWS.petition and isOpen("petition") then doc.petition = LOOT.collectPetition() end
     if WINDOWS.book and isOpen("book") then doc.book = LOOT.collectBook() end
@@ -2561,6 +2693,8 @@ local function buildDoc()
         local key = (N.holding and N.mode and N.cur and N.canLook(N.cur)) and N.cur or N.look
         -- the auction house: an item opened shows its tooltip without a cursor too (a finger opens it at once)
         if not key and doc.auction and AH.key then key = "ahbuy" end
+        -- i167: the Sell tab draws no tooltip, and a finger's look kept from the Buy tab must not make X a hold-to-compare there (X is Post)
+        if doc.auction and AH.tab == "sell" then key = nil end
         if key ~= N.tsKey then N.ts, N.tsKey = 0, key end
         if key then doc.tip = N.tipOf(key) end
         -- the loot window compares AUTOMATICALLY (X is Loot All there): hold-X belongs to the other windows
@@ -2675,15 +2809,16 @@ local ON = {
     end,
     MERCHANT_SHOW = function() mark("merchant", true) end,
     MERCHANT_CLOSED = function() mark("merchant", false) end,
-    TRAINER_SHOW = function() mark("trainer", true) end,
-    TRAINER_CLOSED = function() mark("trainer", false) end,
+    -- i170: the list can fill after the window shows (names arrive late): one look again; a press still on its way ends with the window
+    TRAINER_SHOW = function() mark("trainer", true); N.ptw = nil; pcall(C_Timer.After, 0.5, emitSoon) end,
+    TRAINER_CLOSED = function() if N.ptWant then N.ptDrop(nil) end; N.ptTaint = nil; mark("trainer", false) end,
     PET_STABLE_SHOW = function() mark("stable", true) end,
     PETITION_SHOW = function() mark("petition", true) end,
     PETITION_CLOSED = function() mark("petition", false) end,
     ITEM_TEXT_BEGIN = function() mark("book", true) end,
     ITEM_TEXT_CLOSED = function() mark("book", false) end,
     PET_STABLE_CLOSED = function() mark("stable", false) end,
-    MAIL_SHOW = function() MAIL.open = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
+    MAIL_SHOW = function() MAIL.open = nil; MAIL.all = nil; MAIL.tab, MAIL.pick = "inbox", false; mark("mail", true) end,
     -- i137: the trade window; TRADE_ACCEPT_UPDATE says who has accepted (1 / 0), any change in the trade sets both back to 0
     TRADE_SHOW = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.probed, N.trd.bs, N.trd.pick7 = 0, 0, nil, nil, nil, 0, nil; mark("trade", true) end,
     TRADE_CLOSED = function() N.trd.acc, N.trd.tacc, N.trd.edit, N.trd.dest, N.trd.pick7 = 0, 0, nil, nil, nil; mark("trade", false) end,
@@ -2708,15 +2843,21 @@ local ON = {
         if MAIL.status == "sending" then MAIL.status, MAIL.confirmAt = "confirm", TN(function() return GetTime() end) end
     end,
     AUCTION_HOUSE_SHOW = function()
+        N.ahTipN = nil
         AH.path, AH.results, AH.key, AH.buy, AH.tab = {}, nil, nil, nil, "browse"
-        AH.sell, AH.cancel = nil, nil
+        AH.sell, AH.cancel, AH.fav, AH.pick, AH.favWait = nil, nil, nil, nil, nil
         pcall(AH.hookWarn)
+        pcall(AH.openFav)           -- i172b: with favourites the window opens on them, as the game's
         mark("auction", true)
     end,
-    AUCTION_HOUSE_CLOSED = function() AH.buy, AH.sell, AH.cancel = nil, nil, nil; mark("auction", false) end,
+    AUCTION_HOUSE_CLOSED = function() AH.buy, AH.sell, AH.cancel, AH.favWait = nil, nil, nil, nil; mark("auction", false) end,
+    -- i172b: the opening Favorites search found the throttle busy: asked once more when it is ready (nothing else here)
+    AUCTION_HOUSE_THROTTLED_SYSTEM_READY = function()
+        if AH.favWait and AH.fav and not AH.results and not AH.key then AH.favWait = nil; pcall(AH.browse) end
+    end,
     -- 1.0.9: a post the game took (its own "Auction created."), refused, or an auction cancelled
     AUCTION_HOUSE_AUCTION_CREATED = function() pcall(AH.posted) end,
-    AUCTION_HOUSE_POST_ERROR = function() if AH.sell then AH.sell.pending, AH.sell.status = nil, "failed" end end,
+    AUCTION_HOUSE_POST_ERROR = function() pcall(AH.postFailed) end,
     AUCTION_CANCELED = function()
         AH.cancel = nil
         if AH.tab == "owned" then CALL(function() C_AuctionHouse.QueryOwnedAuctions(AH.sortList("owned")) end) end
@@ -2800,9 +2941,13 @@ local REFRESH = {
     "GOSSIP_OPTIONS_REFRESHED", "ITEM_TEXT_READY", "QUEST_ITEM_UPDATE", "MERCHANT_UPDATE", "BAG_UPDATE_DELAYED",
     "UPDATE_INVENTORY_DURABILITY", "PLAYER_MONEY", "GET_ITEM_INFO_RECEIVED",
     "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "TRAINER_UPDATE", "PET_STABLE_UPDATE", "MAIL_INBOX_UPDATE",
+    -- i170: what else changes an open trainer's list: the game's selection, a service's name arriving late, the pet's points, a
+    -- spell the pet (or the player) just learned
+    "TRAINER_DESCRIPTION_UPDATE", "TRAINER_SERVICE_INFO_NAME_UPDATE", "UNIT_PET_TRAINING_POINTS", "SPELLS_CHANGED",
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "AUCTION_HOUSE_BROWSE_RESULTS_ADDED", "COMMODITY_SEARCH_RESULTS_UPDATED",
     "PLAYERBANKSLOTS_CHANGED", "BANK_TABS_CHANGED", "LOOT_SLOT_CLEARED", "LOOT_SLOT_CHANGED", "MAIL_SEND_INFO_UPDATE",
     "ITEM_SEARCH_RESULTS_UPDATED", "OWNED_AUCTIONS_UPDATED", "ITEM_KEY_ITEM_INFO_RECEIVED", "AUCTION_HOUSE_THROTTLED_SYSTEM_READY",
+    "AUCTION_HOUSE_FAVORITES_UPDATED",      -- i172: a star turned (ours or the game's): the stars drawn again
     "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED", "TRADE_MONEY_CHANGED", "PLAYER_TRADE_MONEY", "TRADE_UPDATE",
 }
 
@@ -3257,6 +3402,12 @@ end
 -- the app shows a dialog on the bottom screen and says so, again and again while it does
 function ACT.alive()
     if type(WC.dialogs) == "table" and type(WC.dialogs.alive) == "function" then WC.dialogs.alive() end
+    return true
+end
+
+-- i167: on a stream the app says it ONCE per newly drawn set of dialogs (Dialogs d35: they stay off the top screen until a real mouse moves)
+function ACT.stay()
+    if type(WC.dialogs) == "table" and type(WC.dialogs.stay) == "function" then WC.dialogs.stay() end
     return true
 end
 
@@ -4207,7 +4358,13 @@ local function lookSource(key)
         -- a controller highlight on a reward choice: "reward <questID> <i>"
         return nil, function() return C_TooltipInfo.GetQuestItem("choice", b) end
     elseif w[1] == "train" and a then
-        return nil, function() return C_TooltipInfo.GetTrainerService(a) end
+        local j = TRN.resolve(a, w[3]) or a           -- i170: the service by its identity, wherever the list moved it
+        return nil, function() return C_TooltipInfo.GetTrainerService(j) end
+    elseif w[1] == "ahrow" and a and AH.key and N.ahRowLink(a) then
+        -- i167 (the user 2026-11-19: "When looking at Items on the AH I cant see their stats in any way for some of them"): an item's
+        -- listing is ITS OWN item (its suffix, its level, its stats): the game's buy list shows the row's own link, so do we
+        local link = N.ahRowLink(a)
+        return TN(function() return (C_Item.GetItemInfoInstant(link)) end), function() return C_TooltipInfo.GetHyperlink(link) end
     elseif (w[1] == "ahres" and a) or w[1] == "ahrow" or w[1] == "ahbuy" then
         -- THE AUCTION HOUSE's tooltips (user, 2026-09-30: "we need tool tips in the ah"): a result, or the item opened
         -- (its listings / its price tiers); the game's own item tooltip by its item key
@@ -4216,8 +4373,10 @@ local function lookSource(key)
         local id = key and TN(function() return key.itemID end)
         if not id then return nil end
         local lvl, suf = TN(function() return key.itemLevel end), TN(function() return key.itemSuffix end)
+        -- i167: as the game's own browse list (GameTooltip:SetItemKey(id, level, suffix, required level)); a pet cage by its item
+        local req = TN(function() return C_AuctionHouse.GetItemKeyRequiredLevel(key) end)
         return id, function()
-            if C_TooltipInfo.GetItemKey then return C_TooltipInfo.GetItemKey(id, lvl or 0, suf or 0) end
+            if C_TooltipInfo.GetItemKey then return C_TooltipInfo.GetItemKey(id, lvl or 0, suf or 0, req) end
             return C_TooltipInfo.GetItemByID(id)
         end
     elseif w[1] == "loot" and a then
@@ -4241,6 +4400,26 @@ local function lookSource(key)
     return nil
 end
 local function canLook(key) return select(2, lookSource(key)) ~= nil end
+-- i167: an item listing's own link (C_AuctionHouse.GetItemSearchResultInfo's itemLink), nil for none
+function N.ahRowLink(i)
+    local ok, r = CALL(function() return C_AuctionHouse.GetItemSearchResultInfo(AH.key, i) end)
+    local link = ok and type(r) == "table" and TS(function() return r.itemLink end)
+    if link and link:find("|H") then return link end
+end
+-- i167: an auction tooltip read before the client has the item's data comes back empty (or a name alone) and nothing asked again:
+-- ask the game for the item (C_Item.RequestLoadItemDataByID) and look again shortly, a few times per key at most
+N.AH_TIP_TRIES = 8
+function N.ahTipRetry(key, id)
+    N.ahTipN = N.ahTipN or {}
+    local n = N.ahTipN[key] or 0
+    if n >= N.AH_TIP_TRIES then return end
+    N.ahTipN[key] = n + 1
+    if id then CALL(function() C_Item.RequestLoadItemDataByID(id) end) end
+    if N.ahTipWait then return end
+    N.ahTipWait = true
+    local ok = pcall(function() C_Timer.After(0.4, function() N.ahTipWait = nil; if isOpen("auction") then emitSoon() end end) end)
+    if not ok then N.ahTipWait = nil end
+end
 N.canLook = canLook
 local function questItemID(kind, i)
     return TN(function() local _, _, _, _, _, id = GetQuestItemInfo(kind, i); return id end)
@@ -4255,6 +4434,7 @@ function N.tipOf(key, opt)
     local lines = linesOf(fn)
     -- i156: the item's own tooltip data, kept from this one read for the compare below (it was read a second time for it)
     local data = N.tipData
+    if key:match("^ah") and (not lines or #lines < 2) then N.ahTipRetry(key, id) end
     if not lines then return { key = key, none = true } end
     local tip = { key = key, lines = lines }
     if not id then
@@ -4389,10 +4569,56 @@ function AH.browse()
     local query = { searchString = AH.search.text, sorts = AH.sortList("browse"), filters = filters,
                     itemClassFilters = (cat and cat.filters) or {},
                     minLevel = tonumber(AH.search.min) or 0, maxLevel = tonumber(AH.search.max) or 0 }
-    local done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
+    local done, err
+    if AH.fav then
+        -- i172: the favourites list, sorted as the browse is (the game's QueryAll(AllFavorites): SearchForFavorites(sorts))
+        done, err = run(function() C_AuctionHouse.SearchForFavorites(AH.sortList("browse")) end)
+    else
+        done, err = run(function() C_AuctionHouse.SendBrowseQuery(query) end)
+        AH.lastQuery = query
+    end
     if done then AH.results, AH.key, AH.buy = true, nil, nil end
-    AH.lastQuery = query
     return done, err
+end
+-- /wci ahfav [i|key]   i172: the game's favourite star on an item, turned over (C_AuctionHouse.SetFavoriteItem(itemKey, not IsFavoriteItem),
+-- what the game's own star button and its row menu call; not restricted). `i` = the browse result; `key` = the item opened; no word =
+-- a finger's row number (AH.pick, the iqty cell just before) or else the item opened
+function AH.favKey(a)
+    local pick = AH.pick
+    AH.pick = nil
+    local i = tonumber(a)
+    if not i and a == nil and pick and (TN(function() return GetTime() end) or 0) - pick.at <= AH.PICK_S then i = pick.k end
+    if i then
+        if AH.key then return nil end
+        local r = AH.rs and AH.rs[i]
+        return r and r.itemKey or nil
+    end
+    return AH.key
+end
+function ACT.ahfav(a)
+    if not isOpen("auction") then return false, "no auction house open" end
+    local key = AH.favKey(a)
+    if type(key) ~= "table" then return false, "no item" end
+    if TB(function() return C_AuctionHouse.FavoritesAreAvailable() end) == false then return false, "Favorites unavailable" end
+    local on = AH.isFav(key) == true
+    if not on and TB(function() return C_AuctionHouse.HasMaxFavorites() end) == true then return false, "Favorites full" end
+    local done, err = run(function() C_AuctionHouse.SetFavoriteItem(key, not on) end)
+    emitSoon()
+    return done, err
+end
+-- i172b: the window opens on Favorites when the player has some (the game's AuctionHouseFrame OnShow: QueryAll(AllFavorites))
+function AH.openFav()
+    if TB(function() return C_AuctionHouse.HasFavorites() end) ~= true then return end
+    AH.fav = true
+    if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then AH.favWait = true; return end
+    if not AH.browse() then AH.favWait = true end
+end
+-- the controller's Select (i172b; RT in i172): the row under the cursor, or the item opened (nil = nothing to star here)
+function AH.favCmd()
+    if AH.filtersOpen or AH.tab ~= "browse" then return nil end
+    if AH.key then return "ahfav key" end
+    local i = tostring(N.cur or ""):match("^ahres (%d+)$")
+    return i and ("ahfav " .. i) or nil
 end
 local function ahIsOpen() return isOpen("auction") end
 -- a commodity's quantity, one step (X / Y, or a tap on - / +): never past what is listed; a change cancels an armed purchase
@@ -4416,7 +4642,14 @@ function ACT.ahqty(a)
     if not ahIsOpen() then return false, "no auction house open" end
     return ahStep((a == "more") and 1 or -1)
 end
--- /wci ahtab browse|owned
+-- i171: the game's tab order (AuctionHouseFrame: Buy, Sell, Auctions); [d] = +1 (R) / -1 (L); nil past either end
+AH.TABS = { "browse", "sell", "owned" }
+function AH.tabStep(tab, d)
+    local at = 1
+    for k, t in ipairs(AH.TABS) do if t == tab then at = k end end
+    return AH.TABS[at + d]
+end
+-- /wci ahtab browse|sell|owned
 function ACT.ahtab(a)
     if not ahIsOpen() then return false, "no auction house open" end
     if a ~= "browse" and a ~= "owned" and a ~= "sell" then return false, "no such tab" end
@@ -4431,20 +4664,54 @@ end
 -- /wci ahcat <path>   a category anywhere in the tree ("5" or "5.1"): browse it (its sub-categories open under it)
 function ACT.ahcat(a)
     if not ahIsOpen() then return false, "no auction house open" end
+    if a == "fav" then
+        -- i172: Favorites (the game's star button over its categories); pressed again while shown it folds as a category does
+        ahCancelBuy()
+        if AH.fav and not AH.key then AH.fav, AH.results, AH.rs = nil, nil, nil; emitSoon(); return true end
+        if TB(function() return C_AuctionHouse.HasFavorites() end) ~= true then return false, "No favorites" end
+        if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
+        AH.fav, AH.path, AH.key, AH.buy, AH.tab, AH.filtersOpen = true, {}, nil, nil, "browse", false
+        return AH.browse()
+    end
     local path = {}
     for n in tostring(a or ""):gmatch("%d+") do path[#path + 1] = tonumber(n) end
     if #path == 0 then return false, "no such category" end
     local cat = ahCategory(path)
     if not cat then return false, "no such category" end
+    -- i167 (the user 2026-11-19: "Tapping on a category in the ah a second time should collapse or deselect the category"): the one
+    -- selected, pressed again, goes up a level as the game's list does - its sub-categories fold, a sub-category is deselected
+    local same = (#path == #AH.path) and not AH.key
+    if same then for k = 1, #path do if path[k] ~= AH.path[k] then same = false end end end
+    if same and not AH.fav then
+        local up = {}
+        for k = 1, #path - 1 do up[k] = path[k] end
+        ahCancelBuy()
+        AH.path, AH.key, AH.buy = up, nil, nil
+        if #up == 0 then AH.results = nil; emitSoon(); return true end
+        return AH.browse()
+    end
     if TB(function() return C_AuctionHouse.IsThrottledMessageSystemReady() end) == false then return false, "the auction house is busy: one moment" end
-    AH.path, AH.key, AH.buy = path, nil, nil
+    AH.path, AH.key, AH.buy, AH.fav = path, nil, nil, nil
     return AH.browse()            -- 1.0.8: with the search word, the level range and the filters, as the game's Search
+end
+-- /wci ahreset   i167: Reset over the categories - the word, the level range, the filters and the category back to the game's own start
+-- (the browse as the window opens: nothing asked yet). No game call.
+function ACT.ahreset()
+    if not ahIsOpen() then return false, "no auction house open" end
+    N.kbdClose()
+    ahCancelBuy()
+    AH.path, AH.results, AH.key, AH.buy, AH.lastRes, AH.fav = {}, nil, nil, nil, nil, nil
+    AH.search.text, AH.search.min, AH.search.max = "", "", ""
+    AH.search.filters = AH.filterDefaults()
+    AH.tab, AH.filtersOpen = "browse", false
+    emitSoon()
+    return true
 end
 -- /wci ahsearch   the game's Search button: the word, the range and the filters, in the category browsed (or all of them)
 function ACT.ahsearch()
     if not ahIsOpen() then return false, "no auction house open" end
     N.kbdClose()
-    AH.tab, AH.filtersOpen = "browse", false
+    AH.tab, AH.filtersOpen, AH.fav = "browse", false, nil
     return AH.browse()
 end
 -- /wci ahedit text|min|max   the search box, or the Filter list's level range: the keyboard opens on it. Done on the word searches
@@ -4462,7 +4729,7 @@ function ACT.ahedit(a, v)
             t = (t == "") and "" or tostring(tonumber(t))
         end
         AH.search[a] = t
-        if a == "text" then AH.tab, AH.filtersOpen = "browse", false; AH.browse() end
+        if a == "text" then AH.tab, AH.filtersOpen, AH.fav = "browse", false, nil; AH.browse() end
         return true
     end, v == "v" and N.VOICE_FIELD["ahedit " .. a])
 end
@@ -4575,6 +4842,65 @@ end
 AH.sell = nil
 AH.cancel = nil
 AH.SFIELD = { pg = 7, ps = 2, pc = 2, bg = 7, bs = 2, bc = 2 }
+-- i167: the Sell tab's grid - AH.SCOLS items a row (the app draws exactly this many), a header per bag; AH.shut[bag] = folded (session only)
+AH.SCOLS = 4
+AH.shut = {}
+AH.THROTTLE_POLL = 0.5
+function AH.bagName(bag)
+    local n = TS(function() return C_Container.GetBagName(bag) end)
+    if n and n ~= "" then return n end
+    if bag == 0 then return AH.gs("BACKPACK_TOOLTIP", "Backpack") end
+    return "Bag " .. bag
+end
+function AH.sellGroups(bags)
+    local out, at = {}, {}
+    for _, b in ipairs(bags) do
+        local g = at[b.bag]
+        if not g then
+            g = { bag = b.bag, name = AH.bagName(b.bag), n = 0, shut = AH.shut[b.bag] or nil }
+            at[b.bag] = g
+            out[#out + 1] = g
+        end
+        g.n = g.n + 1
+    end
+    return out
+end
+-- i167: the throttle greys Post; the game's AUCTION_HOUSE_THROTTLED_SYSTEM_READY can come before our document or not at all on this
+-- client, so while it greys Post the form is looked at again every AH.THROTTLE_POLL s (one timer at a time, the window open)
+function AH.pollThrottle()
+    if AH.polling then return end
+    AH.polling = true
+    local ok = pcall(function()
+        C_Timer.After(AH.THROTTLE_POLL, function()
+            AH.polling = nil
+            if isOpen("auction") and AH.sell then emitSoon() end
+        end)
+    end)
+    if not ok then AH.polling = nil end
+end
+-- i167: where the cursor lands in the grid with no item in the form: the cell last picked, or the nearest one left (the same place in
+-- the grid; an item cell before a header), else the first
+function AH.gridLand(zb)
+    local w = AH.curTo
+    if w then
+        for _, x in ipairs(zb.items) do if x.id == w.id then return x.id end end
+        local n = #zb.items
+        if n > 0 then
+            local j = math.max(1, math.min(w.idx or 1, n))
+            for k = j, n do if zb.items[k].id:match("^ahsitem ") then return zb.items[k].id end end
+            for k = j, 1, -1 do if zb.items[k].id:match("^ahsitem ") then return zb.items[k].id end end
+            return zb.items[j].id
+        end
+    end
+    return navFirst(zb)
+end
+-- the cell just picked, kept for the landing above (its place in the grid zone)
+function AH.keepCell(id)
+    local idx
+    local z = navZoneNamed("ahsbags")
+    if z then for k, x in ipairs(z.items) do if x.id == id then idx = k end end end
+    AH.curTo = { id = id, idx = idx or (AH.curTo and AH.curTo.idx) or 1 }
+end
 function AH.dur()
     local d = AH.sellDur or TN(function() return tonumber(GetCVar("auctionHouseDurationDropdown")) end) or 2
     return (d >= 1 and d <= 3) and d or 2
@@ -4643,10 +4969,12 @@ function AH.sellWhy(sl, deposit)
 end
 function AH.sellCollect()
     local t = TN(function() return GetTime() end) or 0
-    local out = { bags = AH.sellBags(), dur = AH.dur(), copper = TB(function() return C_AuctionHouse.SupportsCopperValues() end) or nil,
+    local out = { bags = AH.sellBags(), dur = AH.dur(), copper = TB(function() return C_AuctionHouse.SupportsCopperValues() end) or nil, cols = AH.SCOLS,
                   durs = { AH.gs("AUCTION_DURATION_ONE", "12 Hours"), AH.gs("AUCTION_DURATION_TWO", "24 Hours"), AH.gs("AUCTION_DURATION_THREE", "48 Hours") },
                   boWord = AH.gs("AUCTION_HOUSE_BUYOUT_MODE_CHECK_BOX", "Buyout only") }
     if AH.sellMsg and t - AH.sellMsg.t <= 4 then out.msg = { ok = AH.sellMsg.ok, words = AH.sellMsg.words } end
+    out.groups = AH.sellGroups(out.bags)
+    if AH.postingAt and t - AH.postingAt <= 5 then out.posting = true else AH.postingAt = nil end
     local sl = AH.sell
     if sl and not TB(function() return C_Item.DoesItemExist(sl.loc) end) then AH.sell, sl = nil, nil end
     if not sl then return out end
@@ -4688,6 +5016,7 @@ function AH.sellCollect()
     out.deposit = AH.deposit(sl)
     out.total = sl.qty * (((sl.unit or 0) > 0) and sl.unit or ((sl.bidOn and sl.bid) or 0))
     out.why, out.wn = AH.sellWhy(sl, out.deposit)
+    if out.wn == 4 then AH.pollThrottle() end
     out.listings, out.searched = rows, (#rows > 0) or nil
     if sl.armedAt and (t - sl.armedAt > AH_ARM or out.why) then sl.armedAt = nil end
     out.armed = sl.armedAt and true or nil
@@ -4701,6 +5030,7 @@ function ACT.ahsitem(a, b, c)
     local loc = bag and sl and AH.loc(bag, sl)
     if not (loc and TN(function() return C_Item.GetItemID(loc) end) == id) then return false, "the bags changed" end
     if TB(function() return C_AuctionHouse.IsSellItemValid(loc, false) end) ~= true then return false, "the auction house won't take this" end
+    if TB(function() return C_Item.IsLocked(loc) end) == true then return false, "that item is locked" end
     local okK, key = CALL(function() return C_AuctionHouse.GetItemKeyFromItem(loc) end)
     local st = TN(function() return C_AuctionHouse.GetItemCommodityStatus(loc) end)
     local commodity = st ~= nil and st == TN(function() return Enum.ItemCommodityStatus.Commodity end)
@@ -4708,6 +5038,8 @@ function ACT.ahsitem(a, b, c)
     new.qty = commodity and math.min(TN(function() return C_Item.GetStackCount(loc) end) or 1, AH.maxQty(new)) or 1
     new.unit = AH.defaultPrice(loc)
     AH.sell, AH.cancel = new, nil
+    AH.keepCell("ahsitem " .. bag .. " " .. sl .. " " .. id)
+    N.cur = "ahspost"                    -- i167: picking an item puts the cursor on Post (never the gold box)
     if new.key then
         local sorts = { { sortOrder = AH.sortEnum("Price") or 0, reverseSort = false } }
         run(function() C_AuctionHouse.SendSearchQuery(new.key, sorts, true) end)
@@ -4715,7 +5047,17 @@ function ACT.ahsitem(a, b, c)
     emitSoon()
     return true
 end
--- /wci ahsqty less|more|max   the quantity (X / Y, touch's - / +, the game's Max)
+-- /wci ahsfold <bag>   i167: a bag's header in the Sell grid folds / unfolds it (A or a touch on it); the cursor in it goes to the header
+function ACT.ahsfold(a)
+    local bag = tonumber(a)
+    if not (bag and ahIsOpen()) then return false, "no auction house open" end
+    AH.shut[bag] = (not AH.shut[bag]) or nil
+    local b = tostring(N.cur or ""):match("^ahsitem (%-?%d+) ")
+    if AH.shut[bag] and tonumber(b) == bag then N.cur = "ahsfold " .. bag end
+    emitSoon()
+    return true
+end
+-- /wci ahsqty less|more|max   the quantity (i171: Y less / X more, touch's - / +, the game's Max)
 function ACT.ahsqty(a)
     local sl = AH.sell
     if not (sl and ahIsOpen()) then return false, "choose an item to sell" end
@@ -4795,14 +5137,27 @@ function ACT.ahspost()
     end
     LOOT.ranGame = true
     if not ok then return false, "the game call failed" end
-    sl.status = needs and "warn" or "posting"
+    if needs then
+        sl.status = "warn"
+    else
+        -- i167: the game's own Sell frame clears its form right after the post call (ClearPost) and waits for nothing; ours did wait for
+        -- AUCTION_HOUSE_AUCTION_CREATED with Post greyed ("posting"), and a part-stack post (the item still in the bags) stayed grey for
+        -- good when that event did not come. The form goes now; the cursor goes back to the item's cell in the grid
+        AH.sell, AH.postingAt = nil, t
+    end
     emitSoon()
     return true
 end
 -- the game's own "Auction created.": the item is gone from the form (as the game's ClearPost), the word shown
+-- i167: the form already went at the post (a new item may be in it now): only the word and the posting mark change here
 function AH.posted()
     AH.sellMsg = { ok = true, words = AH.gs("ERR_AUCTION_STARTED", "Auction created."), t = TN(function() return GetTime() end) or 0 }
-    if AH.sell and not AH.sell.pending then AH.sell = nil end
+    AH.postingAt = nil
+end
+function AH.postFailed()
+    AH.postingAt = nil
+    if AH.sell and AH.sell.status == "warn" then AH.sell.pending, AH.sell.status = nil, "failed" end
+    AH.sellMsg = { ok = false, words = "The game did not post it", t = TN(function() return GetTime() end) or 0 }
 end
 -- the game's post warning (AUCTION_HOUSE_POST_WARNING): its own dialog's Accept, post-hooked, confirms OUR post; its hide drops it
 function AH.hookWarn()
@@ -4817,6 +5172,8 @@ function AH.hookWarn()
         sl.pending, sl.status = nil, "posting"
         if p[1] == "commodity" then CALL(function() C_AuctionHouse.ConfirmPostCommodity(p[2], p[3], p[4], p[5]) end)
         else CALL(function() C_AuctionHouse.ConfirmPostItem(p[2], p[3], p[4], p[5], p[6]) end) end
+        if AH.sell == sl then AH.sell, AH.postingAt = nil, TN(function() return GetTime() end) or 0 end      -- i167: ClearPost, as above
+        emitSoon()
     end)
     if type(d.OnHide) == "function" then
         pcall(hooksecurefunc, d, "OnHide", function()
@@ -4864,10 +5221,11 @@ function ACT.ahback()
     if not ahIsOpen() then return false, "no auction house open" end
     if AH.cancel then AH.cancel = nil                                   -- 1.0.9: an armed Cancel: the auction stays
     elseif AH.sell and AH.sell.armedAt then AH.sell.armedAt = nil      -- 1.0.9: an armed Post: back to the form
-    elseif AH.tab == "sell" and AH.sell then AH.sell = nil             -- 1.0.9: the item chosen goes back to the bags
+    elseif AH.tab == "sell" and AH.sell then AH.sell = nil             -- 1.0.9: the item chosen goes back to the bags (i167: the cursor onto its cell)
     elseif AH.buy then ahCancelBuy()
     elseif AH.key then AH.key = nil; AH.lastRes = AH.res
     elseif AH.tab ~= "browse" then AH.tab = "browse"
+    elseif AH.fav then AH.fav, AH.results, AH.rs = nil, nil, nil     -- i172: the favourites list -> the categories
     elseif #AH.path > 0 then
         local path = {}
         for k = 1, #AH.path - 1 do path[k] = AH.path[k] end
@@ -5088,6 +5446,98 @@ function ACT.mailmoney(a)
     if not h or h.money <= 0 then return false, "no money in it" end
     return run(function() TakeInboxMoney(i) end)
 end
+-- /wci mailopenall   i167 (the user 2026-11-19: "When opening my mailbox there should be a button to open all of my mail"): every letter's
+-- money and items, ONE game call (TakeInboxMoney / TakeInboxItem, the calls Take does) every MAIL.ALL_GAP s, so the server is never flooded;
+-- a COD letter is never touched (it costs money), nothing is ever deleted (the game drops an emptied letter itself as it always does),
+-- and it stops when the general bags have no free slot (the game's own words) or when a press of the same button / B says so
+MAIL.ALL_GAP, MAIL.ALL_TRIES = 0.5, 4
+-- i168 (the user: "keep going while anything fits"): an attachment [id] x [count] fits when a bag has a free slot that takes it (a general
+-- bag, family 0; a profession bag whose family shares a bit with the item's GetItemFamily; the reagent bag for a crafting reagent) or a
+-- stack of it has room for the whole count. Read only.
+MAIL.REAGENT_BAG = 5
+-- the game's bit.band (a Lua without it: the same by arithmetic, the families are small bit fields)
+function MAIL.band(a, b)
+    local ok, v = pcall(function() return bit.band(a, b) end)
+    if ok and type(v) == "number" then return v end
+    local r, p = 0, 1
+    a, b = math.floor(a), math.floor(b)
+    while a > 0 and b > 0 do
+        if a % 2 == 1 and b % 2 == 1 then r = r + p end
+        a, b, p = math.floor(a / 2), math.floor(b / 2), p * 2
+    end
+    return r
+end
+function MAIL.fits(id, count)
+    count = count or 1
+    local fam = TN(function() return C_Item.GetItemFamily(id) end) or TN(function() return GetItemFamily(id) end) or 0
+    local maxStack = TN(function() return select(8, C_Item.GetItemInfo(id)) end) or TN(function() return select(8, GetItemInfo(id)) end) or 1
+    local reagent = TB(function() return select(17, C_Item.GetItemInfo(id)) end) == true
+    for bag = 0, MAIL.REAGENT_BAG do
+        local ok, free, bagFam = pcall(function() return C_Container.GetContainerNumFreeSlots(bag) end)
+        if ok and type(free) == "number" and free > 0 then
+            if bag == MAIL.REAGENT_BAG then
+                if reagent then return true end
+            elseif type(bagFam) ~= "number" or bagFam == 0 then
+                return true
+            else
+                if MAIL.band(bagFam, fam) ~= 0 then return true end
+            end
+        end
+    end
+    if maxStack > 1 then
+        for bag = 0, MAIL.REAGENT_BAG do
+            for sl = 1, TN(function() return C_Container.GetContainerNumSlots(bag) end) or 0 do
+                local okI, info = CALL(function() return C_Container.GetContainerItemInfo(bag, sl) end)
+                if okI and type(info) == "table" and TN(function() return info.itemID end) == id
+                   and (TN(function() return info.stackCount end) or 1) + count <= maxStack then return true end
+            end
+        end
+    end
+    return false
+end
+function MAIL.allEnd(ok, words)
+    MAIL.all = nil
+    MAIL.allMsg = words and { ok = ok, words = words, t = TN(function() return GetTime() end) or 0 } or nil
+    emitSoon()
+end
+function MAIL.allStep()
+    local a = MAIL.all
+    if not a then return end
+    if not isOpen("mail") then MAIL.all = nil; return end
+    local n = TN(function() return GetInboxNumItems() end) or 0
+    local pick, ph
+    for i = 1, math.min(n, MAIL_MAX) do
+        local h = mailHeader(i)
+        if h and h.cod <= 0 and (h.money > 0 or h.items > 0) and (a.tries[i] or 0) < MAIL.ALL_TRIES then pick, ph = i, h; break end
+    end
+    if not pick then return MAIL.allEnd(true, nil) end
+    a.tries[pick] = (a.tries[pick] or 0) + 1
+    if ph.money > 0 then
+        CALL(function() TakeInboxMoney(pick) end)
+    else
+        local k, kit
+        for x = 1, ATTACH_MAX do
+            local it = R(function() return GetInboxItem(pick, x) end)
+            if it and real(it[1]) then k, kit = x, it; break end
+        end
+        -- i168: stops only when the next item fits nowhere
+        if k and not MAIL.fits(PN(kit[2]), PN(kit[4])) then return MAIL.allEnd(false, AH.gs("ERR_INV_FULL", "Inventory is full.")) end
+        if not k then a.tries[pick] = MAIL.ALL_TRIES else CALL(function() TakeInboxItem(pick, k) end) end
+    end
+    a.steps = a.steps + 1
+    emitSoon()
+    local ok = pcall(function() C_Timer.After(MAIL.ALL_GAP, MAIL.allStep) end)
+    if not ok then MAIL.all = nil end
+end
+function ACT.mailopenall()
+    if not isOpen("mail") then return false, "no mailbox open" end
+    if MAIL.all then MAIL.all = nil; emitSoon(); return true end      -- the same button again stops it
+    MAIL.allMsg = nil
+    MAIL.all = { steps = 0, tries = {} }
+    LOOT.ranGame = true
+    MAIL.allStep()
+    return true
+end
 -- /wci mailall <i>   everything in a letter (AutoLootMailItem), never on a COD letter
 function ACT.mailall(a)
     local i = tonumber(a)
@@ -5199,60 +5649,271 @@ function ACT.trhead(a)
     return true
 end
 
--- /wci train <i>   learn one service (BuyTrainerService, the game's own C call; one press = one action)
-function ACT.train(a)
-    local i = tonumber(a)
-    if not i then return false, "no service" end
+-- i170 THE PET TRAINER'S PRESS, START TO END (the user, 2026-11-19: "it opens and doesnt work halfd the time"). The game's Train button
+-- buys the service its OWN window has selected (blizzard_trainerui ClassTrainerTrainButton_OnClick: selectedService, a DISPLAY index ->
+-- skill index), and only its own row click sets that cleanly (ClassTrainerSkillButton_OnClick -> ClassTrainer_SetSelection). What made
+-- it work only some of the time, each now closed:
+--   (1) a service not on the game's visible page (its list draws about 7 rows, CLASS_TRAINER_SKILLS_DISPLAYED) had no row: the old
+--       fallback called SelectTrainerService from our code and still pressed Train, which then bought whatever the game's window had
+--       selected (its nearest learnable skill) or nothing (Train off: the i142 log). Now the game's OWN list is scrolled to it first
+--       (N.ptScrollPlan: everything from the bottom screen, the user's standing ruling), by a REAL click the app makes on the game's
+--       scroll arrow or track (TapBridge.tapGame: local `input tap`, stream Desktop's click). The game's scroll bar acts on a real
+--       mouse-down (blizzard_sharedxml scrollbar.lua OnStepperMouseDown: one row; OnTrackMouseDown: one page, toward the cursor), so
+--       the scroll runs in the game's own clean code and its rows stay untainted (scrolling from OUR code would init them tainted).
+--       Our shield over the hidden window lets the mouse through while a step is asked for (WC.shieldPass). The add-on looks again
+--       every PT_TICK; at most PT_STEPS clicks, then a short note;
+--   (2) the row cell kept a POOLED row frame between the press and the app's tap; a list rebuild in between (TRAINER_UPDATE,
+--       TRAINER_SERVICE_INFO_NAME_UPDATE, a filter) gives that frame another service. Now ClassTrainerFrame_Update is hooked and the
+--       row is looked up again by identity (or the press dropped);
+--   (3) the Train cell was ALWAYS armed: a lost or late row tap, a doubled press or a replay pressed Train on the game's current
+--       selection. Now the Train cell is armed only after the row click, when the game's own word (GetTrainerSelectionIndex, the
+--       window's selectedService) says it took OUR service, and disarmed after one Train, a timeout or any doubt;
+--   (4) the game's row values written by insecure code (our filter switch can rebuild the list inside our call) would make its Train
+--       "forbidden" (issue 90's error): issecurevariable on the row and the window says so first, and the press is refused;
+--   (5) a press while one is still on its way is refused ("busy"), never queued behind it.
+-- Out of combat only (the cells' attributes); nothing written but our own two cells' attributes.
+N.PT_TTL = 3            -- seconds a pet press may take from the select to the Train tap
+function N.ptRow(i)
+    local sb = ClassTrainerFrame and ClassTrainerFrame.ScrollBox
+    local okF, frames = pcall(function() return sb:GetFrames() end)
+    for _, f in ipairs(okF and type(frames) == "table" and frames or {}) do
+        local okE, ed = pcall(function() local e = f:GetElementData(); return e and (e.data or e) end)
+        if okE and type(ed) == "table" and ed.skillIndex == i and TB(function() return f:IsShown() end) == true then
+            -- what the game's row click and Train read before the row click rewrites the window's selectedService (cleanly)
+            for _, v in ipairs({ { f, "displayIndex" }, { ClassTrainerFrame, "displayIndexToSkillIndex" } }) do
+                local okS, sec, by = pcall(issecurevariable, v[1], v[2])
+                if okS and sec == false then
+                    N.ptTaint = tostring(by or "?")
+                    return nil, "the game's trainer window was changed by an add-on (" .. N.ptTaint .. "): close it and talk to the trainer again"
+                end
+            end
+            return f
+        end
+    end
+    return nil, nil, true          -- off the game's visible page (N.ptScrollPlan brings it in)
+end
+-- i170b: a frame's box in game px (the pad's: physical px, top-left origin), as Radial's gm3 rectOf, without its alpha test (the
+-- trainer window is ours at alpha 0 and still takes the mouse). nil when unreadable
+function N.gameRect(fr)
+    local ok, r = pcall(function()
+        if not fr:IsShown() then return nil end
+        local pw, ph = GetPhysicalScreenSize()
+        local uw, uh = UIParent:GetWidth(), UIParent:GetHeight()
+        local l, t, w, h = fr:GetLeft(), fr:GetTop(), fr:GetWidth(), fr:GetHeight()
+        if not (pw and ph and uw and uh and l and t and w and h) or uw <= 0 or uh <= 0 or w <= 0 or h <= 0 then return nil end
+        local es = fr:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        local sx, sy = pw / uw, ph / uh
+        local function r1(v) return math.floor(v * 10 + 0.5) / 10 end
+        return { x = r1(l * es * sx), y = r1((uh - t * es) * sy), w = r1(w * es * sx), h = r1(h * es * sy) }
+    end)
+    return ok and r or nil
+end
+-- i170b: how far service i is from the game's visible page and where the app clicks to bring it nearer: { dir "up" | "down", rows,
+-- step "arrow" | "track", x, y (the click, game px), arrow, track, list (the boxes) }, or nil, why. Read only.
+N.PT_STEPS, N.PT_TICK, N.PT_RETAP = 8, 0.15, 0.7
+function N.ptScrollPlan(i)
+    local w = ClassTrainerFrame
+    local okT, target = pcall(function() local m = w.skillIndexToDisplayIndex; return (m and m[i]) or nil end)
+    target = okT and PN(target) or nil
+    if not target then return nil, "not in the game's list" end
+    local lo, hi
+    local okF, frames = pcall(function() return w.ScrollBox:GetFrames() end)
+    for _, f in ipairs(okF and type(frames) == "table" and frames or {}) do
+        local okE, d = pcall(function() local e = f:GetElementData(); e = e and (e.data or e); return e and e.displayIndex end)
+        d = okE and PN(d) or nil
+        if d and d > 0 and TB(function() return f:IsShown() end) == true then
+            lo = math.min(lo or d, d); hi = math.max(hi or d, d)
+        end
+    end
+    if not lo then return nil, "the game's list shows nothing" end
+    local dir = (target < lo) and "up" or "down"
+    local rows = (dir == "up") and (lo - target) or (target - hi)
+    local sb = w.ScrollBar
+    local back, fwd, track, thumb, list = nil, nil, nil, nil, N.gameRect(w.ScrollBox)
+    pcall(function() back, fwd = N.gameRect(sb.Back), N.gameRect(sb.Forward) end)
+    pcall(function() track, thumb = N.gameRect(sb.Track), N.gameRect(sb.Track.Thumb or sb:GetThumb()) end)
+    local arrow = (dir == "up") and back or fwd
+    local plan = { dir = dir, rows = rows, lo = lo, arrow = arrow, track = track, list = list }
+    -- far away: one page on the track beyond the thumb (toward the row); near, or no room on the track: one row on the arrow
+    if rows > 3 and track and thumb then
+        local y0, y1
+        if dir == "down" then y0, y1 = thumb.y + thumb.h, track.y + track.h else y0, y1 = track.y, thumb.y end
+        if y1 - y0 >= 6 then plan.step, plan.x, plan.y = "track", track.x + track.w / 2, (y0 + y1) / 2 end
+    end
+    if not plan.step and arrow then plan.step, plan.x, plan.y = "arrow", arrow.x + arrow.w / 2, arrow.y + arrow.h / 2 end
+    if not plan.step then return nil, "the game's scroll bar is not readable" end
+    return plan
+end
+-- the skill the game's WINDOW has selected (what its Train button buys), read only
+function N.ptWinSel()
+    local w = ClassTrainerFrame
+    local okW, v = pcall(function() local d = w.selectedService; local m = w.displayIndexToSkillIndex; return (m and d and m[d]) or d end)
+    return okW and PN(v) or nil
+end
+function N.ptArm(on)
+    if not N.itGo or InCombatLockdown() then return end
+    pcall(N.itGo.SetAttribute, N.itGo, "type", on and "macro" or nil)
+end
+function N.ptDrop(why)
+    N.ptWant, N.ptScroll = nil, nil
+    pcall(N.ptPass, false)
+    N.ptArm(false)
+    if N.itSel and not InCombatLockdown() then pcall(N.itSel.SetAttribute, N.itSel, "clickbutton", nil) end
+    if why then N.ptw, N.ptwn = why, (N.ptwn or 0) + 1 end
+    emitSoon()
+end
+-- after every rebuild of the game's list: the pending press's row again, by identity (before the row tap), or the game's selection
+-- checked (between the row tap and Train)
+function N.ptRepoint()
+    local w = N.ptWant
+    if not w then return end
+    if InCombatLockdown() then N.ptDrop("a fight started: press Train again after it"); return end
+    local i = TRN.resolve(w.i, w.k)
+    if not i then N.ptDrop("the trainer's list changed: press Train again"); return end
+    w.i = i
+    if w.scroll then return end                   -- i170b: still scrolling: the tick looks for the row
+    if w.rowAt then
+        if N.ptWinSel() ~= i then N.ptDrop("the trainer's list changed: press Train again") end
+        return
+    end
+    local f = N.ptRow(i)
+    if f then pcall(N.itSel.SetAttribute, N.itSel, "clickbutton", f)
+    else N.ptDrop("the trainer's list changed: press Train again") end
+end
+function N.ptHook()
+    if N.ptHooked or type(ClassTrainerFrame_Update) ~= "function" then return end
+    N.ptHooked = pcall(hooksecurefunc, "ClassTrainerFrame_Update", function() pcall(N.ptRepoint) end)
+end
+-- the itrain cells' post-click (after the game's own click ran): col 1 = the row, col 0 = Train
+function N.ptClicked(col)
+    local w = N.ptWant
+    if not w or w.scroll then return end
+    if col == 1 then
+        w.rowAt = TN(function() return GetTime() end) or 0
+        local i = TRN.resolve(w.i, w.k)
+        local sel = TN(function() return GetTrainerSelectionIndex() end)
+        local win = N.ptWinSel()
+        if not i or sel ~= i or (win and win ~= i) then N.ptDrop("the game did not take the selection: press Train again"); return end
+        if TB(function() return ClassTrainerTrainButton:IsEnabled() end) == false then
+            N.ptDrop("the game's Train button is off for it"); return
+        end
+        N.ptArm(true)
+    elseif col == 0 then
+        w.done = true
+        N.ptDrop(nil)
+    end
+end
+function N.petTrain(i, k)
+    if InCombatLockdown() then return false, "not in a fight" end
+    if not (N.itSel and N.itGo) then return false, "the Train cell is not ready" end
+    local now = TN(function() return GetTime() end) or 0
+    if N.ptWant and now - N.ptWant.at < N.PT_TTL then return false, "busy: the last one is still training" end
+    local f, why, off = N.ptRow(i)
+    if not f and not off then N.ptDrop(nil); return false, why end
+    N.ptHook()
+    N.ptArm(false)                                -- armed only once the game took the selection (N.ptClicked)
+    local w = { i = i, k = k, at = now, steps = 0 }
+    N.ptWant = w
+    N.ptTimeout(w)
+    if f then N.ptGo(w, f); return true end
+    -- i170b: off the game's page: scroll its own list there first (the app's real clicks; N.ptTick looks again)
+    local plan, pwhy = N.ptScrollPlan(i)
+    if not plan then N.ptDrop(nil); return false, pwhy end
+    w.scroll = true
+    N.ptAsk(w, plan)
+    pcall(C_Timer.After, N.PT_TICK, function() N.ptTick(w) end)
+    return true
+end
+-- the row phase: the row cell aimed at the game's own row, counted for the app's two taps (InteractView.petTrainSync)
+function N.ptGo(w, f)
+    w.scroll, N.ptScroll = nil, nil
+    pcall(N.ptPass, false)
+    w.at = TN(function() return GetTime() end) or w.at
+    pcall(N.itSel.SetAttribute, N.itSel, "type", "click")
+    pcall(N.itSel.SetAttribute, N.itSel, "clickbutton", f)
+    N.ptr = 1
+    N.ptc = (N.ptc or 0) + 1
+    emitSoon()
+end
+-- the press's clock: PT_TTL from its last step (a scroll's steps each restart it)
+function N.ptTimeout(w)
+    local function check()
+        if N.ptWant ~= w then return end
+        local left = N.PT_TTL - ((TN(function() return GetTime() end) or 0) - w.at)
+        if left > 0.01 then pcall(C_Timer.After, left, check) return end
+        N.ptDrop("no answer from the game: press Train again")
+    end
+    pcall(C_Timer.After, N.PT_TTL, check)
+end
+-- i170b: one scroll click asked of the app (doc.trainer.pts, its number ptsn); the shield lets the mouse through meanwhile
+function N.ptAsk(w, plan)
+    w.steps = w.steps + 1
+    w.lo, w.askAt = plan.lo, TN(function() return GetTime() end) or 0
+    w.at = w.askAt
+    N.ptsn = (N.ptsn or 0) + 1
+    plan.n = N.ptsn
+    N.ptScroll = plan
+    pcall(N.ptPass, true)
+    emitSoon()
+end
+-- i170b: the shield over the hidden trainer window passes the mouse (true) or takes it back (false)
+function N.ptPass(on)
+    if type(WC.shieldPass) == "function" then WC.shieldPass(ClassTrainerFrame, on) end
+end
+-- i170b: while scrolling, every PT_TICK: the row on the page = the row phase; the list moved = the next click; no move in PT_RETAP
+-- (a lost click) = the same click again; PT_STEPS clicks without the row = a short note
+function N.ptTick(w)
+    if N.ptWant ~= w or not w.scroll then return end
+    if InCombatLockdown() then N.ptDrop("a fight started: press Train again after it"); return end
+    local i = TRN.resolve(w.i, w.k)
+    if not i then N.ptDrop("the trainer's list changed: press Train again"); return end
+    w.i = i
+    local f, why, off = N.ptRow(i)
+    if f then N.ptGo(w, f); return end
+    if not off then N.ptDrop(why); return end
+    local plan, pwhy = N.ptScrollPlan(i)
+    if not plan then N.ptDrop(pwhy); return end
+    local now = TN(function() return GetTime() end) or 0
+    if plan.lo ~= w.lo or now - (w.askAt or 0) >= N.PT_RETAP then
+        if w.steps >= N.PT_STEPS then N.ptDrop("Couldn't reach it in the game's list"); return end
+        N.ptAsk(w, plan)
+    end
+    pcall(C_Timer.After, N.PT_TICK, function() N.ptTick(w) end)
+end
+
+-- /wci train <i> [<k>]   learn one service: <k> its identity (TRN.key), the index looked up again now (i170)
+function ACT.train(a, b)
+    local i0 = tonumber(a)
+    if not i0 then return false, "no service" end
     if not isOpen("trainer") then return false, "no trainer open" end
-    local r = R(function() return GetTrainerServiceInfo(i) end)
-    if not (r and real(r[1])) then return false, "the trainer's list changed" end
-    if PS(r[2]) ~= "available" then return false, "cannot be learned yet" end
+    local i, r = TRN.resolve(i0, b)
+    if not (i and r) then return false, "the trainer's list changed" end
+    if PS(r[2]) ~= "available" then return false, (PS(r[2]) == "used") and "already known" or "cannot be learned yet" end
     local c = R(function() return GetTrainerServiceCost(i) end)
     local cost = c and PN(c[1]) or 0
     -- i142: a pet skill costs the pet's TRAINING POINTS (blizzard_trainerui: C_PetInfo.GetPetTrainingPoints, total - used), not money
     local petTr = TB(function() return C_Trainer.GetTrainerType() == Enum.TrainerType.Pet end) == true
     if petTr then
+        if TRN.petHas(TRN.petKnown(), PS(r[1]), PS(r[5])) then return false, "your pet already knows this" end     -- i170
         local tp = R(function() return C_PetInfo.GetPetTrainingPoints() end)
         local left = tp and PN(tp[1]) and PN(tp[2]) and (PN(tp[1]) - PN(tp[2])) or nil
         if left and left < cost then return false, "not enough training points" end
+        -- i141: at a PET trainer our code never buys (forbidden there): the game's own row click, then its own Train (N.petTrain)
+        return N.petTrain(i, b or TRN.key(PS(r[1]), PS(r[5])))
     elseif (TN(function() return GetMoney() end) or 0) < cost then return false, "not enough money" end
-    -- i141: at a PET trainer our code never buys (forbidden there): it only SELECTS the service (the game's own selection call; the
-    -- game's TRAINER_DESCRIPTION_UPDATE then sets its frame's choice from its own code), and the app's next tap, the secure "itrain"
-    -- cell, presses the game's Train button, whose own code buys what is selected
-    if TB(function() return C_Trainer.GetTrainerType() == Enum.TrainerType.Pet end) == true then
-        -- the count of selects (touch AND the controller's A): each new one asks the app for ONE tap on "itrain"
-        -- i142: the game's own ROW for service i (its list's frame whose element is that skill), set as itrain col 1's click target, so
-        -- the app's two taps are the game's own row click (ClassTrainer_SetSelection, the game's code) and then its Train button. No row
-        -- (scrolled out, the window not built): the old select, flagged (ptr 0)
-        N.ptr = 0
-        if N.itSel and not InCombatLockdown() then
-            local sb = ClassTrainerFrame and ClassTrainerFrame.ScrollBox
-            local okF, frames = pcall(function() return sb:GetFrames() end)
-            for _, f in ipairs(okF and type(frames) == "table" and frames or {}) do
-                local okE, ed = pcall(function() local e = f:GetElementData(); return e and (e.data or e) end)
-                if okE and type(ed) == "table" and ed.skillIndex == i and f:IsShown() then
-                    pcall(N.itSel.SetAttribute, N.itSel, "type", "click")
-                    pcall(N.itSel.SetAttribute, N.itSel, "clickbutton", f)
-                    N.ptr = 1
-                    break
-                end
-            end
-        end
-        local done, err = true, nil
-        if N.ptr == 0 then done, err = run(function() SelectTrainerService(i) end) end
-        if done then N.ptc = (N.ptc or 0) + 1; emitSoon() end
-        return done, err
-    end
     local done, err = run(function() BuyTrainerService(i) end)
     return done, err
 end
--- i141 the secure "itrain" cell: a click of the game's own Train button (a /click at click time: the trainer UI loads on demand)
+-- i141 the secure "itrain" cells: col 0 a click of the game's own Train button (a /click at click time: the trainer UI loads on
+-- demand), col 1 the game's own row (its click target set per press). i170: col 0 starts DISARMED (type nil) and is armed only by
+-- N.ptClicked after the row; both report their clicks to N.ptClicked
 if WC.pad and type(WC.pad.secureRow) == "function" then
     pcall(WC.pad.secureRow, "itrain", 2, function(btn, col)
         if col == 1 then N.itSel = btn; return end         -- i142: the game's row click, its target set per select
-        btn:SetAttribute("type", "macro")
+        N.itGo = btn
         btn:SetAttribute("macrotext", "/click ClassTrainerTrainButton")
-    end, function() emitSoon() end)
+        btn:SetAttribute("type", (N.ptWant and N.ptWant.rowAt) and "macro" or nil)
+    end, function(col) pcall(N.ptClicked, col); emitSoon() end)
 end
 
 -- ---------------------------------------------------------------- vendor actions
@@ -5271,6 +5932,7 @@ function ACT.qty(a)
     wanted = nil
     if not k or k < 1 or k > QTY_MAX or k ~= math.floor(k) then return false, "not a count" end
     if isOpen("bank") or isOpen("loot") or LOOT.on() then wanted = { k = k, at = GetTime() }; return true end     -- a bank / bag slot's number
+    if isOpen("auction") then AH.pick = { k = k, at = GetTime() }; return true end       -- i172: a finger's row number, for "ahfav"
     local ok, why = merchantGuard()
     if not ok then return false, why end
     wanted = { k = k, at = GetTime() }
@@ -5524,7 +6186,7 @@ local function dispatch(cmd)
     if not ok then ack(cmd, false, "threw"); return end
     -- A count that was taken needs no answer of its own: the buy that follows reports how many it
     -- bought, and every answer costs a flush. A count that was REFUSED is worth the line.
-    if (w[1] == "qty" or w[1] == "alive" or w[1] == "look" or w[1] == "lookbag") and done then return end
+    if (w[1] == "qty" or w[1] == "alive" or w[1] == "stay" or w[1] == "look" or w[1] == "lookbag") and done then return end
     ack(cmd, done, why, done and n or nil)
     emitSoon()
 end
@@ -5659,7 +6321,7 @@ local function shieldCover(target, owner)
         else
             f:SetAllPoints(target)
         end
-        f:EnableMouse(true)
+        f:EnableMouse(not (WC.shieldPassing and WC.shieldPassing[target]))     -- i170b: passing while the app scrolls the game's list
         f:Show()
     end)
     if ok then
@@ -5694,6 +6356,15 @@ local function shieldRects()
     return out
 end
 WC.shield = { cover = shieldCover, clear = shieldClear, clearAll = shieldClearAll, rects = shieldRects }
+-- i170b: the shield over [target] lets the mouse through (on) or takes it back: the app's real click on the hidden trainer's own
+-- scroll bar (N.ptAsk) must reach the game. Our own frame only; free in a fight
+WC.shieldPassing = {}
+function WC.shieldPass(target, on)
+    if type(target) ~= "table" then return end
+    WC.shieldPassing[target] = on and true or nil
+    local e = shieldOf[target]
+    if e then pcall(function() e.frame:EnableMouse(not on) end) end
+end
 
 local function dim(obj)
     if type(obj) ~= "table" or hidden[obj] ~= nil then return end
@@ -5857,6 +6528,7 @@ local selSink = CreateFrame("Button", "WowCompanionInteractSel", UIParent)
 selSink:RegisterForClicks("AnyDown", "AnyUp")
 selSink:SetScript("OnClick", function(_, key, down)
     if down or not N.bar.bound then return end      -- on the release, like the face buttons
+    if N.holding and N.npcExtra.PADBACK then return end     -- i172b: an NPC window keeps Select (the trainer's menu, the AH's star): never both
     N.bar.n = N.bar.n + 1
     WC.send(WC.encode({ type = "cappad", room = "bar", k = "PADBACK", n = N.bar.n }))
     WC.push()
@@ -6827,6 +7499,10 @@ function N.sync(open, doc)
             local want = (doc and doc.trainer) and { PADBACK = true }
                 or (doc and doc.bank and doc.bank.account) and { PADLSHOULDER = true, PADRSHOULDER = true }
                 or (doc and doc.mail) and { PADLSHOULDER = true, PADRSHOULDER = true }
+                -- i168: the Sell form's Post is START (the user's pick "Start / Menu"), with the tab row's L / R
+                or (doc and doc.auction and AH.tab == "sell" and AH.sell) and { PADLSHOULDER = true, PADRSHOULDER = true, PADFORWARD = true }
+                -- i172b: the Browse tab's Select = the favourite star (the trainer's route: held here, so the bar's listener stands aside)
+                or (doc and doc.auction and AH.tab == "browse") and { PADLSHOULDER = true, PADRSHOULDER = true, PADBACK = true }
                 -- the user (15 Oct): L / R on every tab row, always: so they switch the vendor's and the auction house's tabs too
                 or (doc and (doc.merchant or doc.auction)) and { PADLSHOULDER = true, PADRSHOULDER = true }
                 -- test50: QuestTrail's setup: LB / RB are its Back / Next
@@ -6928,7 +7604,7 @@ function AH.sellMove(z, ii, dir)
             local id = "ahsitem " .. sl.bag .. " " .. sl.s .. " " .. sl.id
             if navFind(id) then return id end
         end
-        return navFirst(navZoneNamed("ahsbags"))
+        return AH.gridLand(navZoneNamed("ahsbags"))
     end
     local function formFirst()
         for _, n in ipairs(AH.SELLCHAIN) do local id = navFirst(navZoneNamed(n)); if id then return id end end
@@ -6938,11 +7614,20 @@ function AH.sellMove(z, ii, dir)
         return false
     end
     if name == "ahsbags" then
+        -- i167: the grid as drawn (AH.gridRows): Up / Down a row (the same column, or the row's last), Left / Right a cell; Right past a
+        -- row's end goes to the form, Up past the first row to the Sell tab
+        local rows, id = AH.gridRows or {}, z.items[ii].id
+        local r, c
+        for ri, row in ipairs(rows) do for ci, x in ipairs(row) do if x == id then r, c = ri, ci end end end
+        if not r then N.cur = navFirst(z) or N.cur; return true end
         if dir == "up" or dir == "down" then
-            local j = navStep(z, ii, dir == "up" and -1 or 1)
-            if j then N.cur = z.items[j].id elseif dir == "up" then N.cur = "ahtab sell" end
+            local to = rows[r + ((dir == "up") and -1 or 1)]
+            if to then N.cur = to[math.min(c, #to)]
+            elseif dir == "up" then N.cur = "ahtab sell" end
+        elseif dir == "left" then
+            if c > 1 then N.cur = rows[r][c - 1] end
         elseif dir == "right" then
-            N.cur = formFirst() or N.cur
+            if c < #rows[r] then N.cur = rows[r][c + 1] else N.cur = formFirst() or N.cur end
         end
         return true
     end
@@ -7473,8 +8158,10 @@ function N.back()
         N.trMenu = nil                      -- the trainer's Settings menu closes first
     elseif isOpen("auction") and AH.filtersOpen then
         AH.filtersOpen = false              -- the auction house: the Filter list goes first
-    elseif isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then
+    elseif isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or AH.fav or #AH.path > 0) then
         navRun("ahback")                    -- the auction house: one level up first
+    elseif MAIL.all and isOpen("mail") then
+        MAIL.all = nil                         -- i167: a running Open All stops first
     elseif MAIL.open and isOpen("mail") and MAIL.tab ~= "send" then
         MAIL.back, MAIL.open = MAIL.open, nil  -- an opened letter: B goes back to the inbox first, onto it
     elseif MAIL.pick and isOpen("mail") then
@@ -7528,7 +8215,7 @@ do
         if N.qt.open() and not N.qt.top then return true end
         if isOpen("trade") then return true end
         if N.trMenu and isOpen("trainer") then return true end
-        if isOpen("auction") and (AH.filtersOpen or AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then return true end
+        if isOpen("auction") and (AH.filtersOpen or AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or AH.fav or #AH.path > 0) then return true end
         if isOpen("mail") and ((MAIL.open and MAIL.tab ~= "send") or MAIL.pick or MAIL.tab == "send") then return true end
         if LOOT.on() then return true end
         if isOpen("bank") and (BANK.box or BANK.hand) then return true end
@@ -7595,6 +8282,14 @@ local function padPress(key, down, via)
     -- chain, the loot cursor's A or the window's leave: one press, one answer
     if N.fight and (key == "PAD1" or key == "PAD2") and type(WC.dialogs) == "table" and type(WC.dialogs.mirrored) == "function"
        and (TN(WC.dialogs.mirrored) or 0) > 0 then return end
+    -- i167 (the user 2026-11-19: "if I press b to go back without entering a gold amount it breaks everything"): the app's keyboard closes
+    -- on B's PRESS and taps "kbd off"; that tap can land before B's RELEASE, and the release then reached the window's own B chain
+    -- (ahback: the item left the form, the cursor jumped) - one B, two steps back. A B pressed while the keyboard was up is the
+    -- keyboard's to its release
+    if key == "PAD2" and not G.holder then
+        if down and N.kbd then N.kbdB = true
+        elseif not down and N.kbdB then N.kbdB = nil; return end
+    end
     if N.kbd and not G.holder then return end      -- 1.0.8: the app's keyboard has the presses (it reads the controller itself)
     if G.holder then
         -- capture v6: a key the guest asked for on both edges (not while a chord waits)
@@ -7694,6 +8389,10 @@ local function padPress(key, down, via)
         elseif key == "PAD3" and WINDOWS.mail and isOpen("mail") and MAIL.open and not G.holder then
             if down then return end
             navRun("mailall " .. MAIL.open)
+        elseif key == "PAD3" and WINDOWS.mail and isOpen("mail") and MAIL.tab ~= "send" and not G.holder then
+            -- i167: X on the inbox (no letter open) = Open All, as X in a letter is Take All; X again stops it
+            if down then return end
+            navRun("mailopenall")
         elseif key == "PAD3" and WINDOWS.stable and isOpen("stable") and not G.holder then
             if down then return end
             navRun("stablebox")
@@ -7701,13 +8400,18 @@ local function padPress(key, down, via)
             if down then return end
             navRun("trspell")
         elseif (key == "PAD3" or key == "PAD4") and AH.tab == "sell" and AH.sell and isOpen("auction") then
-            -- 1.0.9: the Sell tab's quantity, one step per press (X less, Y more)
+            -- 1.0.9: the Sell tab's quantity, one step per press; i168: kept (the user: "keep x as the stack quantity"); i171 (the user's
+            -- ruling 2026-11-19: "Y = minus, X = plus" - Y is the left face button on the Thor's Nintendo layout): Y less, X more
             if not down then return end
-            navRun((key == "PAD4") and "ahsqty more" or "ahsqty less")
+            navRun((key == "PAD3") and "ahsqty more" or "ahsqty less")
+        elseif key == "PAD4" and isOpen("auction") and AH.tab == "browse" and not AH.key and not AH.filtersOpen and not G.holder then
+            -- i167: Y = Reset (over the categories)
+            if down then return end
+            navRun("ahreset")
         elseif (key == "PAD3" or key == "PAD4") and AH.key and isOpen("auction") then
-            -- the auction house: a commodity's quantity (one step per press); a change cancels an armed purchase
+            -- the auction house: a commodity's quantity (one step per press); a change cancels an armed purchase; i171: Y less, X more
             if not down then return end
-            ahStep((key == "PAD4") and 1 or -1)
+            ahStep((key == "PAD3") and 1 or -1)
         elseif key == "PAD3" or key == "PAD4" then
             -- the quantity: on the press, and the release ends a hold. Nothing here closes a
             -- window, so the release still comes to us.
@@ -7717,6 +8421,12 @@ local function padPress(key, down, via)
             if down then return end
             if key == "PAD1" then N.act() elseif key == "PAD2" then N.back()
             elseif key == "PADBACK" and N.npcExtra.PADBACK and isOpen("trainer") then navRun("trmenu")
+            elseif key == "PADFORWARD" and N.npcExtra.PADFORWARD and isOpen("auction") and AH.tab == "sell" and AH.sell then
+                navRun("ahspost")           -- i168: Start = Post (press 1 the confirm, press 2 posts)
+            elseif key == "PADBACK" and N.npcExtra.PADBACK and isOpen("auction") then
+                local fc = AH.favCmd()      -- i172b: Select = the favourite star of the row under the cursor (or the item opened)
+                if not fc then return end
+                navRun(fc)
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and N.qt.open() and not N.qt.top then
                 navRun("qtgo " .. ((key == "PADRSHOULDER") and "next" or "back"))
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("bank") then
@@ -7731,9 +8441,10 @@ local function padPress(key, down, via)
                 N.tabLand("tab " .. to)
                 if onTabs then N.cur = "tab " .. to end
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("auction") then
-                -- the auction house's Buy / Auctions
-                local want = (key == "PADRSHOULDER") and "owned" or "browse"
-                if AH.tab ~= want then navRun("ahtab " .. want) else return end
+                -- the auction house's tabs in the game's order, one step that way, no wrap (as the vendor's). i171 (the user 2026-11-19:
+                -- "l and R in the auction house skips the sell tab"): it was Buy <-> Auctions only (R = owned, L = browse), Sell never visited
+                local want = AH.tabStep(AH.tab, (key == "PADRSHOULDER") and 1 or -1)
+                if want and AH.tab ~= want then navRun("ahtab " .. want) else return end
             elseif (key == "PADLSHOULDER" or key == "PADRSHOULDER") and N.npcExtra[key] and isOpen("mail") then
                 -- f-mailbox-look: LB / RB switch Inbox and Send Mail (the bag list goes with the page it stood on)
                 local want = (key == "PADRSHOULDER") and "send" or "inbox"
@@ -8041,7 +8752,7 @@ WC.bnextOf = function()
         -- window, only when B would really go Home: the user, 2026-10-01, "Yes, everywhere it shows B")
         if N.cur == "go" then return "back" end
         if N.trMenu and isOpen("trainer") then return "back" end
-        if isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or #AH.path > 0) then return "back" end
+        if isOpen("auction") and (AH.buy or AH.key or AH.tab ~= "browse" or AH.cancel or AH.fav or #AH.path > 0) then return "back" end
         if MAIL.open and isOpen("mail") then return "back" end
         if LOOT.on() then return "back" end
         if isOpen("bank") and (BANK.box or BANK.hand) then return "back" end
