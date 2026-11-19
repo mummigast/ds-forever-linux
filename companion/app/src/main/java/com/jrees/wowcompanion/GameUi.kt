@@ -801,6 +801,13 @@ object GameUi {
         // hub67: this load's ONE restore tap goes before any other top-screen tap; the others wait for its answer (at most 3 s), then
         // tap only what still differs from this character's choices
         val r = rst
+        // Linux Streaming Edition (2026-11-19): while streaming, the restore (and every tap behind it) waits for the key handshake, at
+        // most KEY_WAIT_MS past the settle: a click right after world entry is often lost on Linux, and a lost restore costs ~20 taps
+        if (r != null && r.col >= 0 && r.n == 0 && !r.q && s != null && live && s.current &&
+            now >= helloAt + GameUiPolicy.SETTLE_MS && now < helloAt + GameUiPolicy.SETTLE_MS + KEY_WAIT_MS &&
+            TapBridge.keysPending(ctx, pad)) {
+            last = UiStep.Wait("Restoring this character's top screen"); return
+        }
         val rcol = restore.step(r, s, live, now, helloAt + GameUiPolicy.SETTLE_MS)
         if (rcol != null) {
             last = if (GameInput.tap(ctx, pad, ROW, rcol)) UiStep.Wait("Restoring this character's top screen") else UiStep.Wait("The game has not published its tap pad")
@@ -934,4 +941,5 @@ object GameUi {
 
     private const val ROW = "ui"      // Hub.lua ROW
     private const val HUD_KEY = "hud" // PR #533: hudBack's one key
+    private const val KEY_WAIT_MS = 15_000L  // Linux Streaming Edition: the restore waits this long for the key handshake
 }

@@ -75,11 +75,24 @@ object TapBridge {
         Log.i(TAG, "keys: handshake ${keySession ?: "refused"} (rows ${msg.optInt("rows")}, cols ${msg.optInt("cols")})")
     }
 
-    private fun askHandshake(ctx: Context, pad: JSONObject?) {
+    private fun askHandshake(ctx: Context, pad: JSONObject?, gapMs: Long = 10_000L) {
         val now = SystemClock.uptimeMillis()
-        if (now - askedAt < 10_000L) return
+        if (now - askedAt < gapMs) return
         askedAt = now
         taps(ctx, pad, listOf("keytest" to 0))       // a CLICK: keytest's cell 0 does nothing in the game but answer
+    }
+
+    /**
+     * Linux Streaming Edition (2026-11-19, Thor log: the login's one restore tap went 7 s before the handshake, as a click, and was
+     * lost; the app then sent ~20 switch taps): true while this pad publishes keys but THIS session's handshake is not in yet (inside
+     * the launcher, not typing). Asks for the handshake meanwhile, every 3 s (its click carries no game action and can be lost too).
+     */
+    fun keysPending(ctx: Context, pad: JSONObject?): Boolean {
+        if (!KEYS_ON || InputSink.sink == null || GameInput.typing) return false
+        val s = TapKeys.session(pad) ?: return false
+        if (s == keySession) return false
+        askHandshake(ctx, pad, 3_000L)
+        return true
     }
 
     /**
