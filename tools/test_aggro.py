@@ -331,7 +331,7 @@ def main():
     def kids_atlases(s):
         o = ic[s]
         return [o.f.kids[i].atlas for i in range(1, len(o.f.kids) + 1)] if o and o.f.kids else []
-    chk("ag14: the version tag", A.V == "ag14")
+    chk("ag15: the version tag", A.V == "ag15")
     chk("ag14: an elite: the gold dragon, no '!' (%s)" % drag(s50), drag(s50) == GOLD and ic[s50].q.shown is False)
     chk("ag14: no skull on any plate's frame (dungeonskull scrapped)", all("dungeonskull" not in kids_atlases(s) for s in ic if ic[s] is not None)
         and ic[s50].av is None)

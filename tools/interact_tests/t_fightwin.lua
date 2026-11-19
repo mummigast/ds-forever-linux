@@ -71,8 +71,8 @@ LootFrame.alpha = 1
 InCombatLockdown = function() return true end
 if ON.LOOT_OPENED then pcall(ON.LOOT_OPENED) end
 N.early("loot")
-chk("the Loot window's own 'top' switch on, in a fight: mirrored on the bottom anyway, the game's window dimmed (" .. tostring(LootFrame.alpha) .. ")",
-    LootFrame.alpha == 0)
+chk("the Loot window's own 'top' switch on, in a fight (lx1: no combat override): the game's loot window kept (" .. tostring(LootFrame.alpha) .. ")",
+    LootFrame.alpha == 1)
 WowCompanionDB.lootTop = false
 InCombatLockdown = function() return false end
 return table.concat(out, "\n")

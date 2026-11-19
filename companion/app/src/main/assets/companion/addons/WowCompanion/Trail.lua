@@ -2337,7 +2337,7 @@ end
 -- ShouldUseSilverUnitFrame puts every rare in silver, and the user asked for silver; this game's plates draw no rarity icon at all:
 -- camelot NameplatesOverrides.ShowRarityIconInfoDisplayOption). As the game's classification frame, none while the unit wears a raid
 -- marker (GetRaidTargetIndex). The dragon and the quest '!' side by side when both show. A.tgtIcons = { cl, q, tok }.
-WC.live = { V = "ag14", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
+WC.live = { V = "ag15", MAX = 24, REUSE_S = 10, SCAN_S = 0.2, FULL_S = 5, STILL_S = 1, slot = {}, byTok = {}, toks = {}, freeAt = {},
             q = 0, bands = {}, ghosts = {}, pulls = {}, sent = { full = 0, same = 0, still = 0, off = 0 } }
 do
     local A = WC.live
@@ -2789,8 +2789,11 @@ do
     -- out too. A value of theirs stands.
     -- the user on test31: "there's no name plates on players": this client has no nameplateShowFriends; its friendly PLAYERS' option is
     -- nameplateShowFriendlyPlayers (the game's own strings). An option the client does not have reads nil and is skipped.
-    A.NP_FRIEND_CVARS = { { "nameplateShowFriendlyPlayers", "1" }, { "nameplateShowFriends", "1" }, { "nameplateShowFriendlyNPCs", "1" },
-                          { "nameplateNotSelectedAlpha", "0" } }
+    -- ag15 lx (Linux edition, the user 2026-11-19: "friendly nameplates only seem to work on the target i have selected"): On shows
+    -- EVERY friendly plate, all the time out of a fight and through it: no nameplateNotSelectedAlpha 0 any more (its old 0 is still
+    -- put back from a saved record: NP_FRIEND_LEGACY), and no friendly target needed
+    A.NP_FRIEND_CVARS = { { "nameplateShowFriendlyPlayers", "1" }, { "nameplateShowFriends", "1" }, { "nameplateShowFriendlyNPCs", "1" } }
+    A.NP_FRIEND_LEGACY = { { "nameplateNotSelectedAlpha", "0" } }
     local function cvGet(name)
         local ok, v = pcall(function() return C_CVar.GetCVar(name) end)
         if ok and v ~= nil and not (type(issecretvalue) == "function" and issecretvalue(v)) then return tostring(v) end
@@ -2806,7 +2809,9 @@ do
         -- "combat": PLAYER_REGEN_DISABLED, the last moment before the fight's lock (the user, 2026-11-08: "the enemy plates turned off on
         -- me": a fight begun with a friend targeted kept nameplateNotSelectedAlpha 0, every enemy plate but the target's invisible)
         if pv(InCombatLockdown) == true and why ~= "logout" and why ~= "combat" then return end
-        for _, cv in ipairs(A.NP_FRIEND_CVARS) do
+        local all = { unpack(A.NP_FRIEND_CVARS) }
+        for _, cv in ipairs(A.NP_FRIEND_LEGACY) do all[#all + 1] = cv end
+        for _, cv in ipairs(all) do
             local name, want = cv[1], cv[2]
             local orig = (saved.orig or {})[name]
             if orig ~= nil and tonumber(cvGet(name)) == tonumber(want) and tonumber(orig) ~= tonumber(want) then cvSet(name, orig) end
@@ -3010,8 +3015,13 @@ do
         if pv(InCombatLockdown) == true then return end
         -- ag11: Off's 0s go back to the player's own values first (On starts from the game as the player left it)
         if type(WowCompanionDB.npFriendsOff) == "table" then A.friendsOffRestore("friendly plates on") end
-        local friend = pv(function() return UnitExists("target") end) == true and pv(function() return UnitIsFriend("player", "target") end) == true
-            and pv(function() return UnitIsUnit("target", "player") end) ~= true
+        -- ag15: always (no friendly target needed); an ag14 record with the old alpha 0 is put back once first
+        local old = WowCompanionDB.npFriends
+        if type(old) == "table" and type(old.orig) == "table" and old.orig.nameplateNotSelectedAlpha ~= nil then
+            if tonumber(cvGet("nameplateNotSelectedAlpha")) == 0 then cvSet("nameplateNotSelectedAlpha", old.orig.nameplateNotSelectedAlpha) end
+            old.orig.nameplateNotSelectedAlpha = nil
+        end
+        local friend = true
         if friend == A.friendWas then return end
         A.friendWas = friend
         if friend then
@@ -3312,7 +3322,8 @@ do
             elseif e == "PLAYER_LOGOUT" then A.npRestore("logout"); pcall(A.friendsRestore, "logout"); pcall(A.friendsOffRestore, "logout")
             elseif e == "PLAYER_REGEN_DISABLED" then
                 -- a fight: the player's plate values back now (no friendly-target change sticks through a fight); re-decided after it
-                pcall(A.friendsRestore, "combat"); A.friendWas = nil
+                -- ag15: On keeps every friendly plate through the fight (the old reason, the alpha 0, is gone)
+                if not A.FRIENDS_ON then pcall(A.friendsRestore, "combat"); A.friendWas = nil end
             elseif e == "VARIABLES_LOADED" then
                 A.varsLoaded = true                 -- ag12: the game's own saved options are in place (Off may read / write them)
             elseif e == "PLAYER_ENTERING_WORLD" then
