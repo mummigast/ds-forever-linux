@@ -50,6 +50,7 @@ object GameUiTiles {
         GameUi.HUD_ID to listOf(GameUi.PET_ID, GameUi.HUD_W_ID),
         GameUi.UFT_ID to listOf(GameUi.UFHP_ID, GameUi.UFTOT_ID),
         GameUi.NP_ID to listOf(GameUiSection.RINGS_ID),
+        GameUiSection.TIPS_ID to listOf(GameUiSection.DOTBOX_ID),       // Linux Edition 2026-11-19: the box under the dot
         GameUiSection.COMPASS_ID to listOf(GameUiSection.COMPASS_CAM_ID),
         // hub61: the Cooldown Manager's four parts (each only while the tile is On)
         GameUi.CDM_ID to GameUi.CDM_PARTS)
@@ -68,7 +69,7 @@ object GameUiTiles {
     /** a band row's label (short: the tile above names the element) */
     val EXTRA_NAMES: Map<String, String> = mapOf(
         GameUi.PET_ID to "Pet bar", GameUi.HUD_H_ID to "Height", GameUi.HUD_W_ID to "Width", GameUi.HUD_S_ID to "Scale",
-        GameUi.UFHP_ID to "Health text", GameUi.UFTOT_ID to "Target of target", GameUiSection.RINGS_ID to "Aggro tint",
+        GameUi.UFHP_ID to "Health text", GameUi.UFTOT_ID to "Target of target", GameUiSection.RINGS_ID to "Aggro tint", GameUiSection.DOTBOX_ID to "Box under the dot",
         GameUiSection.COMPASS_CAM_ID to "Follows the camera",
         GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars")
 

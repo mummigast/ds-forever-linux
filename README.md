@@ -1,24 +1,70 @@
-> ## DS Forever Linux Streaming Edition
+# DS Forever Linux Streaming Edition
+
+Play **WoW Forever** on an **AYN Thor**, streamed from a **Linux PC** (Steam/Proton + Sunshine), with DS Forever's two-screen
+companion on the bottom screen. At home or over a VPN such as WireGuard.
+
+> **An unofficial, personal fork of [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702.** Almost all of the app
+> is their work (and, before them, the WoW Forever for Android, GameNative, Pluvia and Winlator contributors). This edition adds
+> a Linux PC helper and a few streaming fixes on top, and follows upstream's releases.
 >
-> **An unofficial, personal fork of [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702**, for one job:
-> streaming WoW Forever from a **Linux PC** (Steam/Proton + Sunshine) to an **AYN Thor**, at home or over a VPN. It adds a
-> Linux helper (`linux-helper/`) in place of the Windows-only DS Forever Desktop and leaves out everything for playing
-> on the Thor itself.
->
-> - **Not the official app.** For WoW installed on the Thor, or for streaming from Windows, use the official DS Forever.
-> - **No support, no warranty.** Made and tested on one setup; you are welcome to try it. Please don't report its
->   problems to DS Forever's author.
-> - **No APKs here.** Build it yourself (`./linux-build.sh`); see [FORK.md](FORK.md).
->
-> **Known problems**
-> - Chat commands (`/reload`, ...) typed in the app's chat aren't sent: turn on *Normal game UI* and use the game's chat.
-> - Some switches are untested in game (pet and party frames among them): see *Untested* in [FORK.md](FORK.md).
-> - Right after connecting, the camera may turn by itself until the right stick is moved.
->
-> **Latest changes:** [CHANGES.md](CHANGES.md) (2026-11-18: keyboard shortcuts for vendor/quest buttons and switches, instant relog).
->
-> What this fork changes, what it leaves out, licences and the Linux build: [FORK.md](FORK.md). The helper:
-> [linux-helper/README.md](linux-helper/README.md). DS Forever's original README follows unchanged.
+> - **Not the official app.** To play WoW installed on the Thor, or to stream from Windows, use the official
+>   [DS Forever](https://github.com/Jreese702/DS-Forever): it does those better.
+> - **No support, no warranty.** Made and tested on one setup. You are welcome to try it, but please don't report its problems
+>   to DS Forever's author.
+> - **No APKs here.** Build it yourself (see *Build*).
+> - Not affiliated with or endorsed by DS Forever's author, Blizzard Entertainment, WoW Forever or GameNative. World of Warcraft
+>   and Battle.net are trademarks of Blizzard Entertainment; you need your own game and account.
+
+## What you get
+
+- **A Linux helper instead of DS Forever Desktop** ([linux-helper/](linux-helper/README.md)): pairs with the Thor, starts WoW
+  through Steam/Proton, installs the matching add-ons, and closes the game after 10 minutes without a Thor.
+- **Pairing over a VPN** with DS Forever's *Other network* code (`dsf-bridge code`).
+- **Keyboard shortcuts instead of screen clicks** for quests, vendors and the top-screen switches, so WoW's cursor stays put.
+- **Streaming only:** a smaller app (about 130 MB) that installs beside the official one (`app.dsforever.companion.linux`).
+- Small extras on the top screen, each with its own switch in *Settings*:
+  - **Box under the dot**: the game's tooltip for the enemy under the controller's aim dot, with Questie's quest lines.
+  - **Loot window on the top screen** stays the game's own, in fights too.
+  - **Friendly plates** show for every friendly unit, not only the target.
+
+The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
+
+## Quick start
+
+1. On the PC: install the helper, see [linux-helper/README.md](linux-helper/README.md).
+2. Build the app (below) and install it on the Thor with `adb install`.
+3. On the Thor: *Stream*, then type the pairing code the helper shows (on a VPN, tap **Other network** and type the second code).
+
+## Build
+
+```
+./linux-build.sh --test
+```
+
+Builds the native libraries, runs the tests and makes `app/build/outputs/apk/modern/debug/app-modern-debug.apk`. Details and
+options: [FORK.md](FORK.md#build).
+
+## Known problems
+
+- Chat commands typed in the app's chat (`/reload`, ...) aren't sent: turn on *Normal game UI* and use the game's own chat.
+- WoW Forever keeps soft enemy targeting for the controller only, and add-ons can't change that: the box under the dot shows
+  enemies, not friendly units or NPCs.
+- Right after connecting, the camera may turn by itself until the right stick is moved.
+- More, and what is still untested: [FORK.md](FORK.md#known-problems).
+
+## Licence and credits
+
+GPL-3.0, the same as DS Forever ([LICENSE](LICENSE)). Every original copyright, licence and credit notice is kept
+(THIRD_PARTY_NOTICES, RELEASE_NOTICES.md, SOURCE_PROVENANCE.md, licenses/), and every changed upstream file says so in a dated
+`Linux Edition` comment. See [FORK.md](FORK.md#licence).
+
+## DS Forever's own README
+
+Kept unchanged below, as upstream wrote it. Parts of it (playing on the Thor, DS Forever Desktop, the updater) are about the
+official app, not this edition.
+
+<details>
+<summary>DS Forever README (upstream, unchanged)</summary>
 
 # DS Forever
 
@@ -148,3 +194,5 @@ Mesa, CascLib (Ladislav Zezula), Recast (Mikko Mononen), box64, PulseAudio and
 the projects in THIRD_PARTY_NOTICES. Application fork: GPL-3.0 (LICENSE).
 Dependencies have separate terms: RELEASE_NOTICES.md, licenses/ and APK inventory.
 Source/patch/redistribution gaps are explicit, not presumed cleared for publication.
+
+</details>

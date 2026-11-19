@@ -493,6 +493,47 @@ object RingsSwitch {
  * The add-on hides the game's tooltips by alpha only (Trail.lua's WC.tips) and says so in every interact document (proof.tipc.hide);
  * the row follows that word. One tap per touch, tried once more if the word does not change, as the compass switch.
  */
+/**
+ * lx2 THE BOX UNDER THE DOT (Linux edition, the user 2026-11-19: "This box should be a switch also"): the "Box under the dot" row in
+ * the Tooltips tile's band. The CHOICE is the add-on's (WowCompanionHub hub72/73: WowCompanionDB.dotBoxOff, on by default); the state
+ * comes from every interact document (`proof.dotc`: on / off cells and `show`; absent = an older add-on: no row), and a press is one
+ * tap on the `iact` row's on / off cell, tried once more if the add-on has not said so a moment later (idempotent).
+ */
+object DotBoxSwitch {
+    data class State(val show: Boolean, val colOn: Int, val colOff: Int)
+    var state: State? = null
+        private set
+    private var pad: JSONObject? = null
+    private val listeners = ArrayList<() -> Unit>()
+    private val main = Handler(Looper.getMainLooper())
+
+    fun onChange(l: () -> Unit) { listeners.add(l) }
+
+    fun note(msg: JSONObject) {
+        msg.optJSONObject("pad")?.let { pad = it }
+        val c = msg.optJSONObject("proof")?.optJSONObject("dotc") ?: return
+        val s = State(c.optBoolean("show", true), c.optInt("on", -1), c.optInt("off", -1))
+        if (s.colOn < 0 || s.colOff < 0 || s == state) return
+        state = s
+        for (l in listeners) l()
+    }
+
+    /** the player turned the box [on] or off: ONE tap; true = sent */
+    fun turn(ctx: Context, on: Boolean): Boolean {
+        val sent = tap(ctx, on)
+        main.removeCallbacksAndMessages(null)
+        if (sent) main.postDelayed({ val s = state; if (s != null && s.show != on) tap(ctx, on) }, RETRY_MS)
+        return sent
+    }
+
+    private fun tap(ctx: Context, on: Boolean): Boolean {
+        val s = state ?: return false
+        return TapBridge.tap(ctx, pad ?: HomeAttackSwitch.pad, "iact", if (on) s.colOn else s.colOff) { }
+    }
+
+    private const val RETRY_MS = 450L
+}
+
 object TipsSwitch {
     data class State(val hide: Boolean, val colOn: Int, val colOff: Int)
     var state: State? = null

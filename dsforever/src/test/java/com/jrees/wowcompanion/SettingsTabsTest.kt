@@ -83,7 +83,7 @@ class SettingsTabsTest {
             G.TARGET to listOf("Target bar", "Target health text", "Target of target", "Aggro tint", "Enemy nameplates", "Friendly plates"),
             G.PARTY to listOf("DS party frames", "Party frames"),
             G.NAVIGATION to listOf("Compass bar", "Compass follows the camera", "World markers", "Polestar on the top screen"),
-            G.WINDOWS to listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Cast bar",
+            G.WINDOWS to listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window", "Game tooltips", "Box under the dot", "Cast bar",
                 "Player frame", "Target frame", "Controller UI", "Buffs", "XP bar",
                 // hub61: the damage meter, the Cooldown Manager and its four parts
                 "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
@@ -172,7 +172,9 @@ class SettingsTabsTest {
             // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
             listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars") +
             // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): General > Account, under Windows ID
-            listOf("Browser login")
+            listOf("Browser login") +
+            // Linux Edition 2026-11-19 ("This box should be a switch also"): Top screen > Game windows, the Tooltips band
+            listOf("Box under the dot")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")
@@ -364,7 +366,7 @@ class SettingsPreviewRowsTest {
         assertEquals("each once", shown.size, shown.toSet().size)
         // (hub61: "Edit layout" is a tile now, the meters and the Cooldown Manager's four parts rows; HUD height / scale in the editor)
         val topRows = SettingsTabs.Block.values().filter { it.tab == SettingsTabs.Tab.TOP }.flatMap { it.rows }
-        assertEquals(35, topRows.size)
+        assertEquals(36, topRows.size)                               // lx2: + Box under the dot (Tooltips band)
         assertEquals(topRows.toSet(), shown.map { word.getValue(it) }.toSet())
         // and group by group: a group's tiles and their bands' rows are that group's rows
         for ((g, ids) in GameUiTiles.TILES) {
@@ -382,7 +384,7 @@ object TopWords {
         GameUi.UFP_ID to "DS party frames", GameUi.PARTY_ID to "Party frames", GameUiSection.COMPASS_ID to "Compass bar",
         GameUiSection.COMPASS_CAM_ID to "Compass follows the camera", GameUi.WM_ID to "World markers", GameUiTiles.PS_ID to "Polestar on the top screen",
         "minimap" to "Minimap", "tracker" to "Quest tracker", "chat" to "Chat window", "dialogs" to "NPC windows", GameUiSection.LOOT_ID to "Loot window",
-        GameUiSection.TIPS_ID to "Game tooltips", GameUi.CASTBAR_ID to "Cast bar", GameUi.NORMAL_ID to "Normal game UI", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
+        GameUiSection.TIPS_ID to "Game tooltips", GameUiSection.DOTBOX_ID to "Box under the dot", GameUi.CASTBAR_ID to "Cast bar", GameUi.NORMAL_ID to "Normal game UI", GameUi.PLAYER_ID to "Player frame", GameUi.TARGET_ID to "Target frame",
         "hud" to "Controller UI", HudSplit.BUFFS_ID to "Buffs", HudSplit.XP_ID to "XP bar", GameUi.DMG_ID to "Damage meter", GameUi.CDM_ID to "Cooldown Manager",
         GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars",
         GameUiTiles.LAYOUT_ID to "Edit layout")

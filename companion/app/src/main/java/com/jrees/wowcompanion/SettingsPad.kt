@@ -155,7 +155,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         for (at in addonTiles) at.onContent = again
         view.onContent = again
         GameUi.onChange(again); ThirdPartyAddons.onChange(again); ImportedAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
-        CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
+        CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); DotBoxSwitch.onChange(again) /* Linux Edition 2026-11-19 */; HomeLootSwitch.onChange(again)
         FrameGen.onChange(again)
         // the layout editor's row comes with the add-on set's first "lay" document (only that change: its documents come often)
         var layAvail = LayoutModel.Live.available()

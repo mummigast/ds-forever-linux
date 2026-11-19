@@ -51,7 +51,11 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | **Normal game UI** switch (Settings > Top screen > Game windows): minimap, chat, tracker and cast bar back in one tap; `/wcui reset` typed in the game's chat brings back the whole UI | `GameUi.kt`, `GameUiSection.kt`, `Hub.lua` |
 | No top-screen taps under a loading screen (`LoadGate`, from the add-on's loading-screen reports); while streaming the login's one restore tap waits for the key handshake (at most 15 s) | `companion/.../LoadGate.kt`, `GameUi.kt`, `TapBridge.kt` |
 | The app never downloads a game client onto the device (no automatic update for the local game) | `StartMode.kt` (`STREAM_ONLY`), `WoWForeverScreen.kt` |
-| Fork banner at the top of the README (the original text follows unchanged) | `README.md` |
+| **Box under the dot** (2026-11-19): the game's tooltip for the unit under the reticle (`mouseover` > `softenemy` > `softfriend`), never over a tooltip someone else shows; a switch in the Tooltips tile's band (`dotbox on/off` cells on `iact`), `/wcbox` | `WowCompanionHub/Hub.lua` (hub72-73), `WowCompanionInteract/Interact.lua` (i167), `HomeSettings.kt` (`DotBoxSwitch`), `GameUiSection.kt`, `GameUiTiles.kt`, `CompanionHost.kt`, `SettingsPad.kt` |
+| Loot window "top screen" holds in fights too (upstream's i144 sends fight loot to the bottom screen) | `WowCompanionInteract/Interact.lua` (i166, `LOOT.top`) |
+| Friendly plates On = every friendly plate, through fights (upstream: only the target's, alpha 0 for the rest) | `WowCompanion/Trail.lua` (ag15) |
+| Soft-target object tooltip on; account macros *DSF Soft On/Off* for the tooltip settings WoW Forever accepts; `/wcsoft` | `WowCompanionHub/Hub.lua` (hub71) |
+| Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
 Changed upstream files carry a `Linux Edition` / `Linux Streaming Edition` comment (GPL-3.0 section 5a). No upstream code is deleted:
@@ -76,6 +80,8 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
   press yet. Turn on *Normal game UI* and type them in the game's own chat window. Plain chat works from the app.
 - **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
 - Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled; not being worked on).
+- **Soft targeting is the controller's only** in WoW Forever (`SoftTargetEnemy`, its range and `SoftTargetInteract` are secure, even
+  from a macro): the box under the dot only ever sees enemies (`softenemy`), never friendly units or NPCs.
 
 ## Untested
 
@@ -86,6 +92,9 @@ Built and passing the off-device tests, but **not yet tried in the game**. Repor
 - Layout row by keys (RIGHT RIGHT + column): minimap, chat and tracker toggles (added 2026-11-18).
 - B's pet follow kept per character (Hunter / Warlock).
 - Bags, spells and other secure rows still go as clicks (no keys yet).
+
+Tested on the Thor (2026-11-19): DS Forever 1.0.36 (relog HUD, keys, power button), loot window on top in fights, every friendly
+plate, the box under the dot with quest lines (its Settings switch: not yet).
 
 Tested on the Thor (2026-11-17/18): quests (pick, accept, reward), Sell junk, Repair, buy and sell, player and target frames,
 nameplates, Reload UI, 1.0.34's Edit layout (move + Save), Buffs and Cooldown Manager switches, an instant relog with the layout kept, per-character settings, Normal game UI on/off.

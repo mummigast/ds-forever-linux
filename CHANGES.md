@@ -1,6 +1,17 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.36 (upstream add-on set 407). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.36 (upstream add-on set 407; this edition's set 413). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## 2026-11-19 (late): add-on set 413
+
+- **Box under the dot:** the game's tooltip for the enemy under the controller's aim dot, at any range the game draws it, with
+  Questie's quest lines. A switch: *Settings > Top screen > Tooltips > Box under the dot* (on by default; `/wcbox` in the game's
+  chat does the same). WoW Forever only reports enemies under the dot, so friendly units and NPCs get no box.
+- **Loot window on the top screen** now stays WoW's own window in fights too (DS Forever moved fight loot to the bottom screen).
+- **Friendly plates On** shows every friendly unit's plate, also in fights (it showed only the selected target's).
+- The game's own tooltip for objects and corpses under the dot is on. WoW Forever refuses the other soft-target settings
+  (`SoftTargetEnemy`, its range, `SoftTargetInteract`: "read only or secure", even from a macro), so they are left alone. The
+  add-on writes two account macros, *DSF Soft On* / *DSF Soft Off*, with the tooltip settings the game does accept.
 
 ## 2026-11-19: DS Forever 1.0.36, add-on set 412
 

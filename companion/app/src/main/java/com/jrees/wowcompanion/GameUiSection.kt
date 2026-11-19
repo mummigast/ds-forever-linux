@@ -137,6 +137,11 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         GameUi.Row(TIPS_ID, "Game tooltips", null, if (s.hide) UiMode.OFF else UiMode.ON, true, s.hide,
             if (s.hide) "Off: the game's tooltips are hidden on the top screen" else "The game's tooltips on the top screen")
     }
+    /** lx2: "Box under the dot" (default on; Hub hub72's own tooltip for the unit under the reticle), in the Tooltips tile's band */
+    private fun dotBoxRow(): GameUi.Row? = DotBoxSwitch.state?.let { s ->
+        GameUi.Row(DOTBOX_ID, "Box under the dot", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
+            if (s.show) "The game's box for the unit under the dot, with its quest lines" else "Off: no box under the dot")
+    }
     /** at1: "Aggro tint" (default on; ar1's "Aggro rings" switch), shown once the add-on set has it */
     private fun ringsRow(): GameUi.Row? = RingsSwitch.state?.let { s ->
         GameUi.Row(RINGS_ID, "Aggro tint", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
@@ -161,7 +166,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
     /** a tile's or a band row's row now, by its id: an element's even before the game reports it (known = false); null = not reported */
     private fun rowOf(id: String): GameUi.Row? = when (id) {
         "minimap", "hud", "tracker", "chat", "dialogs", HudSplit.BUFFS_ID, HudSplit.XP_ID -> GameUi.elementRow(id)
-        LOOT_ID -> lootRow(); COMPASS_ID -> compassRow(); COMPASS_CAM_ID -> compassCamRow(); TIPS_ID -> tipsRow(); RINGS_ID -> ringsRow()
+        LOOT_ID -> lootRow(); COMPASS_ID -> compassRow(); COMPASS_CAM_ID -> compassCamRow(); TIPS_ID -> tipsRow(); DOTBOX_ID -> dotBoxRow(); RINGS_ID -> ringsRow()
         GameUiTiles.PS_ID -> polestarRow()
         GameUi.CASTBAR_ID -> GameUi.castBarRow(); GameUi.NORMAL_ID -> GameUi.normalUiRow(); GameUi.HUD_ID -> GameUi.hudRow(); GameUi.PET_ID -> GameUi.petRow()
         GameUi.HUD_H_ID -> GameUi.hudHeightRow(); GameUi.HUD_W_ID -> GameUi.hudWidthRow(); GameUi.HUD_S_ID -> GameUi.hudScaleRow()
@@ -185,7 +190,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         // 2026-11-16 (the tiles): Polestar's own frame is Navigation's third tile (it was SettingsView's row)
         Part.NAVIGATION -> listOfNotNull(compassRow(), compassCamRow(), GameUi.worldMarkersRow(), polestarRow())
         // the game's own windows, in the approved order (the game's elements by their ids; the controller bars last)
-        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(GameUi.normalUiRow(), lootRow(), tipsRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow(),
+        Part.WINDOWS -> (GameUi.rows() + listOfNotNull(GameUi.normalUiRow(), lootRow(), tipsRow(), dotBoxRow(), GameUi.castBarRow(), GameUi.playerRow(), GameUi.targetRow(),
                 GameUi.dmgRow(), GameUi.cdmRow()))
             .sortedBy { r -> WINDOWS_ORDER.indexOf(r.id).let { if (it < 0) WINDOWS_ORDER.size else it } }
         // Party mode out of Experimental, on by default (the user, 2026-11-12)
@@ -194,7 +199,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         Part.AUTO_SHOT -> listOfNotNull(GameUi.autoShotRow())
         Part.COMPANION -> emptyList()
         Part.LAYOUT -> listOfNotNull(layoutRow())
-        else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow())
+        else -> GameUi.rows() + listOfNotNull(GameUi.castBarRow(), GameUi.hudRow(), GameUi.petRow(), GameUi.hudHeightRow(), GameUi.hudWidthRow(), GameUi.hudScaleRow(), lootRow(), compassRow(), compassCamRow(), ringsRow(), tipsRow(), dotBoxRow())
     }
     /** the row drawn at ([x], [y]), by its words (the Settings room's "What it does" panel follows it), or null */
     fun rowAt(x: Float, y: Float): String? {
@@ -239,6 +244,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         HomeLootSwitch.onChange { post { refresh() } }
         CompassSwitch.onChange { post { refresh() } }
         TipsSwitch.onChange { post { refresh() } }
+        DotBoxSwitch.onChange { post { refresh() } }
         RingsSwitch.onChange { post { refresh() } }
         // Navigation's Polestar tile comes and goes with Polestar (the guide's setting, its install)
         if (part == Part.NAVIGATION) { Settings.onChange { post { refresh() } }; ThirdPartyAddons.onChange { post { refresh() } } }
@@ -375,6 +381,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             LOOT_ID -> HomeLootSwitch.turn(context, m == UiMode.ON)
             COMPASS_ID -> CompassSwitch.turn(context, m == UiMode.ON)
             COMPASS_CAM_ID -> CompassSwitch.turnCam(context, m == UiMode.ON)
+            DOTBOX_ID -> DotBoxSwitch.turn(context, m == UiMode.ON)
             TIPS_ID -> TipsSwitch.turn(context, m != UiMode.ON)          // tt2: On = they show (turn() takes "hide")
             RINGS_ID -> RingsSwitch.turn(context, m == UiMode.ON)
             GameUi.CASTBAR_ID -> GameUi.setCastBar(m == UiMode.ON)
@@ -780,7 +787,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             c.drawText(Tr.t(hint), left + 6f, top + SEG_H + 34f, pSub)
             return
         }
-        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.NORMAL_ID || r.id == GameUi.HUD_ID ||
+        val modes = if (r.id == LOOT_ID || r.id == COMPASS_ID || r.id == COMPASS_CAM_ID || r.id == TIPS_ID || r.id == DOTBOX_ID || r.id == RINGS_ID || r.id == GameUi.CASTBAR_ID || r.id == GameUi.NORMAL_ID || r.id == GameUi.HUD_ID ||
             r.id == GameUi.PLAYER_ID || r.id == GameUi.TARGET_ID || r.id == GameUi.PARTY_ID || r.id == GameUi.NP_ID || r.id == GameUi.WM_ID ||
             r.id == GameUi.ATK_ID || r.id == GameUi.SHOT_ID || r.id == GameUi.UFP_ID || r.id == GameUi.UFT_ID || r.id == GameUi.UFTOT_ID || r.id == GameUi.PET_ID || r.id == GameUi.SRES_ID ||
             r.id == GameUi.NPF_ID) listOf(UiMode.ON, UiMode.OFF) else UiElements.modesFor(r.id)
@@ -964,6 +971,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         /** cp7: the compass's camera experiment */
         const val COMPASS_CAM_ID = "compasscam"
         const val TIPS_ID = "hidetips"
+        /** lx2: the box under the dot (Hub hub72), a band row under the Tooltips tile */
+        const val DOTBOX_ID = "dotbox"
         /** QOL > Navigation: Avoid dangerous areas (Settings.avoidDanger) */
         const val DANGER_ID = "avoiddanger"
         /** QOL: the page's top before its first group, a group heading's height and its text's baseline */
