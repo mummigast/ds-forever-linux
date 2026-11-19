@@ -14,9 +14,9 @@ class LoadGateTest {
     private val after = 1_000L
 
     @Test fun theLoginsLoadingScreenHoldsTheTapsUntilItsEnd() {
-        val g = LoadGate()
+        val g = LoadGate().apply { reports = true }
         val hello = 100_000L
-        g.start(hello)                                   // a current hello: the add-ons load under the loading screen
+        g.hello(hello)                                   // a current hello: the add-ons load under the loading screen
         assertTrue(g.loading(hello + 20_000L))
         assertTrue(g.settleAt(hello + 20_000L, hello, settle, after) > hello + 1_000_000L)   // not yet, however long it takes
         g.end(hello + 25_000L)                           // the add-on's load off
@@ -48,6 +48,14 @@ class LoadGateTest {
         assertTrue(g.loading(hello + 301_000L))
         g.end(hello + 310_000L)
         assertEquals(hello + 311_000L, g.settleAt(hello + 310_100L, hello, settle, after))
+    }
+
+    @Test fun addOnsThatNeverReportLoadingScreensKeepTheOldWait() {
+        val g = LoadGate()                               // no load document seen yet: an add-on set before core1 never sends an end
+        val hello = 100_000L
+        g.hello(hello)
+        assertFalse(g.loading(hello + 1_000L))
+        assertEquals(hello + settle, g.settleAt(hello + 1_000L, hello, settle, after))
     }
 
     @Test fun anEndWithoutAStartIsIgnored() {

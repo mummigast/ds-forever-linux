@@ -73,6 +73,14 @@ object GameUi {
     fun init(c: Context) {
         appCtx = c.applicationContext
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("gameui", Context.MODE_PRIVATE)
+        if (prefs?.getBoolean(LOAD_REPORTS_KEY, false) == true) GameInput.load.reports = true
+    }
+
+    /** the add-ons reported a loading screen: from now on a login's taps wait for its end too ([LoadGate.reports], kept) */
+    fun loadReported() {
+        if (GameInput.load.reports) return
+        GameInput.load.reports = true
+        prefs?.edit()?.putBoolean(LOAD_REPORTS_KEY, true)?.apply()
     }
 
     fun mode(id: String): UiMode {
@@ -157,7 +165,7 @@ object GameUi {
     /** Linux Streaming Edition (2026-11-19): when the top-screen taps may start - never while the game loads ([GameInput.loading]),
      *  then SETTLE_MS after the hello or LOAD_SETTLE_MS after the loading screen went, whichever is later */
     private fun settleAt(): Long = GameInput.load.settleAt(System.currentTimeMillis(), helloAt, GameUiPolicy.SETTLE_MS, LOAD_SETTLE_MS)
-    fun onHello() { helloAt = System.currentTimeMillis(); GameInput.load.start(helloAt); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
+    fun onHello() { helloAt = System.currentTimeMillis(); GameInput.load.hello(helloAt); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on
@@ -944,6 +952,7 @@ object GameUi {
 
     private const val ROW = "ui"      // Hub.lua ROW
     private const val HUD_KEY = "hud" // PR #533: hudBack's one key
+    private const val LOAD_REPORTS_KEY = "load.reports"
     private const val LOAD_SETTLE_MS = 1_000L  // Linux Streaming Edition: after the loading screen went
     private const val KEY_WAIT_MS = 15_000L  // Linux Streaming Edition: the restore waits this long for the key handshake
 }
