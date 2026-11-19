@@ -53,6 +53,22 @@ namespace DsfDesktop.Bridge
         Dictionary<string, object> SvRead(string acctHash);
         /// <summary>"sv_write" -> "sv_written": the Thor's merged tables written (WowSvSync.Write's rules), one result per table</summary>
         Dictionary<string, object> SvWrite(string acctHash, List<Dictionary<string, object>> docs);
+        /// <summary>feat/pause-power: the Thor's clean disconnect ("end_session"; its pause menu's power button, its waiting screen's Exit
+        /// game): the PC's WoW closes ([quitAsked] = the game's own Exit Game was tapped over the stream first) and the PC is put back;
+        /// {"wow": closed | none | left, "put_back": bool, "why"}. Answered "session_ending" at once, then "session_ended" with this</summary>
+        Dictionary<string, object> EndSession(bool quitAsked);
+        /// <summary>the Thor's "addons_want" (its managed add-ons' pins and wants, its imported add-ons' file lists, which folders are on):
+        /// Desktop installs / updates the same on the PC in the background (PcAddons); [session] = where its "addon_file_get" requests go</summary>
+        void AddonsWant(Dictionary<string, object> m, BridgeSession session);
+        /// <summary>the Thor's "addon_file" / "addon_file_err" answer to an "addon_file_get"</summary>
+        void AddonFile(Dictionary<string, object> m);
+        /// <summary>Desktop clicks the pad (0.2.42, the user's pick 2026-11-18): the Thor's "pad_click" batch (PadClick: only a pinned
+        /// wss session gets here); [done] gets "pad_click_result"'s body once the batch ran or was refused</summary>
+        void PadClick(Dictionary<string, object> m, Action<Dictionary<string, object>> done);
+        /// <summary>Polestar progress follows (0.2.42): "ps_read" -> "ps_files" (PolestarSvSync; [acctHash] as SvRead's)</summary>
+        Dictionary<string, object> PsRead(string acctHash);
+        /// <summary>"ps_write" -> "ps_written": the Thor's merged Polestar tables written (PolestarSvSync.Write's rules)</summary>
+        Dictionary<string, object> PsWrite(string acctHash, List<Dictionary<string, object>> docs);
     }
 
     /// <summary>the documents since the current log began (what a fresh LogTail would read from the file), capped</summary>
@@ -88,6 +104,11 @@ namespace DsfDesktop.Bridge
         /// <summary>the Thor shows Desktop's stop with its own Retry (its hello / pair_hello says "wow_stop": true, Thor apps from
         /// Desktop 0.2.35's branch on). false = an older Thor (1487): it never sends "wow_retry", so its reconnect counts as one</summary>
         public bool KnowsStop;
+        /// <summary>the Thor's own UI scale (its hello's "ui_scale", the user's ruling 2026-11-18): written into the PC's Config.wtf for
+        /// the stream's WoW, the PC's put back after. null = the Thor has none (or an older Thor): the PC is left alone</summary>
+        public Dictionary<string, string> UiScale;
+        /// <summary>the session came down TLS (wss: the Thor pins Desktop's certificate). Pad clicks and Polestar files only here</summary>
+        public bool Tls;
         readonly BlockingCollection<string> queue = new BlockingCollection<string>(8192);
 
         public BridgeSession(WsConn ws, string id, string name, string peer) { Ws = ws; DeviceId = id; Name = name; Peer = peer; }
@@ -295,7 +316,7 @@ namespace DsfDesktop.Bridge
                             var h = Encoding.ASCII.GetBytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n");
                             s.Write(h, 0, h.Length);
                             s.Flush();
-                            RunWs(new WsConn(s), s, peer);
+                            RunWs(new WsConn(s), s, peer, s is SslStream);
                             return;
                         default:
                             HttpRequest.Respond(s, 404, "Not Found", "text/plain", "not found");
@@ -313,6 +334,8 @@ namespace DsfDesktop.Bridge
             // moves the stamps onto its own clock (an older Thor ignores it)
             m["gt_now"] = WcbAssembler.GameTimeOf(DateTime.Now);
             if (Tls) { m["tls"] = true; m["fp"] = Fingerprint; }
+            // 0.2.42: what this Desktop does beyond v1 (an older Thor ignores it): Desktop clicks the pad, Polestar's files follow
+            m["caps"] = new object[] { "pad_click", "polestar_sync" };
             foreach (var kv in host.Info() ?? new Dictionary<string, object>()) m[kv.Key] = kv.Value;
             return m;
         }
@@ -329,7 +352,7 @@ namespace DsfDesktop.Bridge
         static void SendNow(WsConn ws, Dictionary<string, object> m) { try { ws.SendText(Json.Write(m)); } catch (Exception) { } }
         static void SetTimeout(Stream s, int ms) { try { s.ReadTimeout = ms; } catch (Exception) { } }
 
-        void RunWs(WsConn ws, Stream st, IPEndPoint peer)
+        void RunWs(WsConn ws, Stream st, IPEndPoint peer, bool tls = false)
         {
             BridgeSession s = null;
             PairAttempt pair = null;
@@ -360,6 +383,8 @@ namespace DsfDesktop.Bridge
                             }
                             var dev = host.Devices.All().FirstOrDefault(d => d.Id == id);
                             s = Authenticate(ws, st, id, dev?.Name ?? id, peer, m.Bool("wow_stop"));
+                            s.Tls = tls;
+                            s.UiScale = DsfDesktop.Wow.WowConfig.ThorUiScale(m.TryGetValue("ui_scale", out var uiScale) ? uiScale : null);
                             try { ThorConnected?.Invoke(); } catch (Exception) { }
                             try { ThorHello?.Invoke(s); } catch (Exception) { }
                             SawAddonSet(m);
@@ -450,6 +475,9 @@ namespace DsfDesktop.Bridge
                             var sa = s;
                             Task.Run(() => sa.Enqueue(With("addons", host.AddonsInstall())));
                             break;
+                        case "addons_want": host.AddonsWant(m, s); break;
+                        case "addon_file":
+                        case "addon_file_err": host.AddonFile(m); break;
                         case "stream_mode": host.StreamMode(Num(m, "w"), Num(m, "h"), Num(m, "fps")); break;
                         case "host_check":
                             var sh = s;
@@ -470,9 +498,45 @@ namespace DsfDesktop.Bridge
                                 .OfType<Dictionary<string, object>>().ToList();
                             Task.Run(() => sw.Enqueue(With("sv_written", host.SvWrite(swAcct, swDocs))));
                             break;
+                        case "pad_click":
+                            var sc = s;
+                            if (!sc.Tls) { sc.Enqueue(new Dictionary<string, object> { ["t"] = "pad_click_result", ["id"] = m.Long("id"), ["state"] = "refused", ["why"] = "not_pinned" }); break; }
+                            host.PadClick(m, r => sc.Enqueue(With("pad_click_result", r)));
+                            break;
+                        case "pad_click_unseen":
+                            // 0.2.43 (the user's ruling 2026-11-19, "Off once quiet clicks work"): the Thor saw posted presses stop
+                            // landing; one terse line, no fallback (nothing is clicked any other way)
+                            if (s.Tls) Log.I("pad click: posted presses not landing in the game (" + m.Long("n") + " batches unseen); no fallback");
+                            break;
+                        case "ps_read":
+                            var pr = s;
+                            var prAcct = m.Str("acct");
+                            if (!pr.Tls) { pr.Enqueue(new Dictionary<string, object> { ["t"] = "ps_files", ["state"] = "none", ["why"] = "not_pinned" }); break; }
+                            Task.Run(() => pr.Enqueue(With("ps_files", host.PsRead(prAcct))));
+                            break;
+                        case "ps_write":
+                            var psw = s;
+                            var pwAcct = m.Str("acct");
+                            var pwDocs = (m.TryGetValue("docs", out var pdv) && pdv is object[] parr ? parr : new object[0])
+                                .OfType<Dictionary<string, object>>().ToList();
+                            if (!psw.Tls) { psw.Enqueue(new Dictionary<string, object> { ["t"] = "ps_written", ["results"] = new object[0], ["why"] = "not_pinned" }); break; }
+                            Task.Run(() => psw.Enqueue(With("ps_written", host.PsWrite(pwAcct, pwDocs))));
+                            break;
                         case "pc_test":
                             var sp = s;
                             Task.Run(() => { var r = host.PcTest(); r["t"] = "pc_test_result"; sp.Enqueue(r); });
+                            break;
+                        case "end_session":
+                            var se = s;
+                            var seAsked = m.TryGetValue("quit_asked", out var qa) && qa is bool qb && qb;
+                            se.Enqueue(new Dictionary<string, object> { ["t"] = "session_ending" });
+                            Task.Run(() =>
+                            {
+                                Dictionary<string, object> r;
+                                try { r = host.EndSession(seAsked); }
+                                catch (Exception e) { r = new Dictionary<string, object> { ["wow"] = "left", ["put_back"] = false, ["why"] = e.Message }; }
+                                se.Enqueue(With("session_ended", r));
+                            });
                             break;
                         case "unpair":
                             host.Devices.Remove(s.DeviceId);

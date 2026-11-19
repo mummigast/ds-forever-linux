@@ -1,6 +1,14 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.35 (upstream add-on set 404). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.36 (upstream add-on set 407). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## 2026-11-19: DS Forever 1.0.36, add-on set 412
+
+- **Merged DS Forever 1.0.36**: the power button in the pause menu, stream tap calibration (taps aimed at each row's measured centre),
+  switches sent in one batch, no click loops, Polestar following the stream, the PC's WoW window matching the Thor.
+- Not in this edition: Desktop's quiet clicks and its add-on and window management need DS Forever Desktop (the Linux helper does not
+  offer them, so the app keeps keyboard shortcuts first and clicks on the stream otherwise). The browser-login helper
+  (`wow-session-bridge.exe`) is left out with the local game's runtime.
 
 ## 2026-11-18: DS Forever 1.0.35, add-on set 411
 

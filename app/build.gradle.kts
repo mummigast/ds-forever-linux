@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -25,7 +26,7 @@ val STREAM_ONLY_DROPPED_LIBS = listOf("libkgslshim.so", "libpulse.so", "libpulse
     // prebuilt container helpers (no source here): the Turnip hook, patchelf, the Vortek / VirGL renderers, the PulseAudio JNI
     "libhook_impl.so", "libmain_hook.so", "libpatchelf.so", "libvortekrenderer.so", "libvirglrenderer.so", "libpulseaudio.so").map { "**/$it" }
 val STREAM_ONLY_DROPPED_ASSETS = listOf("<dir>bundled_components", "<dir>box86_64", "<dir>wowbox64", "<dir>wincomponents", "<dir>lsfg_vk",
-    "pulseaudio-gamenative-*.tzst", "redirect.tzst", "libredirect-bionic-wx.so", "libredirect-bionic-wx-minimal.so").map { "!$it" }
+    "pulseaudio-gamenative-*.tzst", "redirect.tzst", "libredirect-bionic-wx.so", "libredirect-bionic-wx-minimal.so", "wow-session-bridge.exe").map { "!$it" }
 
 android {
     namespace = "app.gamenative"
@@ -64,8 +65,8 @@ android {
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 1491
-        versionName = "1.0.35"
+        versionCode = 1499
+        versionName = "1.0.36"
 
         buildConfigField("boolean", "GOLD", "false")
         // DS Forever's self-update (Track C, the user's rulings 2026-10-12): the PUBLIC release repo "owner/repo" whose latest GitHub
@@ -206,7 +207,26 @@ android {
 
 }
 
+// Browser login's helper (the user, 2026-11-18: built FROM SOURCE, never upstream's prebuilt exe): git-ignored like upstream, made by
+// tools/wow-session-bridge/build_dsf.sh. Every APK's assets need exactly the recorded from-source bytes (wow-session-bridge.sha256).
+val sessionBridgeExe = file("src/main/assets/wow-session-bridge.exe")
+val sessionBridgeSha = rootProject.file("tools/wow-session-bridge/wow-session-bridge.sha256")
+val checkSessionBridge = tasks.register("checkSessionBridge") {
+    val exe = sessionBridgeExe
+    val shaFile = sessionBridgeSha
+    inputs.file(shaFile)
+    doLast {
+        require(exe.isFile) { "Missing ${exe.path}: run tools/wow-session-bridge/build_dsf.sh (Git Bash) to build the browser-login helper from source" }
+        val expected = shaFile.readText().trim().substringBefore(' ')
+        val actual = MessageDigest.getInstance("SHA-256").digest(exe.readBytes()).joinToString("") { "%02x".format(it) }
+        require(actual == expected) { "${exe.name} is $actual, not the from-source build $expected: run tools/wow-session-bridge/build_dsf.sh" }
+    }
+}
+
 tasks.configureEach {
+    // Linux Streaming Edition (2026-11-19, the 1.0.36 merge): the browser-login helper runs only in the local game's container, which a
+    // streaming-only build leaves out (it is built with Windows tools, tools/wow-session-bridge); -PlocalRuntime=true checks it as upstream
+    if (localRuntime && name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge)
     if (name == "preModernReleaseBuild") {
         doFirst {
             require(listOf("WC_KEYSTORE", "WC_KEYSTORE_PASS", "WC_KEY_ALIAS", "WC_KEY_PASS").all {

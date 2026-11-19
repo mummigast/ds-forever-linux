@@ -22,7 +22,7 @@ namespace DsfDesktop.App
     /// Everything Desktop does, without UI: the WoW folder and the log it follows, the bridge and its mDNS name, the bundled Sunshine
     /// (config, login, process, pairing), the add-ons, and "Focus WoW" when a stream starts. The window and tray only read this.
     /// </summary>
-    public sealed class AppController : IBridgeHost, IDisposable
+    public sealed partial class AppController : IBridgeHost, IDisposable
     {
         public readonly AppPaths Paths;
         public readonly AppSettings Settings;
@@ -106,6 +106,7 @@ namespace DsfDesktop.App
         {
             running = true;
             Log.I("DS Forever Desktop starting; data " + Paths.DataDir);
+            PcUse.Start();                 // 0.2.43: the PC's own keyboard / mouse times (no focus while it is in use; pad clicks are only ever posted)
             LocateWow();
             // an install of the self-patcher cut short by a crash is undone before anything reads the game (0.2.36)
             // (the Agent asked once here; while it is at work the put-back goes on in the background, WoW not started meanwhile)
@@ -133,6 +134,8 @@ namespace DsfDesktop.App
             // adopted by the screen plan and detached once no Thor wants it
             if (Settings.VddAttached) Task.Run(() => RemoveLeftoverVdd());
             if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            // the Thor's add-ons on the PC (QuestieDB first, then the last Thor's list): kept up to date at every start, WoW not running
+            if (Settings.AutoAddons) PcAddonsAtStart();
             Fire();
         }
 
@@ -202,7 +205,7 @@ namespace DsfDesktop.App
             Settings.WowRoot = root;
             SaveSettings();
             LocateWow();
-            if (Settings.AutoAddons) Task.Run(() => AddonsAuto());
+            if (Settings.AutoAddons) { Task.Run(() => AddonsAuto()); PcAddonsAtStart(); }
             return true;
         }
 
@@ -409,7 +412,7 @@ namespace DsfDesktop.App
                 bool settled = up && HostStarted;
                 var r = PortGuard.Now(SunshinePort, sh?.Pid ?? -1, up, settled, SunshineLayout.ExeDir);
                 Ports = r;
-                SetApollo(r.Hosts.Contains("Apollo"));
+                SetApollo(r.Hosts.Contains("Apollo"), ApolloStreamingNow(r));
                 var key = (HostProblem ?? "") + "|" + string.Join(",", r.ForeignPorts);
                 if (when != null) Log.I("sunshine: ports " + when + ": " + r.Detail);
                 if (key == lastPortsKey) return;
@@ -715,30 +718,69 @@ namespace DsfDesktop.App
         }
 
         // no prep command: the portable Sunshine can't start ours (error 5, tracking 252f5ec7); the Thor's bridge "focus" covers it
-        void WriteSunshineConfig() => SunshineConfig.Write(SunshineLayout, new SunshineOptions
+        void WriteSunshineConfig()
         {
-            Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
-            BindAddress = Loopback ? "127.0.0.1" : "", OutputName = CurrentOutput, MatchStream = MatchStreamNow,
-        });
+            bool match = MatchStreamNow;
+            SunshineConfig.Write(SunshineLayout, new SunshineOptions
+            {
+                Port = SunshinePort, Encoder = Settings.Encoder, EventExe = "", HostName = Environment.MachineName,
+                BindAddress = Loopback ? "127.0.0.1" : "", OutputName = CurrentOutput, MatchStream = match,
+            });
+            matchWritten = match;
+        }
 
         /// <summary>the display id our Sunshine captures: our own virtual screen's for the session, else the remembered real one</summary>
         string CurrentOutput => sessionOutput ?? Settings.CaptureDevice;
 
-        /// <summary>"Match PC screen to stream" as written: off while Apollo runs (both change the display setup and revert each other)</summary>
-        bool MatchStreamNow => Settings.MatchStreamResolution && !apolloRunning;
+        /// <summary>"Match PC screen to stream" to write now: the player's setting, stood down only while Apollo has a session up (two
+        /// hosts changing the display setup at once revert each other). Apollo merely running (a service, always on the user's PC
+        /// 2026-11-18) no longer turns it off: that left the PC's resolution never matched.</summary>
+        bool MatchStreamNow => MatchScreen.Write(Settings.MatchStreamResolution, apolloStreaming);
 
-        volatile bool apolloRunning;
+        /// <summary>what our running Sunshine's config says (the last one written); a change waiting for a stream's end isn't in it yet</summary>
+        volatile bool matchWritten;
+        volatile bool apolloRunning, apolloStreaming;
+
+        /// <summary>Apollo has a session up now (<see cref="PortGuard.HostStreaming"/>: its session UDP ports bound); false when unreadable</summary>
+        static bool ApolloStreamingNow(PortReport r)
+        {
+            var apollo = r.HostList.Where(h => h.Name == "Apollo").ToList();
+            if (apollo.Count == 0) return false;
+            try
+            {
+                var udp = PortGuard.UdpBound();
+                return apollo.Any(h => PortGuard.HostStreaming(h, udp));
+            }
+            catch (Exception) { return false; }
+        }
         /// <summary>the config changed while a stream ran: written and restarted once the stream ends</summary>
         volatile bool configStale;
 
-        void SetApollo(bool on)
+        void SetApollo(bool on, bool streaming)
         {
-            if (on == apolloRunning) return;
-            apolloRunning = on;
-            if (!Settings.MatchStreamResolution) { Log.I("apollo: " + (on ? "running" : "gone")); return; }
-            Log.I(on ? "match screen: off while Apollo runs (both change the display setup)" : "match screen: back on (Apollo gone)");
+            streaming = on && streaming;
+            if (on != apolloRunning) { apolloRunning = on; Log.I("apollo: " + (on ? "running" : "gone")); }
+            if (streaming == apolloStreaming) return;
+            apolloStreaming = streaming;
+            if (!Settings.MatchStreamResolution) { Log.I("apollo: " + (streaming ? "streaming" : "not streaming")); return; }
+            // ours streaming with the match on: left as it is (never a fight over the display, never a restart mid-stream); ApplyConfig
+            // waits for our stream's end. Apollo's own config and display settings are never touched.
+            if (streaming && matchWritten && StreamLive()) Log.I("match screen: Apollo started streaming; ours keeps its match until our stream ends");
+            else Log.I(streaming ? "match screen: skipped while Apollo streams" : "match screen: on (Apollo not streaming)");
             ApplyConfig("match screen");
         }
+
+        public const string MatchSkippedLine = "Screen not matched: Apollo is streaming";
+
+        /// <summary>fix/1492-feedback: the stream's "match screen" log line. Pure</summary>
+        public static string MatchLine(bool matched, bool ownScreen, int w, int h, int fps) =>
+            ownScreen ? "match screen: the stream is on our own screen (made at the Thor's " + w + "x" + h + "@" + fps + ")"
+            : matched ? "match screen: Sunshine sets the PC's screen to the Thor's " + w + "x" + h + "@" + fps + " for this stream (back " +
+                        DsfDesktop.Sunshine.SunshineConfig.RevertDelayMs / 1000 + " s after it ends)"
+            : "match screen: off (the PC's screen stays as it is; the stream is scaled)";
+
+        /// <summary>the Thor's status line when the player's Match is stood down for Apollo's session</summary>
+        void PublishMatchSkipped() => Bridge?.Publish(new Dictionary<string, object> { ["t"] = "status", ["text"] = MatchSkippedLine });
 
         /// <summary>writes the config and restarts ours now when idle, else after the stream</summary>
         void ApplyConfig(string why)
@@ -754,6 +796,7 @@ namespace DsfDesktop.App
         {
             Settings.MatchStreamResolution = on;
             SaveSettings();
+            if (on && apolloStreaming) Log.I("match screen: skipped while Apollo streams");
             WriteSunshineConfig();
             RestartSunshine();
         }
@@ -1351,6 +1394,69 @@ namespace DsfDesktop.App
             catch (Exception e) { Log.I("closing WoW after the stream: " + e.Message); }
         }
 
+        // ---------------------------------------------------------------- the Thor's clean disconnect (feat/pause-power)
+
+        readonly object endGate = new object();
+
+        /// <summary>
+        /// THE CLEAN DISCONNECT (the user, 2026-11-18: "When streaming this should also close wow on the PC and revert everything back and
+        /// be the clean way to disconnect"): the Thor's "end_session". WoW is not started again for this session (the supervisor lets
+        /// go, the 5-minute close is not needed), the streamed WoW closes (<see cref="SessionEnd"/>: the game's own Exit Game waited out
+        /// when the Thor tapped it, then its window's close, ended only if it stays), its login.txt goes, the player's controller mode
+        /// and WoW's window keys go back at once (<see cref="WowConfigKeep.PutBackNow"/>), and the monitor's mode is looked at as soon as
+        /// the stream has gone (<see cref="DisplayKeep.EndNow"/>) instead of after the 30 / 20 s graces. Desktop itself stays up (tray).
+        /// </summary>
+        public Dictionary<string, object> EndSession(bool quitAsked)
+        {
+            lock (endGate)
+            {
+                Log.I("session end: the Thor's clean disconnect" + (quitAsked ? " (it asked the game's own Exit Game first)" : ""));
+                Supervisor?.Disconnect();
+                thorWasHere = false; streamEndedAt = null;
+                var dir = FlavorDirOrNull;
+                var procs = new Dictionary<int, System.Diagnostics.Process>();
+                SessionEnd.Close c;
+                try
+                {
+                    c = SessionEnd.CloseWow(dir,
+                        list: () =>
+                        {
+                            var l = new List<WowProc>();
+                            foreach (var n in new[] { "Wow", "WowB", "WowT", "WowClassic", "WowClassicB", "WowClassicT" })
+                            {
+                                System.Diagnostics.Process[] ps;
+                                try { ps = System.Diagnostics.Process.GetProcessesByName(n); } catch (Exception) { continue; }
+                                foreach (var x in ps)
+                                {
+                                    string path = null;
+                                    try { path = x.MainModule?.FileName; } catch (Exception) { }
+                                    procs[x.Id] = x;
+                                    l.Add(new WowProc { Pid = x.Id, Path = path });
+                                }
+                            }
+                            return l;
+                        },
+                        quitAsked: quitAsked,
+                        closeWindow: pid => { if (procs.TryGetValue(pid, out var x)) x.CloseMainWindow(); },
+                        waitExit: (pid, ms) => !procs.TryGetValue(pid, out var x) || x.WaitForExit(ms),
+                        kill: pid =>
+                        {
+                            if (!procs.TryGetValue(pid, out var x)) return true;
+                            try { x.Kill(); return true; } catch (Exception e) { Log.I("session end: couldn't end WoW: " + e.Message); return false; }
+                        });
+                }
+                finally { foreach (var x in procs.Values) x.Dispose(); }
+                Log.I("session end: WoW " + c.Wow + (c.How.Length > 0 ? " (" + c.How + ")" : "") + (c.Why.Length > 0 ? ": " + c.Why : ""));
+                if (dir != null) lock (loginGate) if (loginFileAt.HasValue) { WowLoginFile.Delete(dir); loginFileAt = null; }
+                bool back = c.Wow != "left" && (ConfigKeep?.PutBackNow() ?? true);
+                ScreenKeep?.EndNow();
+                Log.I("session end: " + (back ? "controller mode and WoW's window put back" : "the put-back waits (the usual rule)") +
+                      "; the monitor is looked at once the stream has gone");
+                PublishWow(force: true);
+                return new Dictionary<string, object> { ["wow"] = c.Wow, ["put_back"] = back, ["why"] = c.Why };
+            }
+        }
+
         // ---------------------------------------------------------------- Desktop's own update (DesktopUpdate, UpdateGate)
 
         DsfDesktop.Thor.DesktopUpdate update;
@@ -1557,6 +1663,8 @@ namespace DsfDesktop.App
         /// </summary>
         void BeforeStart(LaunchPlan p)
         {
+            // the Thor's add-ons in before WoW reads AddOns (a missing QuestieDB holds the start up to PcWaitS)
+            try { if (Settings.AutoAddons) PcBeforeStart(); } catch (Exception e) { Log.I("pc add-ons: " + e.GetType().Name); }
             try { SvBeforeStart(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull); }
             catch (Exception e) { Log.I("settings sync: " + e.GetType().Name); }
             bool ask;
@@ -1701,6 +1809,15 @@ namespace DsfDesktop.App
             Log.I("stream: " + s);
             if (s != StreamState.Streaming && configStale) Task.Run(() => ApplyConfig("after the stream"));
             Bridge?.Publish(new Dictionary<string, object> { ["t"] = "stream", ["state"] = StreamWord });
+            if (s == StreamState.Streaming && was != StreamState.Streaming && Settings.MatchStreamResolution && !matchWritten && apolloStreaming)
+            {
+                Log.I("match screen: skipped for this stream (Apollo is streaming)");
+                PublishMatchSkipped();
+            }
+            // fix/1492-feedback: the match is Sunshine's own (its dd_* options): said for every stream, so the log shows it (test 1492's
+            // log had no "match screen" line at all, though Sunshine had switched the monitor to 1920x1080@120 at 15:07:46)
+            else if (s == StreamState.Streaming && was != StreamState.Streaming)
+                Log.I(MatchLine(matchWritten, sessionOutput != null, thorW, thorH, thorFps));
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>
                 {
@@ -1723,7 +1840,8 @@ namespace DsfDesktop.App
         public string FocusWow()
         {
             var why = WowWindow.Focus(Wow != null && Flavor != null ? Wow.FlavorDir(Flavor) : null);
-            Log.I("focus WoW: " + (why ?? "done"));
+            // 0.2.43: someone is using the PC itself: WoW is left behind their window (tried again once the PC is quiet)
+            Log.I("focus WoW: " + (why == PcUse.InUseWhy ? "skipped, PC in use" : why ?? "done"));
             return why;
         }
 
@@ -1761,7 +1879,7 @@ namespace DsfDesktop.App
             var streaming = Stream == StreamState.Streaming;
             var list = SunshineDisplays();
             var cap = sessionOutput == null && list.Count > 0 ? list.FirstOrDefault(d => d.DisplayName == Displays.Captured(list, CurrentOutput)) : null;
-            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, MatchStreamNow);
+            ScreenKeep?.Tick(streaming, cap != null && !cap.Virtual ? cap.DisplayName : null, matchWritten);
             var dir = FlavorDirOrNull;
             if (streaming && dir != null) ConfigKeep?.RecordWindow(Path.Combine(dir, "WTF", "Config.wtf"));
         }
@@ -1777,13 +1895,44 @@ namespace DsfDesktop.App
         /// <summary>a WoW window is up (any flavor)</summary>
         public bool WowUp() => WowWindow.Find(FlavorDirOrNull) != null;
 
+        /// <summary>
+        /// fix/1492-feedback: the screen a stream's WoW starts on - the Thor's mode when "Match PC screen to stream" is written into our
+        /// Sunshine (it switches the captured monitor to it as the Thor's launch comes in: 1920x1080@120 at 15:07:46 in test 1492),
+        /// maximized only on our own virtual screen (made at the nearest offered mode), null when no stream wants WoW (the player's own
+        /// window stays: WoW started from the tray, or no match and no own screen)
+        /// </summary>
+        (int? w, int? h)? StreamWindow()
+        {
+            bool streamSession = Stream == StreamState.Streaming || (Bridge != null && Bridge.Sessions().Count > 0);
+            return StreamWindowFor(streamSession, sessionOutput != null, matchWritten, thorW, thorH);
+        }
+
+        /// <summary>[StreamWindow]'s rule. Pure</summary>
+        public static (int? w, int? h)? StreamWindowFor(bool streamSession, bool ownScreen, bool matched, int w, int h) =>
+            !streamSession ? null : ownScreen ? ((int?)null, (int?)null) : matched ? ((int?)w, (int?)h) : ((int? w, int? h)?)null;
+
+        /// <summary>the Thor's UI scale from its last hello (the user's ruling 2026-11-18); null = none said</summary>
+        volatile Dictionary<string, string> thorUiScale;
+
+        /// <summary>the UI scale a stream's WoW starts with: the Thor's, only for a stream session (WoW started from the tray keeps the
+        /// PC's own), null = leave the PC's Config.wtf alone</summary>
+        IReadOnlyDictionary<string, string> StreamUiScale()
+        {
+            bool streamSession = Stream == StreamState.Streaming || (Bridge != null && Bridge.Sessions().Count > 0);
+            return StreamUiScaleFor(streamSession, thorUiScale);
+        }
+
+        /// <summary>[StreamUiScale]'s rule. Pure</summary>
+        public static IReadOnlyDictionary<string, string> StreamUiScaleFor(bool streamSession, IReadOnlyDictionary<string, string> thor) =>
+            streamSession && thor != null && thor.Count > 0 ? thor : null;
+
         void MakeStarter()
         {
             Starter = new WowStarter(
                 windowUp: WowUp,
                 processUp: WowWindow.ProcessRunning,
                 plan: () => WowLaunch.Plan(Wow, DateTime.Now, WowLaunch.FindBattleNet()),
-                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep); });
+                start: p => { BeforeStart(p); return WowStarter.StartProcess(p, ConfigKeep, StreamWindow, StreamUiScale); });
             Starter.Changed += (state, why) =>
             {
                 if (Supervisor != null) PublishWow(force: true);
@@ -2115,6 +2264,13 @@ namespace DsfDesktop.App
         {
             // a Thor connected: the self-patcher may try once by itself again (0.2.36: one automatic attempt per connect)
             if (s != null) patchFlow?.Connect();
+            // the user's ruling 2026-11-18: the Thor's own UI scale for the stream's WoW (null = it has none: the PC is left alone)
+            if (s != null)
+            {
+                thorUiScale = s.UiScale;
+                Log.I("thor UI scale: " + (s.UiScale == null ? "none said (the PC's stays)"
+                    : string.Join(", ", DsfDesktop.Wow.WowConfigKeep.UiScaleKeys.Where(s.UiScale.ContainsKey).Select(k => k + " " + s.UiScale[k]))));
+            }
             if (s == null || s.KnowsStop || !Settings.StartWowOnStream || Supervisor == null) return;
             if (!WowFlow.LegacyReconnectRetries(Supervisor.StoppedFor != null || StopNow() != null, (DateTime.UtcNow - legacyRetryAt).TotalSeconds)) return;
             legacyRetryAt = DateTime.UtcNow;
@@ -2380,6 +2536,8 @@ namespace DsfDesktop.App
             if (Bridge == null || Bridge.Sessions().Count == 0 || LastScreen == WowScreen.None) { focusTries = 0; return; }
             // Battle.net's sign-in is the player's step (the Thor shows that window alone): WoW is never pulled over it
             if (WowFlow.BnetSignInPending(LastBnet, LastScreen)) return;
+            // 0.2.43: not while the PC's own user is busy (no try counted: it resumes once the PC is quiet)
+            if (PcUse.InUse() && !WowWindow.IsForeground()) return;
             if (!WowFlow.FocusRetryWanted(LastScreen, WowWindow.IsForeground(), focusTries, DateTime.UtcNow >= nextFocus)) return;
             if (Interlocked.CompareExchange(ref focusBusy, 1, 0) != 0) return;
             focusTries++;

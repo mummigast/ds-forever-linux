@@ -352,15 +352,47 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
                 onWelcome = { w -> main.post { welcomed(w) } },
                 onSunshine = { m -> main.post { sunshineSaid(m) } },
                 onPcTest = { m -> pcTestSaid(m) },
+                onSessionEnd = { m -> main.post { sessionSaid(m) } },
                 onBnetReady = { form -> main.post { signIn.answer(form); signInTick() } },
                 savedLogin = { com.jrees.wowcompanion.HomeLoginStore.forAutoLogin(activity)?.let { it.email to it.password } },
                 gameAccount = { gameAccount() },
                 streamMode = { playable().let { Triple(it.width, it.height, it.fps) } },
                 // settings follow (2026-11-18): our kept tables to and from the PC, only down a pinned wss connection (as the login)
                 svDir = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null }).also { bridge = it }
+                    android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings") else null },
+                // the Thor's add-ons for the PC (the user, 2026-11-18: "My desktop seems to be missing the required addons"): what DS Forever
+                // manages (pins + wants), the imported ones (their files: only down a pinned wss connection) and their on / off
+                addonsWant = { pcAddonsWant(h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) },
+                importedFiles = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) pcImported() else null to emptySet() },
+                // the user's ruling 2026-11-18: the PC's stream WoW at this Thor's own UI scale (Desktop puts the PC's back after)
+                uiScale = { thorUiScale() },
+                // Polestar progress follows (the user's pick 2026-11-18): the Thor game's Polestar.lua files, only down a pinned wss connection
+                polestar = { if (h.bridgeTls && h.bridgeFingerprint.isNotEmpty()) polestarCtx() else null }).also { bridge = it }
         }, "${h.desktopId}@${h.address}:${h.bridgePort}")
     }
+
+    /** PsSync's Thor side: the game's WTF folder (null = no game folder yet), its bases + backups beside our kept settings */
+    private fun polestarCtx(): com.jrees.wowcompanion.PsSync.Ctx? = runCatching {
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot() ?: return null
+        com.jrees.wowcompanion.PsSync.Ctx(java.io.File(root, "WTF"), java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings"), gameRunning = { com.jrees.wowcompanion.LauncherHooks.gameUp() })
+    }.getOrNull()
+
+    /** "addons_want" for Desktop; the imported add-ons only with [pinned] (their files cross only a pinned wss connection) */
+    private fun pcAddonsWant(pinned: Boolean): org.json.JSONObject? = runCatching {
+        com.jrees.wowcompanion.ThirdPartyAddons.init(activity)
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot()
+        val state = java.io.File(activity.filesDir, "dsforever/addons")
+        val acct = runCatching { com.jrees.wowcompanion.SvSync.accountFile(java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOCUMENTS), "DS Forever/settings")).takeIf { it.isFile }?.readText()?.trim() }.getOrNull().orEmpty()
+        com.jrees.wowcompanion.PcAddonsWant.build(root, state, acct,
+            importedFolders = if (pinned) com.jrees.wowcompanion.ImportedAddons.list().map { it.folder } else emptyList())
+    }.onFailure { Log.w(TAG, "pc add-ons: ${it.javaClass.simpleName}") }.getOrNull()
+
+    private fun pcImported(): Pair<java.io.File?, Set<String>> = runCatching {
+        val root = com.jrees.wowcompanion.LauncherHooks.flavorRoot()
+        root?.let { java.io.File(it, "Interface/AddOns") } to com.jrees.wowcompanion.ImportedAddons.list().map { it.folder }.toSet()
+    }.getOrDefault(null to emptySet())
 
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game account says:
@@ -372,6 +404,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
         val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
         return BridgeProtocol.GameAccount(ask = false, list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) })
+    }
+
+    /** this Thor's own UI scale lines (Config.wtf's useUiScale / uiScale, values only in the log); null = none, the PC's stays */
+    private fun thorUiScale(): Map<String, String>? {
+        val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull() ?: return null
+        val s = com.jrees.wowcompanion.GameConfigWtf.uiScale(root)
+        Log.i(TAG, "UI scale for the PC's stream: " + (s?.entries?.joinToString(", ") { "${it.key} ${it.value}" } ?: "none in Config.wtf (the PC's stays)"))
+        return s
     }
 
     /** Desktop listed the PC's home-network addresses: the one on this Wi-Fi is tried first next time (Route); its Tailscale ones are
@@ -473,6 +513,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
      * (the bridge too) and remembered. None: the curtain says why ([Route.unreachable]) and it tries again by the policy.
      */
     private fun connect() {
+        if (ending != null) return                           // feat/pause-power: the clean disconnect runs: no new stream
         val h = host ?: return show(Screen.PAIRING)
         if (session != null || !surfaceReady || routing || testSession != null) return
         main.removeCallbacks(retryTick)
@@ -607,6 +648,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         DsForeverScreen.current?.signInClose = { boardByHand = false; boardShut = true; applyCurtain() }
         SetupBridge.openPcKeyboard = { boardByHand = true; boardShut = false; applyCurtain() }
         SetupBridge.exitStream = { main.post { stopStream("menu"); back() } }
+        // feat/pause-power: THE CLEAN DISCONNECT (the pause menu's power button; the waiting screen's Exit game): the PC's WoW closes
+        // and the PC is put back by Desktop, then the stream and the bridge stop
+        SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, closeOnAck = true, then = done) } }
+        SetupBridge.endStream = { main.post { endSession("the menu's Exit game", false) { back() } } }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -617,6 +662,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }
 
     private fun onEnded(error: Int, notPaired: Boolean, message: String) {
+        // feat/pause-power: the clean disconnect stopped it: no diagnosis, no retry
+        if (ending != null) { teardown(); Log.i(TAG, "stream ended ($error) for the clean disconnect"); return }
         val wasStreaming = screen == Screen.STREAMING
         val mode = session?.mode
         val failedStage = session?.failedStage.orEmpty()
@@ -723,6 +770,65 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         worker.execute { if (bridge?.wowRetry() != true) Log.i(TAG, "PC: Retry not sent (no bridge connection)") }
     }
 
+    // ---------------------------------------------------------------- the clean disconnect (feat/pause-power)
+
+    /** the clean disconnect under way ([SessionEnd]) and what runs once it is decided */
+    private var ending: SessionEnd? = null
+    private var endThen: ((com.jrees.wowcompanion.PausePower.Ended) -> Unit)? = null
+
+    /**
+     * The user, 2026-11-18: "When streaming this should also close wow on the PC and revert everything back and be the clean way to
+     * disconnect". "end_session" to Desktop (it closes the PC's WoW - the game's own Exit Game first when [quitAsked] - and puts the PC
+     * back), the picture stopped at once (after the Exit Game tap has gone down the stream: the PC's desktop never shows on the top
+     * screen as WoW closes), "Closing WoW on your PC" on the top screen; Desktop's answer (or [SessionEnd]'s time) ends it: the bridge
+     * disconnects, then [then].
+     */
+    private fun endSession(why: String, quitAsked: Boolean, closeOnAck: Boolean = false, then: (com.jrees.wowcompanion.PausePower.Ended) -> Unit) {
+        if (ending != null) { Log.i(TAG, "clean disconnect ($why): already under way"); return }
+        // fix/1492-feedback: the power button's end goes on Desktop's "session_ending" ([SessionEnd.closeOnAck]): DS Forever closes
+        // while Desktop waits out the game's own Exit Game countdown on the PC
+        val e = SessionEnd(System.currentTimeMillis(), closeOnAck = closeOnAck)
+        ending = e; endThen = then
+        Log.i(TAG, "clean disconnect ($why): Desktop closes WoW and puts the PC back" + if (quitAsked) " (the game's own Exit Game asked first)" else "")
+        worker.execute {
+            val sent = bridge?.endSession(quitAsked) == true
+            main.post {
+                e.sent(sent)
+                Log.i(TAG, "clean disconnect: end_session ${if (sent) "sent" else "NOT sent (no bridge connection): the stream stops only"}")
+                endTick.run()
+            }
+        }
+        main.postDelayed({
+            if (ending !== e) return@postDelayed
+            stopStream("the clean disconnect")
+            show(Screen.CONNECTING)
+            status.show(com.jrees.wowcompanion.Tr.t(com.jrees.wowcompanion.PausePower.CLOSING_STREAM) + "\u2026", "", "", withButtons = false)
+        }, if (quitAsked) SessionEnd.QUIT_TAP_SETTLE_MS else 0L)
+    }
+
+    private val endTick: Runnable = object : Runnable {
+        override fun run() {
+            val e = ending ?: return
+            main.removeCallbacks(this)
+            val r = e.check(System.currentTimeMillis()) ?: run { main.postDelayed(this, 250L); return }
+            ending = null
+            Log.i(TAG, "clean disconnect: " + if (r.answered) "Desktop: WoW ${r.wow}, put back ${r.putBack}${if (r.why.isNotEmpty()) " (${r.why})" else ""}"
+                else "ended without Desktop's word (${r.why})")
+            stopStream("the clean disconnect ended")
+            bridge?.stop()                                   // the bridge disconnects before DS Forever / Streaming goes
+            val then = endThen; endThen = null
+            then?.invoke(r)
+        }
+    }
+
+    /** Desktop's session_ending / session_ended */
+    private fun sessionSaid(m: BridgeMsg.SessionEnd) {
+        val e = ending ?: return
+        Log.i(TAG, "clean disconnect: Desktop " + if (m.done) "ended the session" else "is closing WoW")
+        e.said(m)
+        endTick.run()
+    }
+
     private fun stopStream(why: String) {
         session?.let { Log.i(TAG, "stopping the stream: $why"); it.stop() }
         teardown()
@@ -734,6 +840,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = 0
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
+        SetupBridge.endSession = null; SetupBridge.endStream = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null

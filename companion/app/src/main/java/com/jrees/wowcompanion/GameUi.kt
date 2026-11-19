@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import org.json.JSONObject
 
 /**
@@ -344,6 +345,81 @@ object GameUi {
         SW_ATK -> s.atk; SW_SHOT -> s.shot; SW_SHOTF -> s.shotf; SW_PMODE -> s.pmode; SW_UFP -> s.ufp; SW_UFT -> s.uft; SW_UFTOT -> s.uftot; SW_UFHPP -> s.ufhpp; SW_UFHPT -> s.ufhpt; SW_PS -> s.ps; SW_PET -> s.pet; SW_NBAR -> s.nbar; SW_SRES -> s.sres; SW_NPF -> s.npf; else -> s.prd }
     /** PR #533: the game's answer to a tap of [p] - its word and its `set` flag (an answered tap moves one of them) */
     fun swSig(s: Sw?, p: String): Any? = s?.let { swWord(it, p) to it.set[p] }
+    /** fix/1492-feedback: the add-on's last press count said ([landedNote]) and the last `off` line written */
+    private var rxN = -1
+    private var offSaid = ""
+    /**
+     * fix/1492-feedback (test 1492 streamed: the "ui" row's restore and layout taps never answered, the "uisw" row's did): WHERE THE
+     * TAPS LANDED, in the tap log beside the taps sent - Hub hub69's `rx` (TapPad pad23's last presses, "row:col") whenever its count
+     * moves, and pad23's `off` (rows whose cells do not stand where the grid says) when it changes. Logged only; nothing decided on it.
+     */
+    private fun landedNote(rx: JSONObject?, off: JSONObject?, current: Boolean, offToo: Boolean = true) {
+        if (!current) return
+        val n = rx?.optInt("n", -1) ?: -1
+        if (n >= 0 && n != rxN) {
+            // fix/stream-row-offset (pad24): each new press with where the game saw it, against what the app meant ([TapCal.landed])
+            // fix/desk-click-switch (test 1497: the stream's first report, n=12 on the PC's fresh client after the Thor's own larger
+            // count, was taken as "nothing new", so the posted presses it listed were never matched): a count that went DOWN (another
+            // client, a /reload) or the first one heard counts every press since that client's start
+            val fresh = freshPresses(rxN, n)
+            rxN = n
+            TapBridge.note("landed n=$n: ${rx?.optString("last").orEmpty().take(160)}")
+            if (fresh > 0) for (line in landedChecks(rx?.optString("last").orEmpty(), rx?.optString("at").orEmpty(), fresh, System.currentTimeMillis()))
+                TapBridge.note(line)
+        }
+        if (!offToo) return
+        val o = off?.let { j -> j.keys().asSequence().sorted().joinToString(" ") { k -> "$k@${j.opt(k)}" } }.orEmpty()
+        if (o != offSaid) { offSaid = o; if (o.isNotEmpty()) TapBridge.note("pad rows not where described: $o") }
+    }
+    /**
+     * fix/stream-row-offset: the [fresh] newest presses of the ring ("row:col" in [last], "x,y" or "-" in [at], newest last) checked
+     * against the taps the app meant ([TapCal.landed]): the tap log's notes. Pure but for TapCal's memory of the taps sent.
+     */
+    /** fix/desk-click-switch: the presses new since count [before] (-1: none heard yet) at count [n]: a count that fell is a new client */
+    fun freshPresses(before: Int, n: Int): Int = when {
+        n <= 0 -> 0
+        before in 0..n -> n - before
+        else -> n
+    }
+    fun landedChecks(last: String, at: String, fresh: Int, now: Long): List<String> {
+        val names = last.split(' ').filter { it.isNotEmpty() }
+        val seen = at.split(' ').filter { it.isNotEmpty() }
+        val out = ArrayList<String>()
+        val from = (names.size - fresh).coerceAtLeast(0)
+        // fix/desk-click-switch: more new presses than the ring lists = some never shown: the older batches are unknown, not unseen
+        DeskClicks.ringGap(fresh - names.size, now)
+        for (i in from until names.size) {
+            val nc = names[i]; val cut = nc.lastIndexOf(':')
+            if (cut <= 0) continue
+            val col = nc.substring(cut + 1).toIntOrNull() ?: continue
+            // `at` is as long as `last` (pad24); an older add-on has none: no seen y
+            val sy = if (seen.size == names.size) seen[i].split(',').getOrNull(1)?.toDoubleOrNull() else null
+            DeskClicks.landed(nc.substring(0, cut), col, now)?.let { out += it }   // feat/desktop-clicks: a posted click the game saw
+            TapCal.landed(nc.substring(0, cut), col, sy, now)?.let { out += it }
+        }
+        return out
+    }
+    /** fix/1492-feedback: the gap between the switch taps of one batch (each its own cell; TapPad's 0.25 s guard is per cell) */
+    const val SW_GAP_MS = 60L
+    /** a batch's most switches (every part there is) */
+    const val SW_BATCH_MAX = 24
+    /**
+     * fix/1492-feedback (test 1492: ~16 "uisw" taps spread over 3 s at the stream's start): EVERY switch to tap now, in [swNextSkip]'s
+     * order - each part whose word differs from the choice (or not had since the /reload), not parked ([skip]), [due] (TapBackoff) -
+     * as (part, absolute column). Pure.
+     */
+    fun swBatch(s: Sw, skip: Set<String>, due: (String) -> Boolean, want: (String) -> Boolean): List<Pair<String, Int>> {
+        val out = ArrayList<Pair<String, Int>>()
+        val seen = HashSet(skip)
+        while (out.size < SW_BATCH_MAX) {
+            val (p, on) = swNextSkip(s, seen, want) ?: break
+            seen += p
+            if (!due(p)) continue
+            val c = swCol(s, p, on) ?: continue
+            if (c >= 0) out += p to c
+        }
+        return out
+    }
     /** [swNext] without the parts in [skip] (PR #533: switches the game never answers, parked by [TapBackoff]). With every waiting
      *  part parked this is null, and the HUD steps / meters may go meanwhile; a parked part comes back by itself for its one probe */
     fun swNextSkip(s: Sw, skip: Set<String>, want: (String) -> Boolean): Pair<String, Boolean>? =
@@ -726,6 +802,16 @@ object GameUi {
     }
     const val NORMAL_ID = "normalui"
 
+    /**
+     * fix/desk-click-switch (Hub hub70): the add-on's `padrx` document, sent when its press count moves (the hub document carries `rx`
+     * only as a ride-along, so a press's word could wait for the next heartbeat, 15 s). The same landing checks, then the retries.
+     */
+    fun onPadRx(msg: JSONObject, current: Boolean) {
+        if (!current) return
+        landedNote(msg.optJSONObject("rx"), null, current = true, offToo = false)
+        appCtx?.let { TapBridge.retryMissed(it, pad) }
+    }
+
     /** a `hub` document; [current] is GameInput.note()'s answer for it */
     fun onHub(msg: JSONObject, current: Boolean) {
         val h = msg.optJSONObject("hub") ?: return
@@ -739,6 +825,12 @@ object GameUi {
                           if (e.has("why")) e.optString("why") else null))
         }
         pad = h.optJSONObject("pad")
+        // fix/stream-row-offset: the load the stream's measured fit is for, and a strip measurement whose answer this document carries
+        if (h.has("boot")) TapCal.boot = h.optLong("boot", 0L)
+        if (current) TapCal.settle(pad, System.currentTimeMillis())?.let { line -> Log.i("WCHUB", line); TapBridge.note(line) }
+        landedNote(h.optJSONObject("rx"), pad?.optJSONObject("off"), current)
+        // fix/stream-row-center: a stream batch that pressed another row goes once more, its row's aim nudged (TapCal.landed)
+        if (current) appCtx?.let { TapBridge.retryMissed(it, pad) }
         castBarHidden = h.optJSONObject("cb")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         hudHidden = h.optJSONObject("hud")?.let { if (it.has("hidden")) it.optBoolean("hidden") else null }
         // hub67: the one-tap memory (absent from an older add-on set: no restore tap, nothing held)
@@ -811,6 +903,17 @@ object GameUi {
         val s = state?.let { if (live) it else it.copy(current = false) }
         // hub67: this load's ONE restore tap goes before any other top-screen tap; the others wait for its answer (at most 3 s), then
         // tap only what still differs from this character's choices
+        // fix/stream-row-offset (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"): on the stream the pad's
+        // calibration strip is tapped first (twice; TapCal), and this object's own taps wait for its answer (at most TapCal.WAIT_MS)
+        // feat/desktop-clicks: not when Desktop clicks the pad (an exact pixel: nothing to measure)
+        if (live && s?.current == true && DeskClicks.route() == DeskClicks.Route.STREAM_TOUCH) {
+            val cal = TapCal.wanted(pad, true, now)
+            if (cal != null) {
+                if (TapBridge.calibrate(ctx, pad, cal)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
+                TapCal.cancel()
+            }
+            if (TapCal.busy(now)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
+        }
         val r = rst
         // Linux Streaming Edition (2026-11-19): while streaming, the restore (and every tap behind it) waits for the key handshake, at
         // most KEY_WAIT_MS past the settle: a click right after world entry is often lost on Linux, and a lost restore costs ~20 taps
@@ -825,6 +928,10 @@ object GameUi {
             return
         }
         if (restore.holding(r, s, now)) { last = UiStep.Wait("Restoring this character's top screen"); return }
+        if (restore.unanswered(r, s, now)) {
+            Log.i("WCHUB", "restore: no answer to the \"ui\" tap; the switches go as one batch")
+            TapBridge.note("restore: no answer to ui:${r?.col} (${RestorePolicy.MAX_TRIES} taps); the switches go as one batch")
+        }
         val step = policy.step(s, room.name, eff, live, now, settleAt())
         if (step is UiStep.Tap && !GameInput.tap(ctx, pad, ROW, step.mask)) {
             last = UiStep.Wait("The game has not published its tap pad")
@@ -852,12 +959,17 @@ object GameUi {
                 val swCol = if (sws != null && next != null) swCol(sws, next.first, next.second) else null
                 if (sws != null && swCol != null && swCol >= 0 && s != null && live && s.current &&
                     now >= settleAt()) {
-                    // one tap, the next only after this part's own answer (its word / set) or 1.5 s; after 3 unanswered taps one
-                    // probe every 30 s (TapBackoff). s.n (every tap on the row) no longer stands in for this part's answer
-                    val part = next!!.first
-                    if (swBack.due(part, now)) {
-                        swBack.tapped(part, swSig(sws, part), now); swTapAt = now
-                        GameInput.tap(ctx, pad, sws.row, swCol)
+                    // fix/1492-feedback (the user, 2026-11-18, test 1492: "when opening the stream, it looked like it was doing a lot of
+                    // clicks again"): every switch that differs goes in ONE batch ([swBatch], [SW_GAP_MS] apart: the whole set in about
+                    // a second, never one per answer spread over seconds); each part still waits for its own answer (its word / set)
+                    // or 1.5 s before it is tapped again, and after 3 unanswered taps one probe every 30 s (TapBackoff). The add-on keeps
+                    // every switch that took (hub67), so the next login is the one restore tap
+                    val batch = swBatch(sws, swBack.parked(now), { p -> swBack.due(p, now) }) { p -> swWant(p) }
+                    if (batch.isNotEmpty()) {
+                        for ((part, _) in batch) swBack.tapped(part, swSig(sws, part), now)
+                        swTapAt = now
+                        if (batch.size > 1) Log.i("WCHUB", "switches: ${batch.size} in one batch")
+                        GameInput.taps(ctx, pad, batch.map { sws.row to it.second }, SW_GAP_MS)
                     }
                 }
                 else if (hudOn() && hudStepWanted()) {

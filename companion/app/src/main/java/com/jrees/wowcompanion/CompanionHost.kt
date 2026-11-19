@@ -663,6 +663,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // pm1 (the user, 2026-11-16: "x to open the polestar menu"): the Map room's X opens the Quests room's own Polestar menu (one
         // instance: one open state, one frame in flight)
         worldMapRoom.psMenu = questsView.psMenu
+        questsView.psMenu.onPress = { psHandoff.playerPressed() }          // fix/desk-click-switch: the player's press ends the hand-off
         questsView.onFocusPicked = { id, on -> mapView.psRelease(); if (!on) mapView.focusCleared(id) }
         // pg1: the Polestar tab's X / Y (the one pnav Skip / Previous tap), its fight state, and Home's / the Map room's "Choose your
         // path" row (D4): the Quests room straight on the choice
@@ -866,7 +867,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
-        StartMenu.onExit = { (SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        // feat/pause-power: Exit game while streaming = the clean disconnect (the PC's WoW closes, the PC put back), then the chooser
+        StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
         StartMenu.canRestart = { LauncherHooks.gameUp() }
@@ -888,6 +890,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }, "region-card").apply { isDaemon = true }.start()
         }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
+        // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
+        startView.onBrowserLogin = {
+            Settings.browserLogin = true
+            NativeLogin.logEvent("sign-in: Browser login turned on from the BLZ51914400 offer; restarting the game")
+            startView.login = StartView.Login.NONE
+            val restart = SetupBridge.restartGame
+            if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
+            else { restartNotice(); restart() }
+        }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()
             NativeLogin.logEvent("sign-in: login saved (the login form)")
@@ -1097,7 +1108,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // #540: Home's B watch leaves a B alone while one of these overlays has it (and just after it closed one: overlayClosed)
         homeView.overlayOpen = { radialView.isOpen || (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || barSelect.open }
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
-        pauseView.onSlide = { t -> pauseSlideAll(t) }
+        pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
         // gets pressed"): the same quick time; input is already the room's / Home's (the wheel is gone in the B frame)
         pauseView.onClose = { from ->
@@ -1127,6 +1138,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
+        // feat/pause-power: THE POWER BUTTON (the user, 2026-11-18): its prompt's line, a fight's refusal, and Close = [PausePower.Sequence]
+        pauseView.streaming = { SetupBridge.endSession != null }
+        pauseView.powerRefusal = { if (homeView.inFight()) PausePower.FIGHT_LINE else null }
+        pauseView.onPower = { powerOff.run() }
         pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
@@ -1147,7 +1162,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         castView.onTouchCast = { cell -> TapBridge.tap(this, questsPad, "tcast", cell) { why -> Log.i("WCLOG", "touch cast refused ($why)") } }
         // the context menus' icons (the raid markers too) asked for early, so the phone's icon harvest has them before a wheel opens
         ui.postDelayed({ runCatching { MenuIcons.prefetch() } }, 8_000L)
-        targetRadial.onSlide = { t -> pauseSlideAll(t) }
+        targetRadial.onSlide = { t -> slideBarsUp = false; pauseSlideAll(t) }      // the controller stays (f-pause-bars)
         targetRadial.onClose = { from -> pauseView.onClose(from) }
         targetRadial.barsBottom = { pauseView.barsBottom?.invoke() ?: 0f }
         targetRadial.onDo = { d, name -> targetDo(d, name) }
@@ -2772,7 +2787,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // pg1: the Polestar tab (Map.lua WC.pg); pguide also heads Home's list and the Map room's ("Polestar · <zone>", D6)
             "pguide", "pgsteps", "pglist", "pgstep", "pgroute", "pgop" -> if (current) {
                 questsView.onPolestarDoc(msg)
-                if (msg.optString("type") == "pguide") mapView.onPolestarGuide(msg)
+                if (msg.optString("type") == "pguide") { mapView.onPolestarGuide(msg); polestarHandoff(msg) }
                 if (room == Room.MAP) worldMapRoom.postInvalidate()            // pm1: the Map room's Polestar menu draws them too
                 if (msg.optString("type") == "pgop" && !msg.optBoolean("ok")) Log.i("WCMAP", "polestar tab: op ${msg.optInt("op")} refused ${msg.optString("why", "")}")
             }
@@ -3082,6 +3097,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
             "hub" -> GameUi.onHub(msg, current)
+            "padrx" -> GameUi.onPadRx(msg, current)           // fix/desk-click-switch: Hub hub70, a press's word at once
             // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
             "lay" -> LayoutModel.Live.note(msg)
             // hub22: a new hostile target with Start attack on: the secure /startattack cell (a live document only, never a replay)
@@ -3893,8 +3909,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         lbView.lb(lbAloneNow && free)
     }
 
+    /** feat/pause-power: the pause menu pushes Home's controller up (set at its open); the target radial keeps it (set at its open) */
+    private var slideBarsUp = false
     private fun pauseSlideAll(t: Float) {
-        homeView.pauseSlide(t)
+        homeView.pauseSlide(t, barsUp = slideBarsUp)
         // THE ROOM STEPS BACK (the user 2026-10-09: "the Pause screen needs to be pushing the other menus off screen"; UI Art's motion:
         // a full-screen room does not slide - alpha 1 -> 0 and scale 1 -> 0.96 about its centre over the first half of the open,
         // FastOutLinearIn; t = 0 puts it back at once). Home keeps its own slide-off (separate panels)
@@ -4189,6 +4207,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun nativeRow(s: HomeLogin.State): Pair<StartView.Login, String>? = when {
         s.realm || NativeLogin.pastLogin -> null
+        // the user, 2026-11-18: a BLZ51914400 refusal offers Browser login (one button: it turns it on and restarts the game)
+        BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting) ->
+            StartView.Login.BROWSER to BrowserLogin.OFFER_LINE
+        // browser login: no saved-login row (the sign-in is Blizzard's page on this screen, BattleNetBrowserLogin)
+        NativeLogin.browserMode -> null
         // 2026-11-07 (the user: "the sign in prompts are still appearing ... if I dont push anything fast enough"): no authenticator,
         // failure or "not signed in yet" lines either - account select read as "not signed in"; the Menu and Keyboard are the way
         !HomeLoginStore.has(this) -> StartView.Login.FIRST to "Save it once and the game signs in by itself."
@@ -4950,6 +4973,41 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         return TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why -> Log.i("WCMAP", "polestar skip: tap failed: $why") }
     }
 
+    // fix/desk-click-switch (the user, 2026-11-19: Polestar on the PC "is still not on my step"): the guide and step last seen live are
+    // kept per character; a stream session's first PC guide is put on them once ([PolestarHandoff]); the player's press ends it
+    private val psHandoff = PolestarHandoff()
+    private var psHandoffStreaming = false
+    private var psHandoffOpened = false
+    private fun polestarHandoff(msg: JSONObject) {
+        val g = PolestarTab.Guide.parse(msg) ?: return
+        val ch = GameUi.character ?: return
+        val prefs = getSharedPreferences(PolestarHandoff.PREFS, MODE_PRIVATE)
+        val key = PolestarHandoff.key(ch)
+        val now = System.currentTimeMillis()
+        val streaming = PlayGate.streamingNow()
+        if (streaming != psHandoffStreaming) { psHandoffStreaming = streaming; psHandoff.reset(); psHandoffOpened = false }
+        val m = questsView.psMenu
+        if (streaming && !psHandoff.finished) {
+            val saved = PolestarHandoff.Saved.parse(prefs.getString(key, null))
+            when (val a = psHandoff.onGuide(g, saved, homeView.inFight())) {
+                PolestarHandoff.Act.None -> {}
+                PolestarHandoff.Act.Open -> { Log.i("WCMAP", "polestar handoff: the PC is on another guide; its tabs asked"); psHandoffOpened = true; m.open(now, force = true) }
+                is PolestarHandoff.Act.Continue -> { Log.i("WCMAP", "polestar handoff: continue tab ${a.tab}"); m.frame(PolestarTab.CONTINUE, a.stamp, listOf(a.tab)) }
+                is PolestarHandoff.Act.Look -> { Log.i("WCMAP", "polestar handoff: look at step ${a.step}"); m.frame(PolestarTab.LOOK, a.stamp, PolestarTab.two(a.step)) }
+                is PolestarHandoff.Act.Back -> { Log.i("WCMAP", "polestar handoff: back to the live step"); m.frame(PolestarTab.BACK, a.stamp) }
+                is PolestarHandoff.Act.Done -> Log.i("WCMAP", a.line)
+            }
+            // the menu told open only for the hand-off, and no room shows it: told closed again (after the frames in flight)
+            if (psHandoff.finished && psHandoffOpened && m.shownIn == null) { psHandoffOpened = false; m.close() }
+            if (!psHandoff.finished) return
+        }
+        // the newest place either side (Local, or the stream once its hand-off is over): what the next stream starts on
+        PolestarHandoff.Saved.of(g, now)?.let { s ->
+            val old = PolestarHandoff.Saved.parse(prefs.getString(key, null))
+            if (old == null || old.gs != s.gs || old.shown != s.shown || old.live != s.live) prefs.edit().putString(key, s.json().toString()).apply()
+        }
+    }
+
     // POLESTAR AS THE ROUTER (b-route-polestar): PolestarNav decides the taps of Map.lua's row "pnav" (only while the setting is Polestar;
     // switching away cancels its guidance)
     private fun polestarTick() {
@@ -4972,6 +5030,35 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // "1, 34, 1" lost its second digit, the add-on never had all seven and never asked Polestar (RouteWaypoint spaces its digits too)
         TapBridge.tapsSpaced(this, pad, cols.map { PolestarNav.ROW to it }, 120L) { why ->
             mapView.polestar.lost(); Log.i("WCMAP", "polestar: tap failed: $why") }       // (ps4: the row's word said again)
+    }
+
+    /**
+     * feat/pause-power: CLOSE DS FOREVER from the pause menu's power button ([PausePower.Sequence]): Local = the safe close's clean exit
+     * then the app; Streaming = the game's own Exit Game tapped over the stream, Desktop's end_session, then the app
+     */
+    private val powerOff by lazy {
+        PausePower.Sequence(
+            streaming = { SetupBridge.endSession != null },
+            gameUp = { LauncherHooks.gameUp() },
+            cleanExit = { LauncherHooks.cleanExit },
+            quitTap = { quitTapOverStream() },
+            endSession = { SetupBridge.endSession },
+            quitApp = { force ->
+                ui.post {
+                    val q = LauncherHooks.quitApp
+                    if (q == null) Log.i("WCSETUP", "power: no launcher to close (the companion app alone): nothing closes") else q(force)
+                }
+            },
+            log = { Log.i("WCSETUP", it) },
+        )
+    }
+
+    /** streaming: the game's own Exit Game (Spells' secure gamemenu row) tapped over the stream, as the clean exit taps it locally:
+     *  true = asked (Desktop waits for it before closing the window); never in a fight or at the login screen (CleanExit's route) */
+    private fun quitTapOverStream(): Boolean {
+        val route = CleanExit.route(lastAddonAt, SystemClock.elapsedRealtime(), homeView.inFight(), CleanExit.quitCol(lastGameMenu))
+        if (route !is CleanExit.Route.Quit) { Log.i("WCSETUP", "power: no Exit Game tap over the stream (${(route as CleanExit.Route.Force).why})"); return false }
+        return TapBridge.tap(this, questsPad, GameMenuModel.ROW, route.col) { r -> Log.i("WCSETUP", "power: Exit Game tap refused ($r)") }
     }
 
     private fun cleanExit(why: String, done: (Boolean) -> Unit) {

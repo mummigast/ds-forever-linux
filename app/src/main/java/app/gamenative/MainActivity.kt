@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        createdGen++
 
         // DS Forever fork: the game belongs on the top screen; opened on another one (Cocoon's bottom grid) = moved there first
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
@@ -118,6 +119,18 @@ class MainActivity : ComponentActivity() {
         PluviaApp.events.on<AndroidEvent.SetSystemUIVisibility, Unit>(onSetSystemUi)
         PluviaApp.events.on<AndroidEvent.SetAllowedOrientation, Unit>(onSetAllowedOrientation)
         PluviaApp.events.on<AndroidEvent.EndProcess, Unit>(onEndProcess)
+        // feat/pause-power (the user, 2026-11-18: "a power button that effectively opens a prompt to close DS forever"): the companion's
+        // Close runs the game's own Exit Game first (or Desktop's end_session while streaming), then this: the old close of the game only
+        // when it did not exit by itself ([force]), then the task goes; onDestroy shuts the environment down and ends the process
+        com.jrees.wowcompanion.LauncherHooks.quitApp = { force ->
+            runOnUiThread {
+                Timber.i("Close DS Forever (the pause menu's power button)%s", if (force) ": the old close of the game first" else "")
+                com.jrees.wowcompanion.GameLife.closer = "Close DS Forever from the pause menu"
+                if (force && PluviaApp.xEnvironment != null) PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
+                window.decorView.postDelayed({ if (!isFinishing) finishAndRemoveTask() }, if (force) 1_500L else 0L)
+                closeFallback(if (force) 1_500L else 0L)
+            }
+        }
 
         setContent {
             val snackbarController = remember { SnackbarHostController() }
@@ -128,6 +141,40 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    /**
+     * fix/1492-feedback (the user, 2026-11-18, test 1492: "closing from the power button didn't close the app"): THE HARD FALLBACK of the
+     * power button's close. The close above finishes this task and onDestroy ends the process once no task is left; when that did not
+     * happen [CLOSE_FALLBACK_MS] after the task's finish (another of our tasks still up - Streaming's activity, Swap screens' bottom
+     * window - the environment's keepAlive stuck, onDestroy never reached), every task of ours is finished, DS Forever's bottom screen
+     * stopped, the game's environment shut down, and the process ends. Its own thread: a wedged main thread still exits.
+     */
+    private fun closeFallback(afterMs: Long) {
+        val app = applicationContext
+        val gen = createdGen
+        Thread({
+            try { Thread.sleep(afterMs + CLOSE_FALLBACK_MS) } catch (_: InterruptedException) { return@Thread }
+            // DS Forever opened again in the same process meanwhile (a fresh MainActivity): that one stays
+            if (createdGen != gen) { android.util.Log.i("WCSETUP", "power: the hard fallback stands down (DS Forever opened again)"); return@Thread }
+            Timber.w("Close DS Forever: still up %d ms after the close: every task finished, the process ends", CLOSE_FALLBACK_MS)
+            android.util.Log.w("WCSETUP", "power: DS Forever still up ${CLOSE_FALLBACK_MS / 1000} s after the close: the hard fallback ends it")
+            runCatching { app.getSystemService(android.app.ActivityManager::class.java)?.appTasks?.forEach { runCatching { it.finishAndRemoveTask() } } }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching { com.jrees.wowcompanion.fork.DsForeverScreen.current?.stop() }
+                if (PluviaApp.keepAlive) runCatching { PluviaApp.shutdownEnvironment() }
+            }
+            try { Thread.sleep(1_000L) } catch (_: InterruptedException) {}
+            com.jrees.wowcompanion.LastRun.ownExit(app)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, "dsf-close-fallback").apply { isDaemon = true }.start()
+    }
+
+    companion object {
+        /** the power button's hard fallback: the process ends this long after the close if it is still up */
+        const val CLOSE_FALLBACK_MS = 5_000L
+        /** bumped by every MainActivity onCreate (the fallback stands down for a DS Forever opened again) */
+        @Volatile var createdGen = 0
+    }
+
     // a home-screen shortcut tapped while DS Forever runs (singleTop): its mode, unless the game runs (ModeBridge decides)
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

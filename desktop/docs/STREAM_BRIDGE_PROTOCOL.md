@@ -309,6 +309,28 @@ sees the PC there.
   streamed, or a headless PC says "PC needs a virtual screen" (`problem` "needs_screen") - and tries again only when the Thor
   reconnects, on this message, or on a Test. No answer.
 - `{"t":"addons_status"}` / `{"t":"addons_install"}` → `{"t":"addons",...}` (Desktop's add-on install; not used by the Thor yet).
+- **The Thor's add-ons on the PC** *(Desktop 0.2.40; the user 2026-11-18: "My desktop seems to be missing the required addons for the
+  app like polestar and questie", "questie especially", "part of the DS forever startup should be maintaining/updating enabled addons")*.
+  - Thor → `{"t":"addons_want","v":1,"acct":"<SvSync's account hash>","questiedb":{"want":true},"managed":[{"id","key","title","tag",
+    "asset","bytes","sha256","folders":[...],"url","license","want"}],"imported":[{"folder","version","enabled","big","allowed","bytes",
+    "files":[{"p","n","h"}]}],"enabled":{"<folder>":true|false}}` after every welcome (WoW running or not; built on its own thread).
+    `managed` = every ThirdPartyAddons package with its pin and whether the Thor wants it now; `imported` (only down a pinned wss
+    connection) = Settings > Add-ons > Import's add-ons with each file's path, size and sha256; `enabled` = on / off in the Thor's
+    AddOns.txt (on anywhere = on; off in every file naming it = off; not named = left out).
+  - Desktop (PcAddons): QuestieDB from Questie/QuestieDB's latest release (GitHub digest / SHA256SUMS; every 6 h; reinstalled when
+    deleted), then each managed pin ONLY from its own source (`polestar` / `spoken`: that repo's release by the pinned tag, the asset's
+    size as pinned; `manners` / `questtrail`: `https://mediafilez.forgecdn.net/files/.../<asset>`; any other id or host refused), size +
+    sha256 checked, resumed, licence files into every folder; `want` false = Desktop's own copy to `Interface/AddOns-backup-dsforever`.
+    Then each enabled imported add-on, a part at a time: Desktop → `{"t":"addon_file_get","id","folder","p","off","len"}` (len ≤ 256 KB),
+    Thor → `{"t":"addon_file","id","folder","p","off","data":"<base64>"}` or `{"t":"addon_file_err","id","why"}` (only a folder on its
+    Imported list, only a plain path inside it, ≤ 512 KB). Each file's sha256 checked; a broken copy resumes. Then `enabled` into the
+    PC's AddOns.txt (the account by `acct`, else every account), ONLY for folders Desktop put in.
+  - Never: a folder Desktop didn't put in (the player's own, or one of the same name: "yours"), anything while WoW runs on the PC
+    (deferred to the next run: Desktop's start, the next connect, right before Desktop starts WoW - which waits up to 90 s only while a
+    wanted add-on is missing entirely). Staged in `Interface/AddOns-staging-dsforever`, moved in folder by folder, put back on a failure.
+  - Desktop → `{"t":"addons_pc","state":"working","line","done","total"}` (at most once a second) and `{"t":"addons_pc","state":"done",
+    "line","ok","items":[{"name","state":"ok"|"installed"|"updated"|"removed"|"yours"|"skipped"|"waiting"|"deferred"|"refused"|"failed",
+    "why"}]}`. The Thor's status line shows progress, and when done only what is not in (QuestieDB first).
 - **Settings follow** *(Desktop 0.2.37; the user's pick 2026-11-18; build 1489 ruling: ours only, WoW's own sync CVars are left to the game - on by default on both installs)* — DS Forever's OWN two saved tables
   (WowCompanionDB, WowCompanionSpellsDB) between the Thor's kept copy (SvKeep) and the PC, only down a pinned wss connection, only while
   WoW is not running on the PC. Merging is the Thor's alone (SvSync / SvMerge: per entry, the Thor's local entries win the first sync and
@@ -326,6 +348,46 @@ sees the PC there.
     `{"t":"sv_written","results":[{"var","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`. `written` /
     `same` = the PC holds the table: the Thor's base for its later three-way merges of the PC's live `svkeep` documents.
   - A start waits up to 6 s for a `sv_write` still owed.
+- `{"t":"end_session","quit_asked":true|false}` *(Desktop 0.2.39, feat/pause-power; the user 2026-11-18: "When streaming this
+  should also close wow on the PC and revert everything back and be the clean way to disconnect")* — the Thor's clean disconnect (its
+  pause menu's power button, its waiting screen's Exit game). Answered `{"t":"session_ending"}` at once, then
+  `{"t":"session_ended","wow":"closed"|"none"|"left","put_back":bool,"why"}`. Desktop lets the supervisor go (WoW is not started
+  again), closes ONLY the `_forever_` client (path match; never retail or an unreadable one): with `quit_asked` (the Thor tapped the
+  game's own Exit Game over the stream) its exit is waited for up to 30 s, then its window's close (WM_CLOSE, as its X) up to 20 s,
+  ended only if it stays (10 s); its login.txt goes; the controller mode and WoW's window keys go back at once (WowConfigKeep, no
+  30 s grace, still never while a WoW runs and only once Config.wtf has settled); the monitor's mode is looked at as soon as the
+  stream has gone (DisplayKeep, no 20 s grace). Desktop stays running. The Thor stops the picture right after sending (after a
+  0.6 s settle for its Exit Game tap), waits for `session_ended` (5 s for `session_ending`: an older Desktop ignores the word; 90 s
+  at most), disconnects the bridge, then closes DS Forever (the power button) or goes back to the chooser (Exit game).
+- **Desktop clicks the pad** *(Desktop 0.2.42; the user's pick 2026-11-18 "Desktop clicks on the PC", and "the cursor is also visible for
+  all of the clicks unlike when playing on the thor which is really distracting")*. The welcome (and `/v1/info`) carries
+  `"caps":["pad_click","polestar_sync"]`; a Thor that sees `pad_click` on a pinned wss connection presses the add-on's hidden TapPad cells
+  through Desktop instead of a touch over the video (that path landed +/- 1 px off on 2-px rows). An older Desktop (no `caps`): the old touch path.
+  - Thor → `{"t":"pad_click","id":n,"mode":"post"|"input","park":bool,"pw":W,"ph":H,"sink":[x,y],"taps":[{"x","y","w"}]}`: the pad's own
+    game px (GetPhysicalScreenSize, top-left; the Thor aims at the row's centre pixel's middle), `w` = ms before that tap (the batch's
+    spacing), `sink` = the game's freelook park point, `park` = the Thor's Trackpad is not open.
+  - Desktop → `{"t":"pad_click_result","id","state":"done"|"partial"|"refused"|"failed","why","mode","n"}`. `why`: `not_pinned` (plain
+    ws: never clicked), `not_streaming`, `no_wow` (the `_forever_` client, path match), `not_foreground` (brought forward once, still
+    not), `no_client`, `outside` (a point outside the client rect: the whole batch refused before any click), `rate` (over 25 clicks a
+    second), `stale` (queued over 2.5 s), `busy` (16 batches queued), `moved`, `post_refused` / `input_refused`.
+  - Client pixel = floor(g * client / p) each way. `post`: WM_MOUSEMOVE + WM_LBUTTONDOWN / UP posted to WoW's window with that client
+    point - the real cursor never moves. `input`: SetCursorPos to the pixel (exact; checked before the press), SendInput left down /
+    up 16 ms apart, the cursor back 16 ms later. `park`: a real cursor resting inside WoW's client while the PC has been idle 3 s goes
+    off the stream first (another monitor's middle, else the `sink` point). One batch at a time, in order.
+  - The Thor starts with `post` and checks each batch against the add-on's own press ring (Hub's `rx`); while no posted press has
+    ever been seen, two posted batches unseen after 3.5 s switch it to `input` for the app's life (the last one sent again once).
+    Sunshine v2026.914 has no setting to leave the cursor out of its capture (only the client's Ctrl+Alt+Shift+N toggle: Alt is never sent).
+- **Polestar progress follows** *(Desktop 0.2.42; the user's pick 2026-11-18)* — Polestar's own tables (its .toc: SavedVariables
+  PolestarDB, SavedVariablesPerCharacter PolestarCharDB; both files Polestar.lua) with the same rules as Settings follow, only down a
+  pinned wss connection, only while WoW is not running on the side written.
+  - Thor → `{"t":"ps_read","v":1,"acct"}` (after `sv_read`, and again when the PC's WoW stops). Desktop →
+    `{"t":"ps_files","state":"ok"|"none"|"running","acct","files":[{"key","var","exists","hash","text"|"big"}]}`: key `acct` =
+    WTF/Account/<account>/SavedVariables/Polestar.lua, `c:<sha-256 of "realm/character" lower-cased>` = each existing character folder's
+    (no name crosses). Texts up to 1.6 MB a message; a file past it is listed `big` (not synced).
+  - Thor (PsSync: per entry, its local entries win the first sync and every conflict, a thinner or empty entry never wins on either
+    side, dated backups + a presync copy on the Thor) → `{"t":"ps_write","v":1,"acct","docs":[{"key","var","n","lua","if_hash"}]}`;
+    Desktop writes only an existing character folder's file, only if its hash is still `if_hash`, backups first (dsf-sync-backups, the
+    newest five, `.presync` kept for good) and answers `{"t":"ps_written","results":[{"key","state":"written"|"same"|"changed"|"refused"|"running"|"none"|"failed"}]}`.
 
 ## 8. What the Thor tells the player
 

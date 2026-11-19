@@ -27,6 +27,9 @@ namespace DsfDesktop.Wow
     ///    session (before Desktop starts WoW, or at the stream's start when WoW was already up: the file then holds what WoW saved
     ///    when it last closed) and put back by the same rule of when, but whatever the file holds then: a pick in the game's options
     ///    during a stream can't be told from the stream's own mode, so the player's pre-session window wins.
+    ///  - THE UI SCALE TOO (the user's ruling 2026-11-18: "while streaming, Desktop also sets WoW's UI scale to match the Thor's and puts
+    ///    the PC's own back after the session"): <see cref="UiScaleKeys"/> (useUiScale, uiScale) are recorded the same way, only when the
+    ///    Thor said its own (<see cref="RecordUiScale"/>, before Desktop writes them), and put back by the window's rule: always.
     ///  - The log names the keys and their values only (never another line).
     /// </summary>
     public sealed class WowConfigKeep
@@ -46,6 +49,9 @@ namespace DsfDesktop.Wow
         /// <summary>the window WoW saves as it closes (the PC's Config.wtf, 2026-11-18: GxWindowedResolution "2560x1440",
         /// GxFullscreenResolution, GxMaximize, GxMonitor; gxWindow and gxRefresh on other installs)</summary>
         public static readonly string[] WindowKeys = { "GxWindowedResolution", "GxFullscreenResolution", "GxMaximize", "GxMonitor", "gxWindow", "gxRefresh" };
+
+        /// <summary>the game's UI scale keys (the user's ruling 2026-11-18): the Thor's values are written for a stream, the PC's put back</summary>
+        public static readonly string[] UiScaleKeys = { "useUiScale", "uiScale" };
 
         static readonly Encoding Bytes = Encoding.GetEncoding(28591);   // Latin-1: every byte round-trips unchanged
 
@@ -148,6 +154,32 @@ namespace DsfDesktop.Wow
             }
         }
 
+        /// <summary>the UI scale lines of Config.wtf at [path] as they are now (absent ones too), before Desktop writes the Thor's; a
+        /// record already holding them (a session not yet put back) is kept. Only reads the file. False = not recorded</summary>
+        public bool RecordUiScale(string path)
+        {
+            lock (gate)
+            {
+                try
+                {
+                    if (path == null || !File.Exists(path)) return false;
+                    var text = Read(path);
+                    var rec = Load(RecordPath(path)) ?? new Dictionary<string, object> { ["config"] = Path.GetFullPath(path), ["keys"] = new Dictionary<string, object>() };
+                    var keys = (Dictionary<string, object>)rec["keys"];
+                    bool added = false;
+                    foreach (var k in UiScaleKeys)
+                    {
+                        if (keys.ContainsKey(k)) continue;
+                        keys[k] = new Dictionary<string, object> { ["was"] = KeyLine(text, k), ["scale"] = true };
+                        added = true;
+                    }
+                    if (added) Save(path, rec);
+                    return true;
+                }
+                catch (Exception e) { Log.I("WoW config: UI scale not recorded (" + e.GetType().Name + ")"); return false; }
+            }
+        }
+
         void Save(string path, Dictionary<string, object> rec)
         {
             Directory.CreateDirectory(dir);
@@ -188,7 +220,37 @@ namespace DsfDesktop.Wow
             }
         }
 
-        void PutBack(string file, DateTime t)
+        /// <summary>
+        /// feat/pause-power: THE CLEAN DISCONNECT puts back NOW (the user, 2026-11-18: "revert everything back"): the Thor ended the
+        /// session and Desktop closed the streamed WoW, so no grace and no session check (Sunshine's state can stay BUSY a while after
+        /// the client goes) - but still never while any WoW runs, and still only once Config.wtf has settled (WoW's own write as it
+        /// closed), waiting up to [waitMs] for that. True = nothing is left to put back
+        /// </summary>
+        public bool PutBackNow(int waitMs = 8000, Action<int> sleep = null)
+        {
+            sleep = sleep ?? (ms => System.Threading.Thread.Sleep(ms));
+            int waited = 0;
+            while (true)
+            {
+                lock (gate)
+                {
+                    if (!Directory.Exists(dir) || Directory.GetFiles(dir, "controller-*.json").Length == 0) return true;
+                    if (wowRunning()) { Log.I("WoW config: not put back now (a WoW runs)"); return false; }
+                    var t = now();
+                    foreach (var file in Directory.GetFiles(dir, "controller-*.json"))
+                    {
+                        if (wowRunning()) return false;
+                        try { PutBack(file, t, now: true); }
+                        catch (Exception e) { Log.I("WoW config: controller mode not put back (" + e.GetType().Name + ")"); }
+                    }
+                    if (Directory.GetFiles(dir, "controller-*.json").Length == 0) { quietSince = null; return true; }
+                }
+                if (waited >= waitMs) { Log.I("WoW config: not put back yet (Config.wtf still settling): the usual put-back follows"); return false; }
+                sleep(500); waited += 500;
+            }
+        }
+
+        void PutBack(string file, DateTime t, bool now = false)
         {
             var rec = Load(file);
             if (rec == null) { File.Delete(file); return; }
@@ -199,6 +261,7 @@ namespace DsfDesktop.Wow
             var lines = Lines(text, out var nl);
             var said = new List<string>();
             var window = new List<string>();
+            var scale = new List<string>();
             var removeAt = new List<int>();
             foreach (var kv in (Dictionary<string, object>)rec["keys"])
             {
@@ -206,13 +269,15 @@ namespace DsfDesktop.Wow
                 var e = kv.Value as Dictionary<string, object>;
                 if (e == null) continue;
                 var was = e.Str("was");
-                if (e.Bool("window"))
+                if (e.Bool("window") || e.Bool("scale"))
                 {
-                    if (!WindowKeys.Contains(k)) continue;
+                    bool isScale = e.Bool("scale");
+                    if (!(isScale ? UiScaleKeys : WindowKeys).Contains(k)) continue;
+                    var put = isScale ? scale : window;
                     int w = lines.FindIndex(l => IsKeyLine(l, k));
-                    if (w >= 0 && was != null) { if (lines[w] != was) { lines[w] = was; window.Add(k + " " + Value(was)); } }
-                    else if (w >= 0) { removeAt.Add(w); window.Add(k + " removed"); }
-                    else if (was != null) { lines.Insert(lines.Count > 0 && lines[lines.Count - 1].Length == 0 ? lines.Count - 1 : lines.Count, was); window.Add(k + " " + Value(was)); }
+                    if (w >= 0 && was != null) { if (lines[w] != was) { lines[w] = was; put.Add(k + " " + Value(was)); } }
+                    else if (w >= 0) { removeAt.Add(w); put.Add(k + " removed"); }
+                    else if (was != null) { lines.Insert(lines.Count > 0 && lines[lines.Count - 1].Length == 0 ? lines.Count - 1 : lines.Count, was); put.Add(k + " " + Value(was)); }
                     continue;
                 }
                 if (!WowConfig.Keys.Contains(k)) continue;
@@ -232,7 +297,7 @@ namespace DsfDesktop.Wow
                 {
                     File.WriteAllBytes(tmp, Bytes.GetBytes(back));
                     // the last look before the write: a client starting now keeps controller mode, the record waits
-                    if (wowRunning() || sessionActive()) { quietSince = null; return; }
+                    if (wowRunning() || (!now && sessionActive())) { quietSince = null; return; }
                     File.Replace(tmp, cfg, null);
                 }
                 finally { try { if (File.Exists(tmp)) File.Delete(tmp); } catch (Exception) { } }
@@ -240,6 +305,7 @@ namespace DsfDesktop.Wow
             File.Delete(file);
             if (said.Count > 0) Log.I("WoW config: controller mode put back (" + string.Join(", ", said) + ")");
             if (window.Count > 0) Log.I("WoW config: window " + WindowWord(window) + " put back");
+            if (scale.Count > 0) Log.I("WoW config: UI scale put back (" + string.Join(", ", scale) + ")");
         }
     }
 }

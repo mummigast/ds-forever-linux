@@ -28,8 +28,10 @@ import java.util.concurrent.Executors
  *    its exact size and its pinned sha256; kept in the app's private storage until it is in;
  *  - it is MOVED IN only at a start with the game closed ([applyAtStart], from the launcher's dependency step): unpacked (each entry's
  *    CRC checked, no path outside) into a staging folder beside AddOns, each top-level folder with a .toc in, the old copy of each to
- *    the backup folder first (NEVER deleted), the zip then freed;
- *  - Uninstall (or a module switched off) moves its folders out to the same backup at that start; nothing is ever deleted.
+ *    the backup folder first, the zip then freed;
+ *  - Uninstall (or a module switched off) moves its folders out to the same backup at that start;
+ *  - the backup folder is capped by [AddonBackups] (the user's ruling 2026-11-18: "cap the add-on backups inside the game folders at
+ *    the NEWEST 2 PER ADD-ON"; none under a day old, never while the game runs); nothing else is ever deleted.
  *
  * The shape is general (Map's Polestar is the second one): an [Addon] has its [Addon.core] package, its [Module]s (each its own
  * package, switched on alone, only once the core is installed) and its [Option]s (our own settings for it). One registry line each;
@@ -230,6 +232,9 @@ object ThirdPartyAddons {
         coreWanted(a) && (key == "core" || a.modules.firstOrNull { it.id == key }?.let { moduleOn(a, it) } == true)
     fun installed(a: Addon, key: String): Boolean = state(a, key).optString("in") == pkgOf(a, key)?.tag
     fun coreInstalled(a: Addon): Boolean = installed(a, "core")
+    /** the AddOns folders package [key] of [a] put in (its state's own list: Polestar's guides, databases and names too); empty = none */
+    fun folders(a: Addon, key: String): List<String> =
+        state(a, key).optJSONArray("folders")?.let { j -> (0 until j.length()).map { j.optString(it) }.filter { it.isNotEmpty() } } ?: emptyList()
     private fun pkgOf(a: Addon, key: String): Pkg? = a.pkgs().firstOrNull { it.first == key }?.second
 
     // ---------------------------------------------------------------- a move that failed (issues #135 #83 #117 #139, 2026-11-11)
@@ -473,11 +478,17 @@ object ThirdPartyAddons {
 
     private fun applyLocked(flavorRoot: File, fetchSmall: Boolean, by: String, onStep: (String) -> Unit): String {
         val lines = ArrayList<String>()
+        // the user's ruling 2026-11-18: the backups capped at the newest 2 per add-on (AddonBackups), before and after this step's moves
+        fun capBackups() = runCatching { AddonBackups.cap(flavorRoot) }.onFailure { log("add-ons: backups: ${it.message}") }
         if (DependencyAddons.gameRunning()) {
             val until = System.currentTimeMillis() + settleMs
             while (DependencyAddons.gameRunning() && System.currentTimeMillis() < until) Thread.sleep(100)
         }
         sweepStaging(flavorRoot)
+        capBackups()
+        // the user, 2026-11-18 ("part of the DS forever startup should be maintaining/updating enabled addons"): an installed package whose
+        // folder (or its .toc) was deleted from AddOns is not installed any more: downloaded again (or its kept zip) and moved in below
+        repairMissing(flavorRoot)
         for (a in ALL) for ((key, p) in a.pkgs()) {
             val name = if (key == "core") a.title else "${a.title} ${key.replaceFirstChar { it.uppercase() }}"
             try {
@@ -538,9 +549,27 @@ object ThirdPartyAddons {
         runCatching { ImportedAddons.applyQueued(flavorRoot, onStep) }
             .onSuccess { it?.let { l -> lines.add(l) } }
             .onFailure { lines.add("imported add-ons skipped (${DependencyAddons.reasonOf(it)})"); log("add-ons: imported: ${it.message}") }
+        capBackups()
         log("add-ons ($by): " + lines.joinToString("; ").ifEmpty { "nothing to do" })
         changed()
         return lines.joinToString("; ")
+    }
+
+    /**
+     * Each package recorded as in whose folders are not all in AddOns with a .toc (deleted by hand, a cleaner, a game repair) and still
+     * wanted: its record goes (nothing in AddOns is touched), so this start downloads it again (a small one here, a big one in the background)
+     * and moves it in. One log line per package; the player's own folders are never looked at.
+     */
+    internal fun repairMissing(flavorRoot: File) {
+        val addons = File(flavorRoot, "Interface/AddOns")
+        for (a in ALL) for ((key, _) in a.pkgs()) {
+            if (!present(a, key) || !wanted(a, key)) continue
+            val fs = folders(a, key)
+            val gone = fs.filter { DependencyAddons.installedVersion(File(addons, it)) == null }
+            if (fs.isEmpty() || gone.isEmpty()) continue
+            putState(a, key, JSONObject())
+            log("add-ons: ${a.id}-$key: ${gone.joinToString()} missing from AddOns: installed again")
+        }
     }
 
     /** not a failure of the package: it goes in at the next start (the game started meanwhile, not enough room) */

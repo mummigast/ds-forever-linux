@@ -102,7 +102,10 @@ sealed class BridgeMsg {
                        val gtNow: Long = -1L,
                        /** Desktop 0.2.32: what the stream's start waits for ("screen" = its own virtual screen being made, "starting" = its
                         *  streaming host starting; "" = go, or an older Desktop) */
-                       val sunWait: String = "") : BridgeMsg()
+                       val sunWait: String = "",
+                       /** Desktop 0.2.42: what it does beyond v1 ("pad_click": Desktop clicks the pad; "polestar_sync": Polestar's files
+                        *  follow); empty from an older Desktop (the stream's touch path stays) */
+                       val caps: List<String> = emptyList()) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
@@ -146,6 +149,21 @@ sealed class BridgeMsg {
      *  whole object goes to SvSync */
     data class SvFiles(val o: JSONObject) : BridgeMsg()
     data class SvWritten(val o: JSONObject) : BridgeMsg()
+    /** Desktop 0.2.42: its answer to a "pad_click" batch (DeskClicks) */
+    data class PadClickResult(val o: JSONObject) : BridgeMsg()
+    /** Desktop 0.2.42: Polestar's files ("ps_files") and its write's answer ("ps_written") (PsSync) */
+    data class PsFiles(val o: JSONObject) : BridgeMsg()
+    data class PsWritten(val o: JSONObject) : BridgeMsg()
+    /** the Thor's add-ons on the PC (2026-11-18): Desktop's run ("addons_pc": working with its progress, or done with each item) */
+    data class AddonsPc(val o: JSONObject) : BridgeMsg()
+    /** Desktop asks for one part of an imported add-on's file ("addon_file_get"); answered by PcAddonsWant.serve */
+    data class AddonFileGet(val o: JSONObject) : BridgeMsg()
+    /**
+     * feat/pause-power: Desktop's answers to "end_session": [done] false = "session_ending" (it heard, the close runs), true =
+     * "session_ended": [wow] = closed | none (no PC WoW of ours was open) | left (it would not close: [why]), [putBack] = the PC's
+     * controller mode and WoW's window keys are back
+     */
+    data class SessionEnd(val done: Boolean, val wow: String = "", val putBack: Boolean = false, val why: String = "") : BridgeMsg()
     data class Unknown(val t: String) : BridgeMsg()
 }
 
@@ -162,9 +180,12 @@ object BridgeProtocol {
 
     /** "wow_stop": this Thor shows Desktop's stop ([PcWow.stopped]) with its own Retry. Desktop 0.2.35 counts an older Thor's
      *  reconnect (none: Thor 1487, which has no Retry) as its Retry instead */
-    fun hello(deviceId: String, token: String): String =
+    /** [uiScale] (the user's ruling 2026-11-18): this Thor's own UI scale lines (GameConfigWtf.uiScale), "ui_scale" - Desktop 0.2.41
+     *  writes them into the PC's Config.wtf for the stream's WoW and puts the PC's own back after; null = none (the PC is left alone) */
+    fun hello(deviceId: String, token: String, uiScale: Map<String, String>? = null): String =
         JSONObject().put("t", "hello").put("proto", PROTO).put("device_id", deviceId).put("token", token).put("wow_stop", true)
-            .apply { if (addonSet > 0) put("addon_set", addonSet) }.toString()
+            .apply { if (addonSet > 0) put("addon_set", addonSet) }
+            .apply { if (!uiScale.isNullOrEmpty()) put("ui_scale", JSONObject().apply { uiScale.forEach { (k, v) -> put(k, v) } }) }.toString()
 
     fun pairHello(deviceId: String, name: String): String =
         JSONObject().put("t", "pair_hello").put("proto", PROTO).put("device_id", deviceId).put("name", name).put("stream", true)
@@ -198,6 +219,9 @@ object BridgeProtocol {
     fun wowRetry(): String = JSONObject().put("t", "wow_retry").toString()
     /** Desktop 0.2.36: the player's Cancel (B) on the PC game's update bar ([PcPatch.running]) */
     fun patchCancel(): String = JSONObject().put("t", "pc_patch_cancel").toString()
+    /** feat/pause-power: the clean disconnect (the pause menu's power button, the waiting screen's Exit game): Desktop closes the PC's
+     *  WoW (waiting first for the game's own Exit Game when [quitAsked]) and puts the PC back; answered session_ending, session_ended */
+    fun endSession(quitAsked: Boolean): String = JSONObject().put("t", "end_session").put("quit_asked", quitAsked).toString()
     /**
      * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"): [ask] = Settings > Game account "Ask
      * each time" (nothing is sent to remember); [list] = the Thor's Config.wtf accountList with its "!" pick
@@ -237,7 +261,7 @@ object BridgeProtocol {
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
-                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty())
+                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty(), strings(o.optJSONArray("caps")))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
@@ -273,6 +297,13 @@ object BridgeProtocol {
             "login_again" -> BridgeMsg.LoginAgain
             "sv_files" -> BridgeMsg.SvFiles(o)
             "sv_written" -> BridgeMsg.SvWritten(o)
+            "pad_click_result" -> BridgeMsg.PadClickResult(o)
+            "ps_files" -> BridgeMsg.PsFiles(o)
+            "ps_written" -> BridgeMsg.PsWritten(o)
+            "addons_pc" -> BridgeMsg.AddonsPc(o)
+            "addon_file_get" -> BridgeMsg.AddonFileGet(o)
+            "session_ending" -> BridgeMsg.SessionEnd(done = false)
+            "session_ended" -> BridgeMsg.SessionEnd(done = true, wow = o.optString("wow"), putBack = o.optBoolean("put_back"), why = o.optString("why"))
             else -> BridgeMsg.Unknown(t)
         }
     }
