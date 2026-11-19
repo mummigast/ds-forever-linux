@@ -156,9 +156,8 @@ object GameUi {
     @Volatile private var helloAt = 0L
     /** Linux Streaming Edition (2026-11-19): when the top-screen taps may start - never while the game loads ([GameInput.loading]),
      *  then SETTLE_MS after the hello or LOAD_SETTLE_MS after the loading screen went, whichever is later */
-    private fun settleAt(): Long = if (GameInput.loading()) Long.MAX_VALUE / 2
-        else maxOf(helloAt + GameUiPolicy.SETTLE_MS, GameInput.loadOverAt().takeIf { it >= helloAt }?.let { it + LOAD_SETTLE_MS } ?: 0L)
-    fun onHello() { GameInput.loadingStart(); helloAt = System.currentTimeMillis(); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
+    private fun settleAt(): Long = GameInput.load.settleAt(System.currentTimeMillis(), helloAt, GameUiPolicy.SETTLE_MS, LOAD_SETTLE_MS)
+    fun onHello() { helloAt = System.currentTimeMillis(); GameInput.load.start(helloAt); policy.freshLogin(); castBar.freshLogin(); restore.freshLogin(); swBack.clear(); hudBack.clear() }
 
     /**
      * HUB17 THE HUD-MODE SPLIT (the user: the player frame, the target frame and the enemy nameplates on Top screen, the resource bar on

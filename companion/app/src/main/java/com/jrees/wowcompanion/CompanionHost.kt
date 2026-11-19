@@ -2609,7 +2609,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (!loadSeen) { loadSeen = true; Log.i("WCMEM", "loading screens: reported by the add-on (${msg.optString("v", "?")})") }
             GameLife.loadingScreen(msg.optBoolean("on", false))
             // Linux Streaming Edition (2026-11-19): no top-screen taps under a loading screen (GameInput.loading)
-            if (msg.optBoolean("on", false)) GameInput.loadingStart() else GameInput.loadingEnd()
+            System.currentTimeMillis().let { t -> if (msg.optBoolean("on", false)) GameInput.load.start(t) else GameInput.load.end(t) }
         }
         // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
         if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
