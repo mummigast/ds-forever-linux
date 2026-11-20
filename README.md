@@ -33,6 +33,16 @@ The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.m
 Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, the
 helper with its matching add-ons, `SHA256SUMS`, the source and its notes: watch the repo's releases to hear about new ones.
 
+### Stable and beta
+
+- **Stable** (branch `main`): the release marked **Latest**. The app's update check only ever offers these. Known issues are at
+  the top of [CHANGES.md](CHANGES.md).
+- **Beta** (branch [`beta`](https://github.com/mummigast/ds-forever-linux/tree/beta)): bigger changes are tried here first and published
+  as **pre-releases** (`linux-v<version>-beta.<n>`), each with the same APK, helper and notes. What is new in the beta:
+  [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md), and every pre-release's own notes
+  on the [releases page](https://github.com/mummigast/ds-forever-linux/releases). When a beta has proven itself it becomes the next
+  stable release.
+
 ## Quick start
 
 1. On the PC: install the helper from the latest release's `dsf-linux-helper-<version>.tar.gz` (or the repository), see
