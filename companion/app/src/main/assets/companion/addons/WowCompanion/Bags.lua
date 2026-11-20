@@ -1310,9 +1310,11 @@ local lastDoc = nil         -- the last bags table sent: a controller press send
 local queued = false
 local lastCtl = nil         -- the last ctl the app was sent, in either document
 
+local lastCollected = nil   -- beta B1a: the newest collect, WITHOUT ctl (never cleared: Core's full document splices it)
 local function sendBags(reason)
     queued = false
     local b = WC.collectBags()
+    lastCollected = b
     b.ctl = WC._bagsCtlDoc and WC._bagsCtlDoc() or nil
     local json = WC.encode(b)
     if json == lastBags then return end
@@ -1322,7 +1324,14 @@ local function sendBags(reason)
 end
 -- beta B1a (2026-11-20, perf4 in game: a Core "full" spent ~14 ms, ~24 ms at a fight's end, re-collecting every bag slot): the JSON of the
 -- bags this file sent last - always the newest state, bags own their events - for Core to splice in place of its own collect
-function WC.bagsJsonNow() return lastBags end
+-- (the TABLE of the newest collect, ctl left out: a heartbeat's full must never carry an old bag cursor; lastBags itself is cleared to
+-- force a resend after a press, so it cannot be the source)
+function WC.bagsJsonNow()
+    if type(lastCollected) ~= "table" then return nil end
+    local t = {}
+    for k, v in pairs(lastCollected) do if k ~= "ctl" then t[k] = v end end
+    return WC.encode(t)
+end
 
 local function sendSoon(reason)
     if queued then return end
