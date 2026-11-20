@@ -93,7 +93,9 @@ object ResetPlan {
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
             "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet",
             // Linux Edition: the soft-target put-back record and the dot box's trace (Hub hub71-72)
-            "softTgt", "dotBox"),
+            "softTgt", "dotBox",
+            // Linux Edition 2026-11-20: the stutter diagnostics (Sink perf2 / perf3: the last fight starts and hitch frames)
+            "perf", "hitch"),
     )
 
     /** a character key as the add-on writes it ("Name-Realm") */
