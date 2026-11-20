@@ -2,6 +2,14 @@
 
 Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
 
+## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
+
+- A fight's start still costs two longer frames (~65 ms each, from ~110 ms in one frame); the heartbeat ~45 ms every 15 s.
+- Moving items between bags and Clean Up still go as clicks (no keyboard shortcut yet), so they can miss after controller play.
+- Bag items cannot be used by a keyboard shortcut in combat (the game's lockdown; the bags clear their use cells in fights anyway).
+- Rarely "nothing received from the game" for a moment; it recovers by itself.
+- The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
+
 ## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
 
 - **Selling, buying and using bag items work again while streaming.** They went as mouse clicks, which land on the spot WoW parks
