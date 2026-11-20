@@ -270,6 +270,7 @@ async def addon_pass(force=False, allow_new=False, thor_set=0):
 PC_ADDONS_REC = STATE.parent / "pc-addons.json"
 PC_ADDONS_CACHE = Path.home() / ".cache/dsf-bridge/pc-addons"
 pc_want = {"m": None}                                 # the latest "addons_want" (run again before WoW starts and when it closes)
+pc_want_fresh = asyncio.Event()                       # set when this connection's "addons_want" is in (cleared at each session)
 
 async def pc_addons_pass(ws=None):
     m = pc_want["m"]
@@ -277,7 +278,9 @@ async def pc_addons_pass(ws=None):
         return
     async with addon_lock:
         try:
-            res = await asyncio.to_thread(pc_addons.run, m, GAME_DIR, PC_ADDONS_REC, PC_ADDONS_CACHE, wow_running(), log)
+            # 11-20 Thor test: the list came while WoW was being started and went in under a starting WoW; "starting" counts as running
+            busy = wow_running() or wow_start["state"] == "starting"
+            res = await asyncio.to_thread(pc_addons.run, m, GAME_DIR, PC_ADDONS_REC, PC_ADDONS_CACHE, busy, log)
         except Exception as e:
             res = {"t": "addons_pc", "state": "done", "ok": False, "line": f"add-ons on the PC failed: {e}", "items": []}
     try:
@@ -314,8 +317,16 @@ async def start_wow(retried=False):
     Battle.net.exe --exec="launch WoWF" in the same Proton prefix. Never touches credentials."""
     if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
         return
+    # the Thor's wanted add-ons in BEFORE WoW reads its AddOns folder: its list comes right after the welcome (built on its own
+    # thread, so often after the start request): wait for it up to 5 s, then put them in, then start
+    try:
+        await asyncio.wait_for(pc_want_fresh.wait(), 5)
+    except asyncio.TimeoutError:
+        pass
+    await pc_addons_pass()
+    if wow_running() or wow_start["state"] == "starting":
+        return
     wow_start.update(state="starting", why="", at=time.time())
-    await pc_addons_pass()                            # the Thor's wanted add-ons in before WoW reads its AddOns folder
     await broadcast([{"t": "wow", **_info()["wow"]}, {"t": "status", "text": "Starting WoW on your PC…"}])
     log("Starting WoW Forever")
     try:
@@ -688,6 +699,7 @@ async def handle(ws):
                 spawn(end_session(ws, m))
             elif t == "addons_want":
                 pc_want["m"] = m
+                pc_want_fresh.set()
                 wanted = [x.get("title") or x.get("id") for x in m.get("managed") or [] if isinstance(x, dict) and x.get("want")]
                 log("pc add-ons: the Thor wants " + (", ".join(map(str, wanted)) or "none of the managed ones"))
                 spawn(pc_addons_pass(ws))
@@ -717,6 +729,7 @@ async def thor_addons(ws, m):
             pass
 
 async def start_session(ws, device):
+    pc_want_fresh.clear()                             # this connection's add-on list is still to come
     old = sessions.get(device)
     if old and old is not ws:
         await old.close(4409, "replaced")
