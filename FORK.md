@@ -131,16 +131,18 @@ Upstream's version number is kept (the fork tracks its releases); the app's upda
 
 ## Releases
 
-Source-only GitHub releases, tagged `linux-v<DS Forever version>.<n>` (e.g. `linux-v1.0.37.1`), each with its CHANGES.md part as
-notes and **no APK** (see *Sharing*). The tag never looks like a DS Forever version, so the app's update check stays quiet ("no
-release") instead of offering a download that isn't there.
+GitHub releases tagged `linux-v<DS Forever version>.<n>` (e.g. `linux-v1.0.37.1`): the signed APK
+(`DS-Forever-Linux-Streaming-<version>.apk`), its `SHA256SUMS`, GitHub's source archive of exactly that commit, and the CHANGES.md
+part as notes. Built with `./linux-build.sh --release` (minified, signed with this edition's own key, kept off git; SHA-256
+`40:FF:67:81:20:22:18:E3:36:96:AB:FB:13:44:D2:27:1B:C4:33:1A:BC:E8:4F:27:69:64:E5:83:D4:3D:C7:69`). The tag never looks like a DS
+Forever version and the file is not named `DS-Forever-<version>.apk`, so the app's update check stays quiet instead of fetching it.
 
 ## Sharing
 
 - **Source:** free to share, fork and change under GPL-3.0. Keep the notices, mark your own changes.
-- **APKs:** build your own with `./linux-build.sh`; this repository does not hand out APKs. Leaving out the local runtime
-  removes the parts DS Forever's RELEASE_NOTICES.md lists as not cleared for redistribution (Proton/Wine build, Turnip,
-  `redirect`, `libkgslshim`, PulseAudio/box64 builds). Still open before anyone hands out a build: the fonts' and some
-  artwork's exact provenance (RELEASE_NOTICES.md, "Actual Launcher Inputs"), and the data files the app ships
-  (`assets/safepath`, `assets/harvest`), which come from upstream as they are. Anyone passing a build on must also offer
-  its complete corresponding source (GPL-3.0 section 6).
+- **APKs:** each release carries one (2026-11-20, the user's pick after looking at how DS Forever, WoW Forever for Android, GameNative
+  and Artemis publish theirs). Leaving out the local runtime removes every part DS Forever's RELEASE_NOTICES.md lists as not cleared
+  for redistribution (Proton/Wine build, Turnip, `redirect`, `libkgslshim`, PulseAudio/box64 builds, the lsfg layer). Still inherited
+  as upstream ships them: a few GameNative/Winlator prebuilt libraries (`libahbimage`, `libasurface_renderer`, `libwinlator*`) and
+  the fonts' and some artwork's exact provenance (RELEASE_NOTICES.md, "Actual Launcher Inputs"). Every release offers its complete
+  corresponding source (GPL-3.0 section 6): GitHub's archive of the tagged commit.

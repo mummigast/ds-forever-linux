@@ -57,9 +57,13 @@ fi
 echo "== gradle"
 cp "$(lf gradlew)" ./.gradlew-linux; chmod +x ./.gradlew-linux
 TASKS=(:app:assembleModernDebug); [ "${1:-}" = "--test" ] && TASKS=(:dsforever:testDebugUnitTest "${TASKS[@]}")
+# --release: the signed, minified APK for a GitHub release (needs WC_KEYSTORE, WC_KEYSTORE_PASS, WC_KEY_ALIAS, WC_KEY_PASS in the
+# environment: your own key, never in git). Linux Edition 2026-11-20
+[ "${1:-}" = "--release" ] && TASKS=(:dsforever:testDebugUnitTest :app:assembleModernRelease)
 EXTRA=(); [ "${DSF_LOCAL_RUNTIME:-0}" = 1 ] && EXTRA=(-PlocalRuntime=true)
 ./.gradlew-linux --no-daemon "${EXTRA[@]}" "${TASKS[@]}"; rm -f ./.gradlew-linux
 APK=app/build/outputs/apk/modern/debug/app-modern-debug.apk
+[ "${1:-}" = "--release" ] && APK=app/build/outputs/apk/modern/release/app-modern-release.apk
 LIST=$(unzip -l "$APK")
 for so in libcasc.so libinteriors.so libdsf-moonlight.so; do grep -q "lib/arm64-v8a/$so" <<<"$LIST" || { echo "MISSING $so in the APK"; exit 1; }; done
 echo "OK: $APK"
