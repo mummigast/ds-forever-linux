@@ -170,6 +170,9 @@ class Tailer:
             st = self.path.stat()
         except FileNotFoundError:
             return out
+        # beta (2026-11-20, the latency review): the poll is now a steady 25 ms, so a poll with nothing new costs one stat, no open
+        if self.offset is not None and st.st_ino == self.ino and st.st_size == self.offset:
+            return out
         with open(self.path, "rb") as f:
             head = f.read(64)
             restart = self.offset is not None and (st.st_ino != self.ino or st.st_size < self.offset
@@ -748,6 +751,8 @@ async def start_session(ws, device):
 
 
 # ---------------------------------------------------------------- loops
+POLL_S = float(os.environ.get("DSF_POLL_S", "0.025"))
+
 async def tail_loop():
     tail = Tailer(LOG)
     size = 0
@@ -767,7 +772,10 @@ async def tail_loop():
                     while backlog and (size > MAX_BACKLOG_BYTES or len(backlog) > MAX_BACKLOG_DOCS):
                         size -= len(backlog.pop(0).get("doc", ""))
             await broadcast(msgs)
-        await asyncio.sleep(0.05 if msgs else 0.2)   # quick while docs flow, light when idle
+        # beta (2026-11-20, the latency review): was 0.05 s while docs flowed and 0.2 s when idle, so the FIRST document after a quiet
+        # spell (a vendor's answer, a fight's start) waited ~100 ms on average for the next look. A steady 25 ms: an unchanged log costs
+        # one stat (Tailer.poll's fast path)
+        await asyncio.sleep(POLL_S)
 
 # a WoW the Thor used is closed after this long with no Thor connected (swiping the app away leaves it running); 0 = never
 IDLE_CLOSE_S = int(float(os.environ.get("DSF_IDLE_CLOSE_MIN", "10")) * 60)
