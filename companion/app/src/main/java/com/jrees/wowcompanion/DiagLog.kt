@@ -70,9 +70,17 @@ object DiagLog {
     fun checkEnd(now: Long = System.currentTimeMillis()) { if (recordUntil != 0L && now >= recordUntil) event("report", "end of the 5 minutes", now) }
 
     /** an add-on document: summarized (types and flags only), when it changed; names in it go to [Redact.know] */
+    @Volatile private var learntFullAt = 0L
+    private const val LEARN_FULL_MS = 10_000L
     fun doc(msg: JSONObject, now: Long = System.currentTimeMillis()) {
         val type = msg.optString("type").ifEmpty { "?" }
-        if (type in PEOPLE_DOCS) learnNames(msg, 0, type)
+        // beta (2026-11-20, the latency review: this walked every 50-100 KB "full" on the main thread every few seconds): the big
+        // documents (full: the character's, guild's, realm's names, which hardly change) are walked at most every LEARN_FULL_MS;
+        // chat, social, the group finder... (where new names appear) every time, as before
+        if (type in PEOPLE_DOCS && (type != "full" || now - learntFullAt >= LEARN_FULL_MS || recording(now))) {
+            if (type == "full") learntFullAt = now
+            learnNames(msg, 0, type)
+        }
         val rec = recording(now)
         val s = summarize(msg, if (rec) 2 else 1)
         synchronized(lock) {

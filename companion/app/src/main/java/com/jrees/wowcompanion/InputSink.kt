@@ -149,6 +149,8 @@ object InputSink {
     private const val ALT_L = 64  // not used by the key channel any more (no Alt: 2026-10-09)
     /** the key channel's gap between X events (Quests' L1: ~10 ms, not [KEY_GAP_MS]) */
     private const val WCKEY_GAP_MS = 10L
+    private const val WCKEY_LEAD_MS = 3L       // beta: after the modifiers, before the first key
+    private const val WCKEY_BETWEEN_MS = 5L    // beta: a release to the next press, and the last release to the modifiers' release
 
     /**
      * THE KEY CHANNEL (L1, the user 2026-10-09 "L1 key channel": actions at the PRESS, not the release; Quests owns TapPad / TapBridge,
@@ -276,8 +278,14 @@ object InputSink {
                     LatLog.mark("keys", names.joinToString(" "))
                     for (m in held) s.key(m, true)
                     try {
-                        for (k in codes) { Thread.sleep(WCKEY_GAP_MS); s.key(k, true); Thread.sleep(WCKEY_GAP_MS); s.key(k, false) }
-                        Thread.sleep(WCKEY_GAP_MS)
+                        // beta (2026-11-20, the latency review: a 4-key far-row line cost ~90 ms of worker time, every next tap waiting
+                        // behind it): each key is still HELD WCKEY_GAP_MS (the press must outlive a game frame), but the gaps around it
+                        // are shorter: 3 ms after the modifiers, 5 ms between a release and the next press, 5 ms before the modifiers go
+                        codes.forEachIndexed { i, k ->
+                            Thread.sleep(if (i == 0) WCKEY_LEAD_MS else WCKEY_BETWEEN_MS)
+                            s.key(k, true); Thread.sleep(WCKEY_GAP_MS); s.key(k, false)
+                        }
+                        Thread.sleep(WCKEY_BETWEEN_MS)
                     } finally { for (m in held.asReversed()) s.key(m, false) }
                 }
                 f.size == 5 && f[0] == "input" && f[1] == "-d" && f[3] == "keyevent" -> {
