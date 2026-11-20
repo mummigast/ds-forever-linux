@@ -30,12 +30,13 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
   - **Friendly plates** show for every friendly unit, not only the target.
 
 The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
-Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, its
-`SHA256SUMS`, the source and its notes: watch the repo's releases to hear about new ones.
+Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, the
+helper with its matching add-ons, `SHA256SUMS`, the source and its notes: watch the repo's releases to hear about new ones.
 
 ## Quick start
 
-1. On the PC: install the helper, see [linux-helper/README.md](linux-helper/README.md).
+1. On the PC: install the helper from the latest release's `dsf-linux-helper-<version>.tar.gz` (or the repository), see
+   [linux-helper/README.md](linux-helper/README.md).
 2. Download the APK from the latest [release](https://github.com/mummigast/ds-forever-linux/releases) (or build it, below) and install it
    on the Thor.
 3. On the Thor: *Stream*, then type the pairing code the helper shows (on a VPN, tap **Other network** and type the second code).

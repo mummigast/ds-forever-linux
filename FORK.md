@@ -114,7 +114,8 @@ nameplates, Reload UI, 1.0.34's Edit layout (move + Save), Buffs and Cooldown Ma
 ## Build
 
 ```
-./linux-build.sh --test
+./linux-build.sh --test       # debug APK + tests (development)
+./linux-build.sh --release    # signed release APK + helper tarball (needs your WC_KEY* signing values; see Releases)
 ```
 Builds the two native libraries (CascLib, Recast) and fetches the Moonlight prebuilts if missing, then the APK. Without the
 native libraries the app says "this build has no file reader". `DSF_LOCAL_RUNTIME=1` also fetches (checksum-verified) and
@@ -132,8 +133,9 @@ Upstream's version number is kept (the fork tracks its releases); the app's upda
 ## Releases
 
 GitHub releases tagged `linux-v<DS Forever version>.<n>` (e.g. `linux-v1.0.37.1`): the signed APK
-(`DS-Forever-Linux-Streaming-<version>.apk`), its `SHA256SUMS`, GitHub's source archive of exactly that commit, and the CHANGES.md
-part as notes. Built with `./linux-build.sh --release` (minified, signed with this edition's own key, kept off git; SHA-256
+(`DS-Forever-Linux-Streaming-<version>.apk`), the helper with the add-on set of the same commit (`dsf-linux-helper-<version>.tar.gz`:
+`linux-helper/` + `addon-set/`, which the helper uses when it is not inside the repository), `SHA256SUMS` for both, GitHub's
+source archive of exactly that commit, and the CHANGES.md part as notes. `DSF_RELEASE=<version>` names the files. Built with `./linux-build.sh --release` (minified, signed with this edition's own key, kept off git; SHA-256
 `40:FF:67:81:20:22:18:E3:36:96:AB:FB:13:44:D2:27:1B:C4:33:1A:BC:E8:4F:27:69:64:E5:83:D4:3D:C7:69`). The tag never looks like a DS
 Forever version and the file is not named `DS-Forever-<version>.apk`, so the app's update check stays quiet instead of fetching it.
 

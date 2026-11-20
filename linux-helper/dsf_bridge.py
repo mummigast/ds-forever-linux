@@ -237,14 +237,18 @@ addon_lock = asyncio.Lock()
 
 # the Streaming Edition's own copy: this helper lives in the app's repository, so its add-ons match the app that was built
 REPO_ADDONS = Path(__file__).resolve().parent.parent / "companion/app/src/main/assets/companion"
+BUNDLED_ADDONS = Path(__file__).resolve().parent / "addon-set"
 
 def addon_source():
     """DSF_ADDONS_SRC (a folder with manifest.txt + addons/), else the repository's own copy (the app built from the same
-    checkout), else upstream DS Forever's latest release (verified)."""
+    checkout), else the release tarball's addon-set/ beside this file, else upstream DS Forever's latest release (verified)."""
     if os.environ.get("DSF_ADDONS_SRC"):
         return Path(os.environ["DSF_ADDONS_SRC"])
     if (REPO_ADDONS / "manifest.txt").is_file() and (REPO_ADDONS / "addons").is_dir():
         return REPO_ADDONS
+    # the release's helper tarball (dsf-linux-helper-<version>.tar.gz): the matching set beside the helper (Linux Edition 2026-11-20)
+    if (BUNDLED_ADDONS / "manifest.txt").is_file() and (BUNDLED_ADDONS / "addons").is_dir():
+        return BUNDLED_ADDONS
     return addons.fetch_upstream(log)
 
 async def addon_pass(force=False, allow_new=False, thor_set=0):

@@ -67,3 +67,15 @@ APK=app/build/outputs/apk/modern/debug/app-modern-debug.apk
 LIST=$(unzip -l "$APK")
 for so in libcasc.so libinteriors.so libdsf-moonlight.so; do grep -q "lib/arm64-v8a/$so" <<<"$LIST" || { echo "MISSING $so in the APK"; exit 1; }; done
 echo "OK: $APK"
+# --release also packs the helper with the add-on set of this same checkout (Linux Edition 2026-11-20): one tarball per release,
+# so the PC's add-ons always match the APK beside it. DSF_RELEASE names it (e.g. 1.0.37.1; default: the APK's versionName)
+if [ "${1:-}" = "--release" ]; then
+    VER="${DSF_RELEASE:-$(grep -m1 -oE 'versionName *= *"[^"]+"' app/build.gradle.kts | grep -oE '"[^"]+"' | tr -d '"')}"
+    OUT="app/build/outputs/dsf-linux-helper-$VER"; rm -rf "$OUT" "$OUT.tar.gz"; mkdir -p "$OUT/addon-set"
+    git ls-files -z linux-helper | grep -zv '^linux-helper/tests/' | xargs -0 -I{} cp --parents {} "$OUT/"
+    mv "$OUT/linux-helper/"* "$OUT/linux-helper/".gitignore "$OUT/" 2>/dev/null; rmdir "$OUT/linux-helper"
+    cp -r companion/app/src/main/assets/companion/manifest.txt companion/app/src/main/assets/companion/addons "$OUT/addon-set/"
+    cp LICENSE "$OUT/LICENSE"
+    tar -C app/build/outputs -czf "$OUT.tar.gz" "dsf-linux-helper-$VER"; rm -rf "$OUT"
+    echo "OK: $OUT.tar.gz"
+fi
