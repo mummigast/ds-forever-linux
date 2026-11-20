@@ -644,6 +644,8 @@ async def handle(ws):
                 await send(ws, {"t": "unpaired"}); await ws.close(); return
             elif t == "addons_want":
                 pc_want["m"] = m
+                wanted = [x.get("title") or x.get("id") for x in m.get("managed") or [] if isinstance(x, dict) and x.get("want")]
+                log("pc add-ons: the Thor wants " + (", ".join(map(str, wanted)) or "none of the managed ones"))
                 spawn(pc_addons_pass(ws))
             elif t == "addons_status":
                 await send(ws, {"t": "addons", "result": f"PC set {addons.installed_set(ADDONS_DIR) or 'none'}"})
