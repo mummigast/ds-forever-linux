@@ -91,6 +91,22 @@ function WC.snapshotSoon(reason)
     end)
 end
 
+-- spread1 (2026-11-20, the combat-start stutter): a game event's snapshot is no longer taken INSIDE the event. A fight's start fired
+-- PLAYER_REGEN_DISABLED + a burst of ACTIONBAR_UPDATE_* in one frame, each a collectActionBar + encode, and then the full document
+-- (bar + player + map + bags) on top: most of perf1's ~110 ms frame. Now every event of a frame shares ONE snapshot on a later
+-- frame through WC.spread (one heavy job per frame). The equipment reasons win (they also collect what is worn); otherwise the
+-- first reason of the burst is kept. Direct calls (heartbeat, harvest, hud, /wc) are unchanged.
+local EQUIP_REASON = { PLAYER_EQUIPMENT_CHANGED = true, GET_ITEM_INFO_RECEIVED = true }
+local evReason = nil
+function WC.snapshotEvent(event)
+    if evReason == nil or (EQUIP_REASON[event] and not EQUIP_REASON[evReason]) then evReason = event end
+    if type(WC.spread) ~= "function" then local r = evReason; evReason = nil; return WC.snapshot(r) end
+    WC.spread("coreSnap", function()
+        local r = evReason; evReason = nil
+        if r then WC.snapshot(r) end
+    end)
+end
+
 local f = CreateFrame("Frame")
 local started = false
 
@@ -208,7 +224,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a1
     elseif event == "LOADING_SCREEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         pcall(WC.onLoadingScreen, event == "LOADING_SCREEN_ENABLED")             -- core1: never a snapshot (see the top)
     elseif started then
-        WC.snapshot(event)
+        WC.snapshotEvent(event)
     end
 end)
 

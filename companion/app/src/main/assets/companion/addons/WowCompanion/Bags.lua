@@ -1326,7 +1326,12 @@ local function sendSoon(reason)
     queued = true
     -- end of frame: BAG_UPDATE_DELAYED, PLAYER_MONEY and a burst of GET_ITEM_INFO_RECEIVED
     -- from one loot all land together and must cost one collect, not five
-    C_Timer.After(0, function() sendBags(reason) end)
+    -- spread1 (2026-11-20): through WC.spread, so a fight's start puts the bags document on its own frame, not on Core's snapshot's
+    if type(WC.spread) == "function" then
+        WC.spread("bags", function() sendBags(reason) end)
+    else
+        C_Timer.After(0, function() sendBags(reason) end)
+    end
 end
 
 -- a controller press changes only the cursor / menu, not the bags: send the new ctl ALONE, a light "bagsctl" document (the bags

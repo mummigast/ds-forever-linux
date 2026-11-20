@@ -222,6 +222,34 @@ end
 
 function WC.seqNow() return seq end
 
+-- ---------------------------------------------------------------- spread1 (Linux Edition 2026-11-20, the user: "a small stutter when
+-- i initiate combat", option 3: spread the work). perf1 measured the combat-start frame at ~110 ms (normal ~10): every module answers
+-- PLAYER_REGEN_DISABLED in the same frame, and the heavy ones (Core's full snapshot, the bags document) each encode tens of KB.
+-- WC.spread(key, fn): run fn on a LATER frame, AT MOST ONE spread job per frame, in the order asked. A key already waiting is not
+-- queued twice (its first fn runs). With the queue empty a job runs on the next frame, exactly when C_Timer.After(0) would have.
+-- Only for work the app can wait a few frames for (documents); never for anything secure or anything the lockdown cuts off.
+do
+    local q, waiting = {}, {}
+    local runner = CreateFrame("Frame")
+    runner:Hide()
+    runner:SetScript("OnUpdate", function(self)
+        local job = table.remove(q, 1)
+        if not job then self:Hide(); return end
+        waiting[job.k] = nil
+        local ok, err = pcall(job.fn)
+        if not ok and WC.noteError then pcall(WC.noteError, "spread " .. tostring(job.k) .. ": " .. tostring(err)) end
+        if #q == 0 then self:Hide() end
+    end)
+    function WC.spread(key, fn)
+        if waiting[key] then return false end
+        waiting[key] = true
+        q[#q + 1] = { k = key, fn = fn }
+        runner:Show()
+        return true
+    end
+    function WC.spreadQueued() return #q end
+end
+
 -- ---------------------------------------------------------------- perf1 (Linux Edition 2026-11-20, the user: "a small stutter when i
 -- initiate combat", option 3: spread the combat-start work). MEASURE FIRST, READ ONLY: from the first PLAYER_REGEN_DISABLED handler
 -- (this file's frame registers before the other modules') to the next two frames: how long, how many documents were encoded and
@@ -242,18 +270,30 @@ do
     local f = CreateFrame("Frame")
     f:RegisterEvent("PLAYER_REGEN_DISABLED")
     f:SetScript("OnEvent", function()
-        P.on, P.t0, P.sn, P.sb, P.en, P.ems, P.frames, P.f1 = true, debugprofilestop(), 0, 0, 0, 0, 0, 0
+        P.on, P.t0, P.sn, P.sb, P.en, P.ems, P.frames, P.f1, P.f2 = true, debugprofilestop(), 0, 0, 0, 0, 0, 0, 0
+        P.last, P.fr = P.t0, {}
         f:Show()
     end)
+    -- perf2 (spread1): the work now lands on later frames, so every one of the first 8 frames is timed (fr = each frame's ms,
+    -- max_ms = the worst); first_ms / two_ms stay comparable with perf1. q = spread jobs still waiting at the end.
+    local FRAMES = 8
     f:SetScript("OnUpdate", function(self)
         if not P.on then self:Hide(); return end
         P.frames = P.frames + 1
-        local ms = debugprofilestop() - P.t0
-        if P.frames == 1 then P.f1 = ms; return end
+        local now = debugprofilestop()
+        local ms = now - P.t0
+        P.fr[P.frames] = math.floor((now - P.last) + 0.5); P.last = now
+        if P.frames == 1 then P.f1 = ms end
+        if P.frames == 2 then P.f2 = ms end
+        if P.frames < FRAMES then return end
         P.on = false; self:Hide()
         P.n = P.n + 1
-        local r = { type = "perf", v = "perf1", n = P.n, first_ms = math.floor(P.f1 + 0.5), two_ms = math.floor(ms + 0.5),
+        local mx = 0
+        for i = 1, #P.fr do if P.fr[i] > mx then mx = P.fr[i] end end
+        local r = { type = "perf", v = "perf2", n = P.n, first_ms = math.floor(P.f1 + 0.5), two_ms = math.floor(P.f2 + 0.5),
+                    all_ms = math.floor(ms + 0.5), max_ms = mx, fr = P.fr,
                     docs = P.sn, bytes = P.sb, enc = P.en, enc_ms = math.floor(P.ems + 0.5),
+                    q = WC.spreadQueued and WC.spreadQueued() or -1,
                     fps = math.floor((GetFramerate and GetFramerate() or 0) + 0.5) }
         if type(WowCompanionDB) == "table" then
             WowCompanionDB.perf = WowCompanionDB.perf or {}

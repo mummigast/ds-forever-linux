@@ -32,6 +32,8 @@ pad.clearKeys()
 SetOverrideBinding(CreateFrame("Frame"), false, "CTRL-SHIFT-PAGEDOWN", "COMBATLOGPAGEDOWN")   -- as in the live game
 LAYHIT = {}
 pad.secureRow("lay", 40, function() end, function(col) LAYHIT[#LAYHIT + 1] = col end)   -- a stand-in for Hub's layout row (no actions)
+if not pad.rows.isell then pad.op("isell", "isell", function() end) end      -- pad26: the vendor's Sell row (Interact's, when loaded)
+if not pad.rows.pause then pad.op("pause", "pause", function() end) end      -- UP's own row (Hub's, when loaded)
 pad.bindKeys()
 FIRED = {}
 for name, r in pairs(pad.rows) do
@@ -110,6 +112,17 @@ L.execute('NOW = NOW + 0.4')
 press('HOME', cols[2])
 got = fired()
 check(got == ['qpick:2'], "17: a stale pick: HOME is a fresh row pick, not a column", got)
+
+# pad26 (2026-11-20, "selling does not work"): the vendor's Sell row goes as keys, UP UP; UP alone stays pause
+check(rows.get('isell') == 'UP UP', "18: isell is published as UP UP", rows)
+L.execute('NOW = NOW + 1')
+press('UP', 'UP', cols[12])
+got = fired()
+check(got == ['isell:12'], "19: UP UP + column fires isell", got)
+L.execute('NOW = NOW + 1')
+press('UP', cols[4])
+got = fired()
+check(got == ['pause:4'], "20: one UP is still pause", got)
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
