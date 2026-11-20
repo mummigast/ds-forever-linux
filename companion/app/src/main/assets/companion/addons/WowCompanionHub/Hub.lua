@@ -1250,6 +1250,14 @@ if byeOk then
     end)
 end
 
+-- beta A2 (2026-11-20, the stutter review: a fight's start built + encoded this whole document twice in its frame, here and in
+-- MT.fightStart): at a fight's edge the document goes ONCE, on a later frame (WC.spread; setup() / MT.apply stay in the frame)
+local function emitHubSoon()
+    if type(WC.spread) ~= "function" then if emitHub(false) then WC.push() end return end
+    WC.spread("hub:emit", function() if emitHub(false) then WC.push() end end)
+end
+WC._hubEmitSoon = emitHubSoon
+
 f:SetScript("OnEvent", function(_, event)
     setup()
     if event == "PLAYER_REGEN_ENABLED" and hub.pending then apply() end
@@ -1258,6 +1266,7 @@ f:SetScript("OnEvent", function(_, event)
         -- the bars may be rebuilt a moment after the event (a level-up's flash): look once more
         if C_Timer and C_Timer.After then C_Timer.After(0.5, function() ridersCheck(); if emitHub(false) then WC.push() end end) end
     end
+    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then emitHubSoon(); return end
     if emitHub(false) then WC.push() end
 end)
 
@@ -3035,8 +3044,17 @@ do
                          "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_CHANNEL_UPDATE", "RAID_TARGET_UPDATE" }) do
         pcall(drv.RegisterEvent, drv, e)
     end
+    -- beta A5 (2026-11-20, the stutter review): the cast events are registered for EVERY unit, and each one ran the whole stepAll()
+    -- (~100 calls) at once: every caster of a pull, every nameplate. Only the units the hub shows (player, pet, target, its target,
+    -- focus, the party) step here; the rest is caught by the 0.1 s step anyway
+    local SHOWN = { player = true, pet = true, target = true, targettarget = true, focus = true,
+                    party1 = true, party2 = true, party3 = true, party4 = true }
     drv:SetScript("OnEvent", function(_, e, unit)
         if e == "UNIT_AURA" then if unit == "target" then TB.auraDirty = true end return end
+        if type(unit) == "string" and e:sub(1, 15) == "UNIT_SPELLCAST_" then
+            local okU, shown = pcall(function() return SHOWN[unit] end)
+            if not (okU and shown) then return end
+        end
         if e == "PLAYER_ENTERING_WORLD" then K, PX = scaleK(), scalePX(); if TB.arrow then TB.arrow.plate = nil end; pcall(UF.placeTarget) end   -- uf19: the spot at the new pixel
         if e == "PLAYER_TARGET_CHANGED" then TB.auraDirty = true; TB.changed = true end      -- uf14: the fly
         stepAll()
@@ -3814,7 +3832,7 @@ do
         MT.fight, MT.linger = true, false
         MT.gen = MT.gen + 1
         pcall(MT.apply)
-        MT.emit()
+        if WC._hubEmitSoon then WC._hubEmitSoon() else MT.emit() end     -- beta A2: one spread emit with the handler's above
     end
     function MT.fightEnd()
         MT.fight = false
@@ -4744,31 +4762,53 @@ function DB.dot()
     if ok and x and y then local s = r:GetEffectiveScale() / us; return x * s, y * s end
     return UIParent:GetWidth() / 2, UIParent:GetHeight() / 2
 end
+-- beta A7 (2026-11-20, the stutter review): this ran up to TWICE per 0.1 s step (DB.pick asks at "softfriend" and again at the
+-- end), each a loop over all 40 nameplate tokens with a closure each. Now: once per step (the answer kept for the step), and over
+-- the plates that exist (C_NamePlate.GetNamePlates + each plate's namePlateUnitToken); the 1..40 walk stays as the fallback.
+DB.stepN = 0
 function DB.platePick()
+    if DB.pickN == DB.stepN then return DB.pickTok end
+    DB.pickN, DB.pickTok = DB.stepN, nil
     if type(C_NamePlate) ~= "table" or type(C_NamePlate.GetNamePlateForUnit) ~= "function" then return nil end
     local rx, ry = DB.dot()
     local us = UIParent:GetEffectiveScale()
     local best, bestScore
-    for i = 1, DB.PLATES do
-        local tok = "nameplate" .. i
-        if exists(tok) and not isMe(tok) then
-            local ok, x, y = pcall(function()
-                local p = C_NamePlate.GetNamePlateForUnit(tok)
-                if not p or (p.IsForbidden and p:IsForbidden()) or not p:IsShown() then return nil end
-                local cx, cy = p:GetCenter()
-                if type(cx) ~= "number" or type(cy) ~= "number" then return nil end
-                local s = p:GetEffectiveScale() / us
-                return cx * s, cy * s
-            end)
-            if ok and x and y then
-                local dx, dy = math.abs(x - rx), y - ry
-                if dx <= DB.PLATE_DX and dy > 0 and dy <= DB.PLATE_DY then
-                    local score = dx * 2 + dy * 0.25
-                    if not bestScore or score < bestScore then best, bestScore = tok, score end
-                end
+    local function consider(tok, p)
+        if not (exists(tok) and not isMe(tok)) then return end
+        local ok, x, y = pcall(function()
+            p = p or C_NamePlate.GetNamePlateForUnit(tok)
+            if not p or (p.IsForbidden and p:IsForbidden()) or not p:IsShown() then return nil end
+            local cx, cy = p:GetCenter()
+            if type(cx) ~= "number" or type(cy) ~= "number" then return nil end
+            local s = p:GetEffectiveScale() / us
+            return cx * s, cy * s
+        end)
+        if ok and x and y then
+            local dx, dy = math.abs(x - rx), y - ry
+            if dx <= DB.PLATE_DX and dy > 0 and dy <= DB.PLATE_DY then
+                local score = dx * 2 + dy * 0.25
+                if not bestScore or score < bestScore then best, bestScore = tok, score end
             end
         end
     end
+    local list, viaList = nil, false
+    if type(C_NamePlate.GetNamePlates) == "function" then
+        local okL, l = pcall(C_NamePlate.GetNamePlates)
+        if okL and type(l) == "table" then list = l end
+    end
+    if list then
+        viaList = true
+        for _, p in ipairs(list) do
+            local okT, tok = pcall(function() return p.namePlateUnitToken end)
+            if okT and type(tok) == "string" and tok:sub(1, 9) == "nameplate" then consider(tok, p)
+            else viaList = false; break end                  -- a plate without its token: the full walk below
+        end
+    end
+    if not viaList then
+        best, bestScore = nil, nil
+        for i = 1, DB.PLATES do consider("nameplate" .. i, nil) end
+    end
+    DB.pickTok = best
     return best
 end
 function DB.pick()
@@ -4787,6 +4827,7 @@ function DB.hide()
     DB.mine, DB.unit, DB.guid = false, nil, nil
 end
 function DB.step()
+    DB.stepN = DB.stepN + 1                                  -- beta A7: platePick's answer is kept for this step only
     if not GameTooltip then return end
     local u = DB.on() and DB.pick() or nil
     if not u then if DB.mine then DB.hide() end; return end

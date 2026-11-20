@@ -5127,12 +5127,17 @@ f:SetScript("OnEvent", function(_, e, a1, a2)
     if trig and not (face.aa or face.ar or face.fight) then face.given = false; face.givenSet = true end   -- all over: nothing stays given back
     if trig then
         local ok, changed = pcall(faceUpdate, trig)
-        if ok and changed then pcall(emit, true); WC.push() end                   -- the padmap at once (`armed` for Home's bar)
+        -- beta A1 (2026-11-20, the stutter review: a fight's start encoded + sent this whole document TWICE in its frame, here and
+        -- below): at a fight's start or end ONE forced emit on a later frame (WC.spread; the binds above stay in this frame).
+        local fightEdge = (e == "PLAYER_REGEN_DISABLED" or e == "PLAYER_REGEN_ENABLED") and type(WC.spread) == "function"
+        if fightEdge then
+            WC.spread("padmap:fight", function() pcall(emit, true); WC.push() end)
+        elseif ok and changed then pcall(emit, true); WC.push() end                -- the padmap at once (`armed` for Home's bar)
         if e == "PLAYER_REGEN_ENABLED" and face.pending then pcall(faceSetup) end
-        if e == "PLAYER_REGEN_ENABLED" and attackDB().pending then pcall(attackApply); pcall(emit, true); WC.push() end
+        if e == "PLAYER_REGEN_ENABLED" and attackDB().pending then pcall(attackApply); if not fightEdge then pcall(emit, true); WC.push() end end
         -- m25: the padmap at a fight's start / end (Cast's page hides in fights); sent only if not yet. m48: ALWAYS (not only while the
         -- room bar is wanted): its `combat` is what Home's D-pad picture follows
-        if e == "PLAYER_REGEN_DISABLED" or e == "PLAYER_REGEN_ENABLED" then
+        if (e == "PLAYER_REGEN_DISABLED" or e == "PLAYER_REGEN_ENABLED") and not fightEdge then
             local okE, sent = pcall(emit, false)
             if okE and sent then WC.push() end
         end

@@ -6,6 +6,10 @@ Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition'
 
 - The full document is built from its parts' JSON (the layout was encoded three times per update, now once); its parts' times go
   into the hitch documents. Not tested in game yet.
+- Fight start: PadMap's document (sent twice in that frame) and the Hub's (built twice) go once each, on later frames; the key
+  bindings that must be set before the lockdown stay in the frame.
+- The Hub's target frame no longer redraws for every cast of every unit (a pull's casters, nameplates): only units it shows.
+- The box under the dot looks at the nameplates that exist, once per 0.1 s step (was up to two walks over 40 tokens).
 
 ## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
 
