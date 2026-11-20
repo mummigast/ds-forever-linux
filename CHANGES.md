@@ -2,7 +2,7 @@
 
 Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## Unreleased (main)
+## Unreleased (beta)
 
 - The full document is built from its parts' JSON (the layout was encoded three times per update, now once); its parts' times go
   into the hitch documents. Not tested in game yet.
