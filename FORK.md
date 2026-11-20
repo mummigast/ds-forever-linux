@@ -129,6 +129,12 @@ git merge upstream/main          # conflicts are usually only in the files in th
 ```
 Upstream's version number is kept (the fork tracks its releases); the app's update check is pointed at this repo.
 
+## Releases
+
+Source-only GitHub releases, tagged `linux-v<DS Forever version>.<n>` (e.g. `linux-v1.0.37.1`), each with its CHANGES.md part as
+notes and **no APK** (see *Sharing*). The tag never looks like a DS Forever version, so the app's update check stays quiet ("no
+release") instead of offering a download that isn't there.
+
 ## Sharing
 
 - **Source:** free to share, fork and change under GPL-3.0. Keep the notices, mark your own changes.

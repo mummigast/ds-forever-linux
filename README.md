@@ -29,6 +29,7 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
   - **Friendly plates** show for every friendly unit, not only the target.
 
 The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
+Each version is tagged as a **source-only** [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with its notes: watch the repo's releases to hear about new ones.
 
 ## Quick start
 
