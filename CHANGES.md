@@ -2,11 +2,6 @@
 
 Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## Unreleased (main)
-
-- The full document is built from its parts' JSON (the layout was encoded three times per update, now once); its parts' times go
-  into the hitch documents. Not tested in game yet.
-
 ## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
 
 - **Selling, buying and using bag items work again while streaming.** They went as mouse clicks, which land on the spot WoW parks

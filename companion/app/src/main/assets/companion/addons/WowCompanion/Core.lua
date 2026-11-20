@@ -24,35 +24,9 @@ local lastBar = nil
 
 -- Emit a full snapshot. Called on login, on any action-bar change, and on /wc.
 local lastEquip = nil
--- full1 (2026-11-20, perf3: a ~45 ms frame at each event "full" document, and twice at a fight's start). The document is SPLICED
--- from its parts' JSON: the hud was encoded three times per snapshot (collectActionBar's dedupe, the bar's dedupe, the emit) and the
--- bar twice; now each part once. Same fields, same values (the reader parses JSON, key order means nothing). WC.snapT: what each part
--- cost in ms, for the hitch watcher (perf4).
-local function jobj(fields)
-    local out = {}
-    for _, f in ipairs(fields) do
-        if f[2] ~= nil then out[#out + 1] = '"' .. f[1] .. '":' .. f[2] end
-    end
-    return "{" .. table.concat(out, ",") .. "}"
-end
-local function enc(v) if v == nil then return nil end return WC.encode(v) end
-WC.snapT = { n = 0 }
-local clockMs = debugprofilestop
-
 function WC.snapshot(reason)
-    local T = WC.snapT
-    local t0 = clockMs()
-    WC._hudJsonNow = nil
     local bar = WC.collectActionBar()
-    local hudJson = WC._hudJsonNow
-    WC._hudJsonNow = nil
-    local json
-    if type(hudJson) == "string" and type(bar) == "table" and bar.hud ~= nil then
-        json = jobj({ { "combat", enc(bar.combat) }, { "hud", hudJson }, { "page", enc(bar.page) }, { "slots", enc(bar.slots) } })
-    else
-        json = WC.encode(bar)
-    end
-    local t1 = clockMs()
+    local json = WC.encode(bar)
     -- EQUIPMENT HAS ITS OWN KEY. The bags session found PLAYER_EQUIPMENT_CHANGED snapshots, and
     -- the GET_ITEM_INFO_RECEIVED that follows once a new item's info arrives, both being dropped
     -- as duplicates because the action bar had not changed. Only those two events pay for
@@ -76,29 +50,21 @@ function WC.snapshot(reason)
        and reason ~= "manual" and reason ~= "zone" and reason ~= "harvest"
        and reason ~= "heartbeat" and reason ~= "questlines" and reason ~= "turnin"
        and reason ~= "supertrack" and reason ~= "tracking" and reason ~= "waypoint" then
-        T.at, T.reason, T.sent, T.bar, T.eq = t1, reason, false, t1 - t0, clockMs() - t1
         return false
     end
     lastBar = json
-    local t2 = clockMs()
     equipped = equipped or WC.collectEquipped()
-    equipJson = equipJson or (equipped ~= nil and WC.encode(equipped) or nil)
-    lastEquip = equipJson or WC.encode({})
-    local t3 = clockMs()
-    local player = enc(WC.collectPlayer())
-    local t4 = clockMs()
-    local map = enc(WC.collectMapSafe())
-    local t5 = clockMs()
-    local bags = enc(WC.collectBags())
-    local t6 = clockMs()
-    WC.send(jobj({ { "actionbar", json }, { "bags", bags }, { "equipped", equipJson }, { "map", map }, { "player", player },
-                   { "reason", enc(reason) }, { "type", '"full"' }, { "v", enc(WC.VERSION) } }))
-    WC.push()
-    local t7 = clockMs()
-    T.n = T.n + 1
-    T.at, T.reason, T.sent = t7, reason, true
-    T.bar, T.eq, T.player, T.map, T.bags, T.send = t1 - t0, t3 - t2, t4 - t3, t5 - t4, t6 - t5, t7 - t6
-    T.bytes = #json + #(map or "") + #(bags or "") + #(player or "")
+    lastEquip = equipJson or WC.encode(equipped or {})
+    WC.emit({
+        type = "full",
+        v = WC.VERSION,
+        reason = reason,
+        actionbar = bar,
+        player = WC.collectPlayer(),
+        map = WC.collectMapSafe(),
+        bags = WC.collectBags(),
+        equipped = equipped,
+    })
     return true
 end
 
