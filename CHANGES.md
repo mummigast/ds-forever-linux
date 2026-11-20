@@ -11,7 +11,8 @@ Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition'
 - This edition's own settings (box under the dot, soft target) go back to their defaults with *Reset settings*.
 - **Buttons dead for up to a minute after login, a `/reload` or a stream reconnect:** the keyboard-shortcut handshake was asked for only
   when a button was pressed, at most every 10 s, by a click that is often lost; the presses meanwhile went as clicks and did nothing.
-  A press now asks again after 2 s (only your own presses ask; nothing is clicked on a timer).
+  A press now asks again after 2 s. Only your own presses ask: nothing is clicked on a timer any more, and after login the HUD
+  restore waits for your first button press (then goes as a keyboard shortcut) instead of clicking after 15 s.
 - **Box under the dot** reaches further: past the soft-target range it takes the nameplate right above the dot (friendly units too,
   while Friendly plates are on).
 - Not in this edition: Desktop 0.2.45-0.2.46 (DS Forever Desktop is Windows-only; the Linux helper already never closes a WoW you

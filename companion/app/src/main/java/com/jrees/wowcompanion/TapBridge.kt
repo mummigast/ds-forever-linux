@@ -98,7 +98,8 @@ object TapBridge {
         if (!KEYS_ON || InputSink.sink == null || GameInput.typing) return false
         val s = TapKeys.session(pad) ?: return false
         if (s == keySession) return false
-        if (!GameInput.loading()) askHandshake(ctx, pad, 3_000L)   // a click under a loading screen is lost
+        // Linux Edition 2026-11-20 (the user: "as few automated presses as possible"): no click of its own here any more; the restore
+        // only waits, and the player's first press asks (askHandshake, 2 s)
         return true
     }
 
