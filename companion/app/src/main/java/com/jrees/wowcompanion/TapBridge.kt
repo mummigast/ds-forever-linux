@@ -98,8 +98,11 @@ object TapBridge {
         if (!KEYS_ON || InputSink.sink == null || GameInput.typing) return false
         val s = TapKeys.session(pad) ?: return false
         if (s == keySession) return false
-        // Linux Edition 2026-11-20 (the user: "as few automated presses as possible"): no click of its own here any more; the restore
-        // only waits, and the player's first press asks (askHandshake, 2 s)
+        // Linux Edition 2026-11-20 (the user: "as few automated presses as possible"): no click on a timer. It asks only right after
+        // the PLAYER pressed a controller button (any button, also one that goes straight to the game, e.g. a fight's: the user's test
+        // "connected and started fighting, the default UI is still there" - the app's own presses alone never came), at most every 2 s
+        watchPad()
+        if (!GameInput.loading() && SystemClock.uptimeMillis() - lastChangeAt < PRESS_ASK_MS) askHandshake(ctx, pad)
         return true
     }
 
@@ -490,6 +493,8 @@ object TapBridge {
     // Its clock comes from the app's ONE controller reader (PadInput -> PadHub, read-only getevent; Cast's file), through a
     // subscriber of our own that stays on for the app's life (PadHub runs one reader for every subscriber, so this adds no second
     // getevent). Without a reader (no root, no controller) nothing is ever seen changing and taps go at once, as before.
+    /** Linux Edition: a controller press this recent lets the login's handshake ask go (keysPending) */
+    private const val PRESS_ASK_MS = 3_000L
     @Volatile private var lastChangeAt = 0L      // SystemClock.uptimeMillis() of the last button change (any button)
     @Volatile private var heldNow = false        // a non-D-pad button is held (face, Start / Select, ...)
     @Volatile private var watcher: PadInput? = null
