@@ -137,6 +137,18 @@ L.execute('_G.GetCVarBool = function(n) if n == "ActionButtonUseKeyDown" then re
 r2 = dict(L.eval('WowCompanion.pad.describe().keys')['rows'].items())
 check('bag0' in r2 and 'ibuy' in r2, "18: key-up setting off: the far rows (bags too) stay published", r2.get('bag0'))
 # the bag row's own tap work ran (its onClick: the bags' proof that a tap landed)
+# with the setting off, the proxies still act on the press (their own useOnKeyDown); a bag item and a plain row still work
+tick(1)
+fired(); L.execute('ACTIONS = {}; ACT_ON_DOWN = false')       # the stub's own switch for the setting
+for k in ('DOWN', 'DOWN', cols[3], cols[6]):
+    key(k)
+got = actions()
+check(got == ['item:1006'], "18b: cast-on-key-down OFF: a bag item by keys still works", got)
+tick(1)
+key('INSERT'); key(cols[1])
+got = fired()
+check(got == ['qact:1'], "18c: cast-on-key-down OFF: a plain row still works", got)
+L.execute('ACT_ON_DOWN = true')
 check(L.eval('#BAGTAPS') >= 2, "19: the row's own tap work ran for each bag press", L.eval('#BAGTAPS'))
 
 print("%d passed, %d failed" % (passes, fails))

@@ -753,6 +753,9 @@ local function proxyFor(k, col)
     local ok = pcall(function()
         p = CreateFrame("Button", proxyName(k), UIParent, "SecureActionButtonTemplate")
         p:RegisterForClicks("AnyDown")
+        -- the proxy hears the PRESS only, so it must act on it whatever the player's "cast on key down" setting (SecureActionButton_
+        -- ShouldUseOnKeyDown reads this attribute before the setting): else, with the setting off, no key of ours would do anything
+        p:SetAttribute("useOnKeyDown", true)
         p:SetAttribute("type", "click")
         p:SetAttribute("clickbutton", keys.disp)
         local body = col and COL_SNIP:format(col, col, col) or ROW_SNIP:format(k)
