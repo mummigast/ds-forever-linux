@@ -2,6 +2,12 @@
 
 Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 414). What differs from DS Forever in general: [FORK.md](FORK.md).
 
+## 2026-11-20 (afternoon): linux-v1.0.37.2
+
+- **Fix: the HUD stayed WoW's own when you went straight into a fight after connecting.** Since 1.0.37.1 the keyboard-shortcut
+  handshake is asked for only when you press a button, but a fight's buttons go straight to the game, not through the app, so
+  nothing asked. Now any controller button you press asks (still never on a timer, at most every 2 s).
+
 ## 2026-11-20: DS Forever 1.0.37, add-on set 414
 
 - **Releases with an APK:** each release now carries the signed APK, the Linux helper packed with its matching add-ons
