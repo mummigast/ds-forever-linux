@@ -79,7 +79,10 @@ object TapBridge {
         Log.i(TAG, "keys: handshake ${keySession ?: "refused"} (rows ${msg.optInt("rows")}, cols ${msg.optInt("cols")})")
     }
 
-    private fun askHandshake(ctx: Context, pad: JSONObject?, gapMs: Long = 10_000L) {
+    // Linux Edition 2026-11-20 (Thor log: after a stream drop the presses went as clicks for ~70 s, the handshake asked at most every
+    // 10 s and its click often lost): a PRESS asks again after 2 s. Only the player's own presses ask (the user: no clicks on a timer,
+    // nothing that could look like a bot); the login's restore keeps its own 3 s ask (keysPending)
+    private fun askHandshake(ctx: Context, pad: JSONObject?, gapMs: Long = 2_000L) {
         val now = SystemClock.uptimeMillis()
         if (now - askedAt < gapMs) return
         askedAt = now
