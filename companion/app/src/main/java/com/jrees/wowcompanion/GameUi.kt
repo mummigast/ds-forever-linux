@@ -914,6 +914,10 @@ object GameUi {
             }
             if (TapCal.busy(now)) { last = UiStep.Wait("Measuring where the stream's taps land"); return }
         }
+        // Linux Edition 2026-11-20 (Thor log: after a /reload the key handshake was missing for minutes, and was asked for only when a
+        // press went out, at most every 10 s, as a click that is often lost; the presses meanwhile went as clicks and did nothing): while
+        // this session's handshake is missing, ask again every 3 s on every step, not only on a press (TapBridge.keysPending)
+        if (live && s?.current == true) TapBridge.keysPending(ctx, pad)
         val r = rst
         // Linux Streaming Edition (2026-11-19): while streaming, the restore (and every tap behind it) waits for the key handshake, at
         // most KEY_WAIT_MS past the settle: a click right after world entry is often lost on Linux, and a lost restore costs ~20 taps

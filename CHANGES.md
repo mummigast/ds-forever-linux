@@ -9,6 +9,11 @@ Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition'
   Abandon Pet and pet trainer fixes, confirm pop-ups that hold the controller, filter and Send glyphs that follow the controller
   layout, the Home info block (ammo at 0, bags used/total), and the cast bar's display text.
 - This edition's own settings (box under the dot, soft target) go back to their defaults with *Reset settings*.
+- **Buttons dead for up to a minute after login, a `/reload` or a stream reconnect:** the keyboard-shortcut handshake was asked for only
+  when a button was pressed, at most every 10 s, by a click that is often lost; the presses meanwhile went as clicks and did nothing.
+  The app now asks every 3 s by itself until the handshake is in.
+- **Box under the dot** reaches further: past the soft-target range it takes the nameplate right above the dot (friendly units too,
+  while Friendly plates are on).
 - Not in this edition: Desktop 0.2.45-0.2.46 (DS Forever Desktop is Windows-only; the Linux helper already never closes a WoW you
   started yourself).
 
