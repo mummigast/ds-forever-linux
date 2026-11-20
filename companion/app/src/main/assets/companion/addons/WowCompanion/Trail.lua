@@ -4483,9 +4483,15 @@ do
             for i, o in ipairs(objs) do
                 local a = list[i]
                 if a then
-                    o.f:ClearAllPoints()
-                    if fromRight then o.f:SetPoint("TOPRIGHT", P.f, "TOPRIGHT", -(i - 1) * step, y)
-                    else o.f:SetPoint("TOPLEFT", P.f, "TOPLEFT", (i - 1) * step, y) end
+                    -- beta (2026-11-20, the stutter review: this ran EVERY FRAME for every icon): the icon is placed again only when
+                    -- its spot changed, and its texts / colour set only when they changed
+                    local px = fromRight and -(i - 1) * step or (i - 1) * step
+                    if o.pr ~= fromRight or o.px ~= px or o.py ~= y then
+                        o.f:ClearAllPoints()
+                        if fromRight then o.f:SetPoint("TOPRIGHT", P.f, "TOPRIGHT", px, y)
+                        else o.f:SetPoint("TOPLEFT", P.f, "TOPLEFT", px, y) end
+                        o.pr, o.px, o.py = fromRight, px, y
+                    end
                     -- prd16: a secret icon straight to SetTexture (it takes one), never compared or kept
                     if a.sicon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = nil
                     elseif o.icon ~= a.icon then pcall(function() o.tx:SetTexture(a.icon) end); o.icon = a.icon end
@@ -4522,17 +4528,24 @@ do
                         o.bd:Hide()
                     end
                     if a.secret then
-                        o.t:SetText("")
+                        if o.ts ~= "" then o.t:SetText(""); o.ts = "" end
                     else
                         local left = a.exp - t
-                        o.t:SetText(secs(left))
+                        local txt = secs(left)
+                        if o.ts ~= txt then o.t:SetText(txt); o.ts = txt end
                         -- the BuffFrame's colours: gold, white under a minute
-                        if left < 60 then o.t:SetTextColor(1, 1, 1) else o.t:SetTextColor(1, 0.82, 0) end
+                        local white = left < 60
+                        if o.tw ~= white then
+                            if white then o.t:SetTextColor(1, 1, 1) else o.t:SetTextColor(1, 0.82, 0) end
+                            o.tw = white
+                        end
                     end
-                    o.n:SetText((a.n and a.n > 1) and tostring(a.n) or "")
+                    local ns = (a.n and a.n > 1) and tostring(a.n) or ""
+                    if o.ns ~= ns then o.n:SetText(ns); o.ns = ns end
                     if not o.f:IsShown() then o.f:Show() end
                 elseif o.f:IsShown() then
                     o.f:Hide(); o.icon, o.exp, o.dur, o.sexp = nil, nil, nil, nil
+                    o.pr, o.px, o.py, o.ts, o.tw, o.ns = nil, nil, nil, nil, nil, nil
                 end
             end
         end
