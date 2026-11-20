@@ -81,6 +81,7 @@ end
 -- Send one JSON document, fragmenting if it exceeds the safe line length.
 -- Fragments carry part=i/n and the reader reassembles before parsing.
 function WC.send(json)
+    if WC.perf and WC.perf.on then WC.perf.sn = WC.perf.sn + 1; WC.perf.sb = WC.perf.sb + #json end
     if #json <= MAX_LINE then
         return raw("1/1|" .. json)
     end
@@ -221,3 +222,45 @@ end
 
 function WC.seqNow() return seq end
 
+-- ---------------------------------------------------------------- perf1 (Linux Edition 2026-11-20, the user: "a small stutter when i
+-- initiate combat", option 3: spread the combat-start work). MEASURE FIRST, READ ONLY: from the first PLAYER_REGEN_DISABLED handler
+-- (this file's frame registers before the other modules') to the next two frames: how long, how many documents were encoded and
+-- sent, how many bytes, the encoder's time. One "perf" document per fight start (and the last 10 in WowCompanionDB.perf).
+do
+    local P = { on = false, t0 = 0, n = 0, sn = 0, sb = 0, en = 0, ems = 0, frames = 0, f1 = 0 }
+    WC.perf = P
+    local enc = WC.encode
+    if type(enc) == "function" then
+        WC.encode = function(...)
+            if not P.on then return enc(...) end
+            local s = debugprofilestop()
+            local r = enc(...)
+            P.en = P.en + 1; P.ems = P.ems + (debugprofilestop() - s)
+            return r
+        end
+    end
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_REGEN_DISABLED")
+    f:SetScript("OnEvent", function()
+        P.on, P.t0, P.sn, P.sb, P.en, P.ems, P.frames, P.f1 = true, debugprofilestop(), 0, 0, 0, 0, 0, 0
+        f:Show()
+    end)
+    f:SetScript("OnUpdate", function(self)
+        if not P.on then self:Hide(); return end
+        P.frames = P.frames + 1
+        local ms = debugprofilestop() - P.t0
+        if P.frames == 1 then P.f1 = ms; return end
+        P.on = false; self:Hide()
+        P.n = P.n + 1
+        local r = { type = "perf", v = "perf1", n = P.n, first_ms = math.floor(P.f1 + 0.5), two_ms = math.floor(ms + 0.5),
+                    docs = P.sn, bytes = P.sb, enc = P.en, enc_ms = math.floor(P.ems + 0.5),
+                    fps = math.floor((GetFramerate and GetFramerate() or 0) + 0.5) }
+        if type(WowCompanionDB) == "table" then
+            WowCompanionDB.perf = WowCompanionDB.perf or {}
+            table.insert(WowCompanionDB.perf, r)
+            while #WowCompanionDB.perf > 10 do table.remove(WowCompanionDB.perf, 1) end
+        end
+        pcall(function() WC.send(WC.encode(r)) end)
+    end)
+    f:Hide()
+end
