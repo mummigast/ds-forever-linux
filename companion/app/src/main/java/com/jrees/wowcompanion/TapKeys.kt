@@ -26,6 +26,8 @@ object TapKeys {
     val COL_KEYS: Set<String> = (('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() } +
         listOf("MINUS", "EQUALS", "[", "]") +
         listOf("INSERT", "HOME", "END", "PAGEUP")).toSet()   // Linux Streaming Edition 11-18: columns 36-39 as layout-safe keys (TapPad KEY_COLX)
+    /** the columns 36-39 that are navigation keys (TapPad KEY_COLX): never a far row's selector or cell */
+    private val COLX = setOf("INSERT", "HOME", "END", "PAGEUP")
     /** what Windows / Wine / the launcher treat as system keys (with any Alt or Meta, every F-key, the numpad, the controller) */
     private val SYSTEM = setOf("ESCAPE", "ESC", "TAB", "ENTER", "RETURN", "SPACE", "BACKSPACE", "DELETE", "PRINTSCREEN", "SCROLLLOCK",
         "PAUSE", "NUMLOCK", "CAPSLOCK", "LWIN", "RWIN", "APPS", "MENU", "ALT", "LALT", "RALT")
@@ -56,6 +58,15 @@ object TapKeys {
         val ck = cols.optString(col)
         // Linux Streaming Edition 11-18: a "page 2" row publishes its row key twice ("RIGHT RIGHT"), both sent before the column key
         val rks = rk.split(' ')
+        // Linux Streaming Edition 2026-11-20 (TapPad pad27, THE FAR ROWS: vendor Buy, the bags, keytest): "DOWN DOWN <selector>", the row
+        // key twice then a column key naming the far row. Columns 36-39 of a far row stay clicks (the add-on cannot rebind those keys)
+        if (rks.size == 3) {
+            val sel = rks[2]
+            if (rks[0] != rks[1] || rks[0] !in ROW_KEYS || systemChord(MODS, rks[0])) return null
+            if (sel !in COL_KEYS || sel in COLX || systemChord(MODS, sel)) return null
+            if (ck !in COL_KEYS || ck in COLX || systemChord(MODS, ck)) return null
+            return rk to ck
+        }
         if (rks.size !in 1..2 || rks.toSet().size != 1) return null
         if (rks.any { it !in ROW_KEYS || systemChord(MODS, it) } || ck !in COL_KEYS || systemChord(MODS, ck)) return null
         return rk to ck

@@ -2664,6 +2664,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // quests document set it with the old row map and no new one came. The pad is ONE shared grid: every CURRENT document that
         // carries its row map refreshes it (a replayed one only fills it while there is none yet)
         msg.optJSONObject("pad")?.let { p -> if (p.has("rows") && p.optJSONObject("rows")?.has("chq") == true && (current || questsPad == null)) questsPad = p }
+        // Linux Edition 2026-11-20: the live pad token, for the handshake by keys (TapBridge.askHandshake)
+        if (current) TapBridge.noteLivePad(msg.optJSONObject("pad") ?: msg.optJSONObject("q")?.optJSONObject("pad"), true, msg.optString("type") == "hello")
         if (current) partyAsk(PartyModel.Ask.FIRST_DOC)
         if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
         // memory relief 2 (the user's picks, 2026-11-14: "RELIEF AT ZONE CHANGES"): the add-on's loading-screen word (Core.lua core1);

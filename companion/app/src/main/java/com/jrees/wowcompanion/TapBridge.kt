@@ -86,7 +86,30 @@ object TapBridge {
         val now = SystemClock.uptimeMillis()
         if (now - askedAt < gapMs) return
         askedAt = now
+        // Linux Edition 2026-11-20 (open bug: after a /reload the handshake never came back: its CLICK lands on the cursor WoW parks
+        // after controller play): BY KEYS when a token is fresh from a LIVE document (TapPad pad27: keytest = "DOWN DOWN <selector>",
+        // its cell 0 answers the same). A KEY IS NEVER SENT UNBOUND: the token must come from a CURRENT document of this add-on run
+        // (none since the last "hello"/loading screen, i.e. a /reload, counts) seen within LIVE_TOKEN_MS; else the click as before
+        val tok = TapKeys.session(pad)
+        val live = tok != null && tok == liveToken && now - liveTokenAt < LIVE_TOKEN_MS && !GameInput.loading()
+        val keyScript = if (live && InputSink.sink != null && !GameInput.typing) TapKeys.script(pad, listOf("keytest" to 0), 0L, tok) else null
+        if (keyScript != null) {
+            Log.i(TAG, "keys: handshake asked by keys")
+            worker.execute { RootShell.run(keyScript) { r -> if (r.exit != 0) Log.w(TAG, "keys: handshake keys refused (exit ${r.exit})") } }
+            return
+        }
         taps(ctx, pad, listOf("keytest" to 0))       // a CLICK: keytest's cell 0 does nothing in the game but answer
+    }
+
+    // the pad token of the newest CURRENT document (CompanionHost.noteLivePad); cleared by a "hello" (the add-ons (re)started)
+    @Volatile private var liveToken: String? = null
+    @Volatile private var liveTokenAt = 0L
+    private const val LIVE_TOKEN_MS = 5_000L
+    fun noteLivePad(pad: JSONObject?, current: Boolean, hello: Boolean) {
+        if (!current) return
+        if (hello) { liveToken = null; return }
+        val t = TapKeys.session(pad) ?: return
+        liveToken = t; liveTokenAt = SystemClock.uptimeMillis()
     }
 
     /**
