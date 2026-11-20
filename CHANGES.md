@@ -12,6 +12,8 @@ Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition'
 - **Add-ons you install on the Thor now reach the PC:** Settings > Add-ons' Polestar, Spoken, Manners (and QuestTrail) are installed
   into the PC's WoW by the Linux helper, from their own pinned downloads (checked), before WoW starts. A folder you installed yourself
   is left alone. Imported add-ons and QuestieDB updates still need DS Forever Desktop.
+- **The power button in the pause menu closes WoW on the PC** (it saves first), as with DS Forever Desktop; it used to stay open until
+  the 10-minute idle close.
 - **Settings only show what works when streaming:** Frame limit / Frame generation and the Account group (they set up the Thor's own
   game) are hidden.
 - **Buttons dead for up to a minute after login, a `/reload` or a stream reconnect:** the keyboard-shortcut handshake was asked for only

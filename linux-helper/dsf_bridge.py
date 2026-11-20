@@ -382,6 +382,48 @@ def launch_wowf(steam_root, appid):
     subprocess.Popen([str(PROTON), "run", r"C:\Program Files (x86)\Battle.net\Battle.net.exe", "--exec=launch WoWF"],
                      env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def close_wow_gently(steam_root, appid):
+    """Asks WoW Forever's window to close, as its X does (taskkill without /F = WM_CLOSE), inside its own Proton prefix: the game
+    exits cleanly and writes its settings and SavedVariables. Battle.net stays."""
+    env = dict(session_env(), STEAM_COMPAT_DATA_PATH=str(steam_root / f"steamapps/compatdata/{appid}"),
+               STEAM_COMPAT_CLIENT_INSTALL_PATH=str(wow_linux.steam_client_root(steam_root)))
+    subprocess.run([str(PROTON), "run", "taskkill", "/IM", "Wow.exe"], env=env, timeout=30,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+async def wait_wow_gone(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if not wow_running():
+            return True
+        await asyncio.sleep(1)
+    return not wow_running()
+
+async def end_session(ws, m):
+    """The Thor's clean disconnect (its pause menu's power button, Exit game; Linux Edition 2026-11-20, as Desktop 0.2.39): WoW
+    Forever closes on the PC. With quit_asked (the Thor tapped the game's own Exit Game) its own exit is waited for up to 30 s; then
+    its window is asked to close (up to 20 s); only a WoW that stays is ended (its whole prefix, as the idle close). Then the add-ons
+    that waited for a closed WoW go in."""
+    await send(ws, {"t": "session_ending"})
+    if not wow_running():
+        await send(ws, {"t": "session_ended", "wow": "none", "put_back": False, "why": ""}); return
+    log("End session from the Thor: closing WoW")
+    gone = bool(m.get("quit_asked")) and await wait_wow_gone(30)
+    if not gone and STEAM_PREFIX and PROTON:
+        try:
+            await asyncio.to_thread(close_wow_gently, *STEAM_PREFIX)
+        except Exception as e:
+            log("gentle close:", e)
+        gone = await wait_wow_gone(20)
+    if not gone and STEAM_PREFIX:
+        log("WoW did not close: ending it")
+        await asyncio.to_thread(close_prefix, *STEAM_PREFIX)
+        gone = await wait_wow_gone(10)
+    log("WoW closed" if gone else "WoW is still running")
+    await send(ws, {"t": "session_ended", "wow": "closed" if gone else "left", "put_back": False,
+                    "why": "" if gone else "WoW did not close"})
+    if gone:
+        spawn(pc_addons_pass())
+
 def close_prefix(steam_root, appid):
     """Ends every process of WoW's Proton session (Battle.net, its agent, wineserver, Steam's reaper for it): by PID,
     matched on the prefix path in the process's environment or command line, never our own process tree."""
@@ -642,6 +684,8 @@ async def handle(ws):
             elif t == "unpair":
                 state["devices"].pop(device, None); save_state(state)
                 await send(ws, {"t": "unpaired"}); await ws.close(); return
+            elif t == "end_session":
+                spawn(end_session(ws, m))
             elif t == "addons_want":
                 pc_want["m"] = m
                 wanted = [x.get("title") or x.get("id") for x in m.get("managed") or [] if isinstance(x, dict) and x.get("want")]
