@@ -66,8 +66,8 @@ object GeneralTiles {
      *  or signed in the other way (Browser login) */
     fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean): List<Row> = when (g) {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
-        SettingsTabs.Group.ACCOUNT -> listOfNotNull(if (loginRow) Row.LOGIN else null, Row.GAME_ACCOUNT, Row.WINDOWS_ID,
-            Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
+        SettingsTabs.Group.ACCOUNT -> if (StartMode.STREAM_ONLY) emptyList() else listOfNotNull(if (loginRow) Row.LOGIN else null,   // Linux Edition: none
+            Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
         SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
         SettingsTabs.Group.RESET -> listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL)
         SettingsTabs.Group.SUPPORT -> listOf(Row.SUPPORT)

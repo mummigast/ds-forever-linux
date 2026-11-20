@@ -15,6 +15,12 @@ import java.io.File
  * Nothing of an account, ticket or token here.
  */
 class BrowserLoginTest {
+    // Linux Edition 2026-11-20: these tests check upstream's General / Performance layout; stream-only hides the Account group and the
+    // frame tiles (StreamOnlySettingsTest checks that), so they run with STREAM_ONLY off
+    private var lxWas = StartMode.STREAM_ONLY
+    @org.junit.Before fun lxUpstream() { lxWas = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false }
+    @org.junit.After fun lxBack() { StartMode.STREAM_ONLY = lxWas }
+
 
     private val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
         .map { File(it) }.first { it.isDirectory }

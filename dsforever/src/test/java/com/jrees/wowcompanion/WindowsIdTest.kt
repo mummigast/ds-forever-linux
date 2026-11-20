@@ -17,6 +17,12 @@ import java.io.File
  * line names the mode only. (The prefix side - what Original writes back - is app's WindowsIdApplyTest.)
  */
 class WindowsIdTest {
+    // Linux Edition 2026-11-20: these tests check upstream's General / Performance layout; stream-only hides the Account group and the
+    // frame tiles (StreamOnlySettingsTest checks that), so they run with STREAM_ONLY off
+    private var lxWas = StartMode.STREAM_ONLY
+    @org.junit.Before fun lxUpstream() { lxWas = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false }
+    @org.junit.After fun lxBack() { StartMode.STREAM_ONLY = lxWas }
+
     private class Prefs(val m: HashMap<String, Any?> = HashMap()) : SharedPreferences {
         override fun getAll(): MutableMap<String, *> = m
         override fun getString(k: String?, d: String?) = m[k] as? String ?: d

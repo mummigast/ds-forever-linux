@@ -9,6 +9,11 @@ Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition'
   Abandon Pet and pet trainer fixes, confirm pop-ups that hold the controller, filter and Send glyphs that follow the controller
   layout, the Home info block (ammo at 0, bags used/total), and the cast bar's display text.
 - This edition's own settings (box under the dot, soft target) go back to their defaults with *Reset settings*.
+- **Add-ons you install on the Thor now reach the PC:** Settings > Add-ons' Polestar, Spoken, Manners (and QuestTrail) are installed
+  into the PC's WoW by the Linux helper, from their own pinned downloads (checked), before WoW starts. A folder you installed yourself
+  is left alone. Imported add-ons and QuestieDB updates still need DS Forever Desktop.
+- **Settings only show what works when streaming:** Frame limit / Frame generation and the Account group (they set up the Thor's own
+  game) are hidden.
 - **Buttons dead for up to a minute after login, a `/reload` or a stream reconnect:** the keyboard-shortcut handshake was asked for only
   when a button was pressed, at most every 10 s, by a click that is often lost; the presses meanwhile went as clicks and did nothing.
   A press now asks again after 2 s. Only your own presses ask: nothing is clicked on a timer any more, and after login the HUD

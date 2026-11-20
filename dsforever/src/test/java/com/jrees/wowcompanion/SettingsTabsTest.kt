@@ -11,6 +11,12 @@ private typealias B = SettingsTabs.Block
 private typealias G = SettingsTabs.Group
 
 class SettingsTabsTest {
+    // Linux Edition 2026-11-20: these tests check upstream's General / Performance layout; stream-only hides the Account group and the
+    // frame tiles (StreamOnlySettingsTest checks that), so they run with STREAM_ONLY off
+    private var lxWas = StartMode.STREAM_ONLY
+    @org.junit.Before fun lxUpstream() { lxWas = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false }
+    @org.junit.After fun lxBack() { StartMode.STREAM_ONLY = lxWas }
+
     /** hub17 THE HUD-MODE SPLIT: the user's defaults (player / target frames hidden, nameplates on, the resource bar on), and the taps:
      *  a switch is tapped when the game's word differs from the choice or the game has not had it since its /reload, absolutely */
     @Test fun hudSplitDefaultsAndTaps() {
@@ -239,7 +245,7 @@ class SettingsTabsTest {
         assertTrue(T.PERFORMANCE in SettingsTabs.visible)
         assertEquals(T.PERFORMANCE, SettingsTabs.step(T.ADDONS, 1))
         // Linux Edition 2026-11-20: stream-only hides the Thor game's Frame limit and generation block
-        val want = if (StartMode.STREAM_ONLY) listOf(B.LIGHTER, B.INDOOR, B.STREAMING) else listOf(B.FRAMES, B.LIGHTER, B.INDOOR, B.STREAMING)
+        val want = listOf(B.FRAMES, B.LIGHTER, B.INDOOR, B.STREAMING)          // (upstream's; stream-only: StreamOnlySettingsTest)
         assertEquals(want, SettingsTabs.blocks(T.PERFORMANCE))
     }
 

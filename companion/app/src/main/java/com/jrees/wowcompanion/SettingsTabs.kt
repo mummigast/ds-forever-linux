@@ -217,6 +217,9 @@ object SettingsTabs {
         b == Block.ADDON_VOICE -> VoiceModels.offered()
         // Linux Edition 2026-11-20: frame limit / generation / performance mode / restart the game are the Thor's own game's (stream-only: none)
         b == Block.FRAMES && StartMode.STREAM_ONLY -> false
+        // Linux Edition 2026-11-20 (the user: "hide 1"): the Account group signs in the Thor's own game (its saved login, game account,
+        // Windows ID, Browser login); the Linux helper starts WoW through the PC's own Battle.net and never uses them
+        StartMode.STREAM_ONLY && b.group == Group.ACCOUNT -> false
         !Settings.ROUTE_MODES_ON -> b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL
         // 2026-11-12 (the user: "remove ... quest trail from the options"): QuestTrail is never offered; a copy a player installed keeps
         // its block (its Uninstall) while it is there or on its way in

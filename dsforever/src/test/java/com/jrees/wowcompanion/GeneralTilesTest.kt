@@ -15,6 +15,12 @@ private typealias Row = GeneralTiles.Row
 private typealias Slot = GeneralTiles.Slot
 
 class GeneralTilesTest {
+    // Linux Edition 2026-11-20: these tests check upstream's General / Performance layout; stream-only hides the Account group and the
+    // frame tiles (StreamOnlySettingsTest checks that), so they run with STREAM_ONLY off
+    private var lxWas = StartMode.STREAM_ONLY
+    @org.junit.Before fun lxUpstream() { lxWas = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false }
+    @org.junit.After fun lxBack() { StartMode.STREAM_ONLY = lxWas }
+
 
     @Test fun lookRowSlots() {
         assertEquals(listOf(Slot(GeneralTiles.THEME, true), Slot(GeneralTiles.SWAP), Slot(GeneralTiles.VOICE)), GeneralTiles.slots(true))

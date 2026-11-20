@@ -57,6 +57,8 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Friendly plates On = every friendly plate, through fights (upstream: only the target's, alpha 0 for the rest) | `WowCompanion/Trail.lua` (ag15) |
 | Soft-target object tooltip on; account macros *DSF Soft On/Off* for the tooltip settings WoW Forever accepts; `/wcsoft` | `WowCompanionHub/Hub.lua` (hub71) |
 | While the key handshake is missing (after login, a `/reload` or a stream reconnect), a press asks for it again after 2 s, not 10 s (only the player's own presses ask: no clicks on a timer) | `companion/.../TapBridge.kt` |
+| Stream-only hides what only the Thor's own game uses: Performance's Frame limit and Frame generation, General's Account group (saved login, game account, Windows ID, Browser login) | `PerformanceTiles.kt`, `SettingsTabs.kt` (`shown`), `GeneralTiles.kt` |
+| **The Thor's add-ons on the PC**: the helper answers `addons_want` like DS Forever Desktop for the managed packages (Polestar, Spoken, Manners, QuestTrail): each only from its own pinned source, size + sha256 checked, staged, never over a folder of yours, old copies to `AddOns-backup-dsforever`, never while WoW runs (before the next start / when it closes), on/off into AddOns.txt for its own folders. Not done: QuestieDB updates, imported add-ons | `linux-helper/pc_addons.py`, `dsf_bridge.py` |
 | Upstream's Reset knows this edition's saved switches (`dotBoxOff`, `softTgtOff` = settings; `softTgt`, `dotBox` = never) | `companion/.../ResetPlan.kt` |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |

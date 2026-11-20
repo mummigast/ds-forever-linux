@@ -26,7 +26,7 @@ if ENV_FILE.exists():
 
 import websockets
 import paircode, wow_linux
-import addons
+import addons, pc_addons
 from websockets.asyncio.server import serve
 
 PROTO = 1
@@ -266,6 +266,28 @@ async def addon_pass(force=False, allow_new=False, thor_set=0):
         if thor_set and addons.installed_set(ADDONS_DIR) < thor_set:
             msg += f" (the Thor has set {thor_set}; update this bridge's add-on source)"
         return msg
+# ---------------------------------------------------------------- the Thor's add-ons on the PC (pc_addons.py; Linux Edition 2026-11-20)
+PC_ADDONS_REC = STATE.parent / "pc-addons.json"
+PC_ADDONS_CACHE = Path.home() / ".cache/dsf-bridge/pc-addons"
+pc_want = {"m": None}                                 # the latest "addons_want" (run again before WoW starts and when it closes)
+
+async def pc_addons_pass(ws=None):
+    m = pc_want["m"]
+    if not m:
+        return
+    async with addon_lock:
+        try:
+            res = await asyncio.to_thread(pc_addons.run, m, GAME_DIR, PC_ADDONS_REC, PC_ADDONS_CACHE, wow_running(), log)
+        except Exception as e:
+            res = {"t": "addons_pc", "state": "done", "ok": False, "line": f"add-ons on the PC failed: {e}", "items": []}
+    try:
+        if ws is not None:
+            await send(ws, res)
+        else:
+            await broadcast([res])
+    except Exception:
+        pass
+
 START_CMD = os.environ.get("DSF_START_CMD")   # optional: your own shell command that starts WoW Forever
 wow_start = {"state": None, "why": "", "at": 0.0}
 
@@ -293,6 +315,7 @@ async def start_wow(retried=False):
     if wow_running() or wow_start["state"] == "starting" or time.time() - wow_start["at"] < 120:
         return
     wow_start.update(state="starting", why="", at=time.time())
+    await pc_addons_pass()                            # the Thor's wanted add-ons in before WoW reads its AddOns folder
     await broadcast([{"t": "wow", **_info()["wow"]}, {"t": "status", "text": "Starting WoW on your PC…"}])
     log("Starting WoW Forever")
     try:
@@ -619,6 +642,9 @@ async def handle(ws):
             elif t == "unpair":
                 state["devices"].pop(device, None); save_state(state)
                 await send(ws, {"t": "unpaired"}); await ws.close(); return
+            elif t == "addons_want":
+                pc_want["m"] = m
+                spawn(pc_addons_pass(ws))
             elif t == "addons_status":
                 await send(ws, {"t": "addons", "result": f"PC set {addons.installed_set(ADDONS_DIR) or 'none'}"})
             elif t == "addons_install":
@@ -707,6 +733,8 @@ async def wow_loop():
             thor_seen, alone_since = False, None
             await asyncio.sleep(2); continue
         key = (w["state"], w["screen"], w["bnet"], w["login_error"])
+        if last is not None and last[0] == "running" and not w["running"]:
+            spawn(pc_addons_pass())                   # WoW closed: what waited goes in now
         if key != last:
             if sessions and w["running"] and (last is None or last[0] != "running"):
                 await asyncio.to_thread(wow_linux.focus_window)      # its window just appeared: bring it to the stream
