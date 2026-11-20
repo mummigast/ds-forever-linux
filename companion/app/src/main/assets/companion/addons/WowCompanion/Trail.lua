@@ -5687,7 +5687,7 @@ do
                 if st then okE, whyE = R.eligible(m, st.tok) end
                 local plate
                 if okE then
-                    local okP, p = pcall(function() return C_NamePlate.GetNamePlateForUnit(st.tok) end)
+                    local okP, p = pcall(C_NamePlate.GetNamePlateForUnit, st.tok)      -- beta: no closure per mob per frame
                     plate = okP and p or nil
                     if not plate then okE, whyE = false, "no plate" end
                 end
@@ -5711,7 +5711,7 @@ do
                     local o = tint(m.s)
                     -- at7 (the user: "The aggro tint is still showing hovering over targeted mobs instead of on the target frame"): the
                     -- TARGET's tint goes round Hub's target bar while it shows (the same HUD bar outline), never over its plate
-                    local okT, isT = pcall(function() return UnitIsUnit(st.tok, "target") == true end)
+                    local okT, isT = pcall(UnitIsUnit, st.tok, "target"); isT = isT == true      -- beta: no closure per mob per frame
                     local tbHp = nil
                     -- at9 (the user, 2026-11-13: the target's plate "transitions ... to the top of the screen"): while Hub's copy flies up
                     -- (WC.uf.flying) the target's tint is down - on neither the hidden plate nor a bar not shown yet - and fades in on
