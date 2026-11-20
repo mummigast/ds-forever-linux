@@ -1,18 +1,22 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 414). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## 2026-11-20 (evening): linux-v1.0.37.3 (DRAFT: not released yet)
+## Unreleased (main)
 
-- **Smoother play: the add-ons' big updates no longer land in one frame.** A hitch watcher found a 140-200 ms frame every 15 s
-  (the heartbeat: the full document and 18 add-ons re-sending their lists at once) and a ~110 ms frame at every fight's start. That
-  work is now spread over the following frames, one heavy job per frame, and the full document is built from its parts (the
-  layout used to be encoded three times per update). Measured in game: the heartbeat frame ~45 ms, a fight's start 2 x ~65 ms.
+- The full document is built from its parts' JSON (the layout was encoded three times per update, now once); its parts' times go
+  into the hitch documents. Not tested in game yet.
+
+## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
+
 - **Selling, buying and using bag items work again while streaming.** They went as mouse clicks, which land on the spot WoW parks
   its cursor at after controller play; they are keyboard shortcuts now (Sell = UP UP, Buy and the bags = DOWN DOWN + a selector;
-  the bag cells are pressed through their own secure binding, out of combat only, as before).
-- **Buttons came back slowly after a `/reload`:** the keyboard-shortcut handshake is now asked by keys (when the app has a fresh
-  document from the game), not by a click that was often lost.
+  a bag cell is pressed through its own secure binding, out of combat only, as before). Needs this app and the add-on set 415.
+- **Buttons came back slowly after a `/reload`:** the keyboard-shortcut handshake is now asked by keys when the app has a fresh
+  document from the game, not by a click that was often lost.
+- **Less stutter:** the add-ons' big updates no longer land in one frame. The 15 s heartbeat (the full document plus 18 add-ons
+  re-sending their lists) cost a 140-200 ms frame; a fight's start one ~110 ms frame. That work is now spread over the following
+  frames, one heavy job per frame. Measured in game: the heartbeat frame ~45 ms, a fight's start 2 x ~65 ms.
 - **Typing in chat after a reload or reconnect:** the letters could land in another row of the tap pad (an old row map was used).
 - Diagnostics: "hitch" documents for frames over 40 ms (events, documents, per-add-on times), "perf" documents at a fight's start.
 
