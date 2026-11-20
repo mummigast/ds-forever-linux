@@ -714,15 +714,26 @@ local function keyFree(k)
     return a == "" or a == ours(k) or a == "CLICK " .. KEY_BTN .. ":" .. k
 end
 -- the proxy of key [k] (made once, out of combat): [col] = its column for a column key, nil for a row key
+-- (the review, 2026-11-20: the count and the pick carry their time, as the dispatcher's KEY_PAGE2_GAP / KEY_PICK_TTL: a DOWN whose column
+-- was lost must never pair with a much later DOWN, a selector whose column was lost never meet a later column)
 local ROW_SNIP = [[
+    local now = GetTime()
     local d = 0
-    if "%s" == "DOWN" then d = (owner:GetAttribute("downs") or 0) + 1; if d > 2 then d = 1 end end
+    if "%s" == "DOWN" then
+        d = owner:GetAttribute("downs") or 0
+        if d ~= 1 or now - (owner:GetAttribute("downsAt") or 0) > 0.3 then d = 0 end
+        d = d + 1
+        owner:SetAttribute("downsAt", now)
+    end
     owner:SetAttribute("downs", d)
     owner:SetAttribute("sel", nil)
 ]]
 local COL_SNIP = [[
+    local now = GetTime()
     local sel = owner:GetAttribute("sel")
+    if sel and now - (owner:GetAttribute("selAt") or 0) > 0.5 then sel = nil end
     local downs = owner:GetAttribute("downs") or 0
+    if downs == 2 and now - (owner:GetAttribute("downsAt") or 0) > 0.5 then downs = 0 end
     owner:SetAttribute("downs", 0)
     if sel then
         owner:SetAttribute("sel", nil)
@@ -732,17 +743,19 @@ local COL_SNIP = [[
         if not t then return false end
         local ty = t:GetAttribute("type")
         if not ty then return false end
-        self:SetAttribute("type-wcsec", ty)
-        self:SetAttribute("item-wcsec", t:GetAttribute("item"))
-        self:SetAttribute("macrotext-wcsec", t:GetAttribute("macrotext"))
-        self:SetAttribute("spell-wcsec", t:GetAttribute("spell"))
-        self:SetAttribute("unit-wcsec", t:GetAttribute("unit"))
+        -- "*": the game looks up <modifiers><name><suffix> first, and CTRL-SHIFT is held for every key of ours (the review)
+        self:SetAttribute("*type-wcsec", ty)
+        self:SetAttribute("*item-wcsec", t:GetAttribute("item"))
+        self:SetAttribute("*macrotext-wcsec", t:GetAttribute("macrotext"))
+        self:SetAttribute("*spell-wcsec", t:GetAttribute("spell"))
+        self:SetAttribute("*unit-wcsec", t:GetAttribute("unit"))
         self:SetAttribute("wcrow", sel)
+        self:SetAttribute("wcn", (self:GetAttribute("wcn") or 0) + 1)   -- the hook's signal (hooks see the ORIGINAL button)
         return "wcsec"
     end
     if downs == 2 then
         local fs = owner:GetAttribute("far%d")
-        if fs then owner:SetAttribute("sel", fs); return "wcsel" end      -- the dispatcher hears it as "wcsel": its far pick is spent
+        if fs then owner:SetAttribute("sel", fs); owner:SetAttribute("selAt", now); return "wcsel" end      -- the dispatcher hears it as "wcsel": its far pick is spent
     end
 ]]
 local function proxyFor(k, col)
@@ -763,8 +776,10 @@ local function proxyFor(k, col)
         -- the press used a far row's cell (button "wcsec"): that row's own once-per-tap work, as a click on the cell would run it
         -- (the bags' "bagsTap" proof); the secure action itself already ran on this proxy (a real key press: on its down edge)
         if col then
-            p:HookScript("OnClick", function(self, button)
-                if button ~= "wcsec" then return end
+            p:HookScript("OnClick", function(self)
+                local n = self:GetAttribute("wcn")              -- bumped by the snippet when it did a far cell's action
+                if n == nil or n == self.wcSeen then return end
+                self.wcSeen = n
                 local rn = self:GetAttribute("wcrow")
                 local r = rn and pad.rows[rn]
                 pad.pressT = clock()
@@ -969,7 +984,8 @@ local function keysDescribe()
             local r, sel = pad.rows[name], keys.colKey[i - 1]
             -- a secure one only while a binding click acts on the PRESS (ActionButtonUseKeyDown, the default): then a release that
             -- lands on a swapped cell (the selector's own) can never fire an item; with it off those rows stay clicks
-            if r and sel and not rows[name] and fits(r.row) and (not r.secure or (onRow(r) and (keys.hdr ~= nil or keyDownActs()))) then
+            local routed = keys.proxy and keys.proxy[sel] and keys.hdr ~= nil         -- the router really holds this selector's key
+            if r and sel and not rows[name] and fits(r.row) and (not r.secure or (onRow(r) and (routed or keyDownActs()))) then
                 rows[name] = fk .. " " .. fk .. " " .. sel
             end
         end

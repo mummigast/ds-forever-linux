@@ -282,7 +282,9 @@ object InputSink {
                         // behind it): each key is still HELD WCKEY_GAP_MS (the press must outlive a game frame), but the gaps around it
                         // are shorter: 3 ms after the modifiers, 5 ms between a release and the next press, 5 ms before the modifiers go
                         codes.forEachIndexed { i, k ->
-                            Thread.sleep(if (i == 0) WCKEY_LEAD_MS else WCKEY_BETWEEN_MS)
+                            // the same key again (DOWN DOWN, RIGHT RIGHT: a page-2 / far pick) keeps the full gap: two presses of one key
+                            // must not fall in one game frame (the review)
+                            Thread.sleep(if (i == 0) WCKEY_LEAD_MS else if (k == codes[i - 1]) WCKEY_GAP_MS else WCKEY_BETWEEN_MS)
                             s.key(k, true); Thread.sleep(WCKEY_GAP_MS); s.key(k, false)
                         }
                         Thread.sleep(WCKEY_BETWEEN_MS)

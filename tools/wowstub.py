@@ -148,7 +148,7 @@ ERRS = {}
 
 -- ---------------------------------------------------------------- the restricted environment (only what the snippets may use)
 local function newtable(...) return { ... } end
-RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tonumber = tonumber, type = type,
+RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tonumber = tonumber, type = type, GetTime = function() return GetTime() end,
                select = select, GetGamePadState = function() return { buttons = PADSTATE } end,
                SecureCmdOptionParse = function(s) return SecureCmdOptionParse(s) end }
 PADSTATE = {}
@@ -237,13 +237,18 @@ local function runMacro(text)
     end
 end
 -- a custom button name ("wcsec") reads "<name>-<button>" first, as SecureButton_GetModifiedAttribute's button suffix does
-local MOUSE = { LeftButton = true, RightButton = true, MiddleButton = true, Button4 = true, Button5 = true }
+-- SecureButton_GetModifiedAttribute: <prefix><name><suffix>, *<name><suffix>, <prefix><name>*, *<name>*, <name>. The prefix is the
+-- modifiers held (HELD_PREFIX, set while a CTRL-SHIFT-<key> binding is pressed), the suffix the button's ("1" left, "2" right,
+-- "3" middle, else "-<button>")
+local SUFFIX = { LeftButton = "1", RightButton = "2", MiddleButton = "3" }
 local function modAttr(f, name, button)
-    if type(button) == "string" and not MOUSE[button] then
-        local v = f.a[name .. "-" .. button]
+    local prefix = rawget(_G, "HELD_PREFIX") or ""
+    local suffix = (type(button) == "string" and button ~= "") and (SUFFIX[button] or ("-" .. button)) or ""
+    for _, k in ipairs({ prefix .. name .. suffix, "*" .. name .. suffix, prefix .. name .. "*", "*" .. name .. "*", name }) do
+        local v = f.a[k]
         if v ~= nil then return v end
     end
-    return f.a[name]
+    return nil
 end
 local function secureAct(f, button, down)
     local t = modAttr(f, "type", button)
@@ -267,6 +272,7 @@ local function secureAct(f, button, down)
                                      item = modAttr(f, "item", button) } end
 end
 function doClick(f, button, down, programmatic)
+    local origButton = button
     local reg = programmatic and true or false             -- Button:Click() (a "click" delegate) runs whatever RegisterForClicks says
     for _, c in ipairs(f.clicks) do
         if c == "AnyDown" and down then reg = true end
@@ -292,8 +298,9 @@ function doClick(f, button, down, programmatic)
     end
     if f.scripts.OnClick then f.scripts.OnClick(f, button, down) end
     if f._tpl:find("SecureActionButtonTemplate") then secureAct(f, button, down) end
-    for _, fn in ipairs(f.hooks.OnClick or {}) do fn(f, button, down) end
-    for _, fn in ipairs(f.hooks.PostClick or {}) do fn(f, button, down) end
+    -- HookScript's hooks get the click's ORIGINAL button (a wrap's new button reaches the inner handler only)
+    for _, fn in ipairs(f.hooks.OnClick or {}) do fn(f, origButton, down) end
+    for _, fn in ipairs(f.hooks.PostClick or {}) do fn(f, origButton, down) end
 end
 
 -- ---------------------------------------------------------------- bindings (override only; a spy table)
@@ -311,6 +318,12 @@ KEYOF = { GAMEPADACTIONBUTTON1 = "PADDLEFT", GAMEPADACTIONBUTTON2 = "PADDUP", GA
           GAMEPADACTIONBUTTON8 = "PAD1", OPENRADIAL = "PADFORWARD", TOGGLEUIFOCUS = "PADBACK" }
 function GetBindingKey(b) return KEYOF[b] end
 function press(key, down)
+    HELD_PREFIX = nil
+    local mods = type(key) == "string" and key:match("^((%u+%-)*)%w") or nil
+    if type(key) == "string" then
+        local m = key:match("^(.-%-)[^%-]+$")
+        if m then HELD_PREFIX = m:lower() end
+    end
     local a = BIND[key]
     if type(a) ~= "string" then return false end
     local name, mb = a:match("^CLICK ([%w_]+):(%S+)$")
