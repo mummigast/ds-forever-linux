@@ -33,7 +33,9 @@ pad.clearKeys()
 SetOverrideBinding(CreateFrame("Frame"), false, "CTRL-SHIFT-PAGEDOWN", "COMBATLOGPAGEDOWN")   -- as in the live game
 for _, n in ipairs({ "spick", "pause", "ibuy" }) do if not pad.rows[n] then pad.op(n, n, function() end) end end
 -- a stand-in bag row: cell c uses item 1000 + c (the real Bags.lua sets type/item the same way)
-pad.secureRow("bag0", 20, function(btn, col) btn:SetAttribute("type", "item"); btn:SetAttribute("item", "item:" .. (1000 + col)) end)
+BAGTAPS = {}
+pad.secureRow("bag0", 20, function(btn, col) btn:SetAttribute("type", "item"); btn:SetAttribute("item", "item:" .. (1000 + col)) end,
+              function(col) BAGTAPS[#BAGTAPS + 1] = col end)
 pad.bindKeys()
 FIRED = {}
 for name, r in pairs(pad.rows) do
@@ -81,65 +83,61 @@ check(fired() == ['ibuy:7'], "5: DOWN DOWN sel0 + column 7 = ibuy:7", '')
 tick(1)
 key('DOWN'); key(cols[4])
 check(fired() == ['spick:4'], "6: DOWN alone is still spick")
+def hdr(a):
+    return L.eval('WowCompanionPadKeyHdr:GetAttribute("%s")' % a)
+
+
+# pad28: the router. No rebinding: every key stays bound to its proxy; the bag cell is reached through the proxy's snippet
 tick(1)
 for k in ('DOWN', 'DOWN', cols[3]):
     key(k)
-check(L.eval('WowCompanion.pad.keys.swap ~= nil'), "7: the bag selector swapped the column keys")
-check(L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]).startswith('CLICK WCPadSec_bag0_5'), "8: column 5's key is bag0 cell 5's",
-      L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]))
+check(L.eval('WowCompanion.pad.keys.swap == nil') and hdr('sel') == 'bag0', "7: the bag selector is remembered by the router (no swap)",
+      hdr('sel'))
+check(L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]) == 'CLICK WCPadKeyP_%s:%s' % (cols[5], cols[5]),
+      "8: column 5's key stays bound to its proxy", L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]))
 key(cols[5])
 tick(0)
 got = actions()
-check(got == ['item:1005'], "9: the column key used bag0 slot 5's item (secure action)", got)
-check(L.eval('WowCompanion.pad.keys.swap == nil'), "10: released: the keys are the dispatcher's again")
-check(L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]) == 'CLICK WowCompanionPadKeys:' + cols[5], "11: column 5 bound back",
-      L.eval('GetBindingAction("CTRL-SHIFT-%s")' % cols[5]))
+check(got == ['item:1005'], "9: the column key used bag0 slot 6's item (the cell's secure action, via the router)", got)
+check(hdr('sel') is None and fired() == [], "10: the pick is spent; the dispatcher got no stray column")
 tick(1)
 key('INSERT'); key(cols[2])
-check(fired() == ['qact:2'], "12: an ordinary row after the swap still works")
-# a swap that is never used goes back by itself
+check(fired() == ['qact:2'], "11: an ordinary row after a bag press still works")
+# a pick whose column was lost: the next action's row key clears it
 tick(1)
 for k in ('DOWN', 'DOWN', cols[3]):
     key(k)
-tick(1.1)
-check(L.eval('WowCompanion.pad.keys.swap == nil'), "13: an unused swap goes back after KEY_SWAP_S")
-# the fight: PLAYER_REGEN_DISABLED (before the lockdown) puts the keys back; in the lockdown a bag pick is refused
+key('INSERT'); key(cols[4])
+check(fired() == ['qact:4'] and actions() == [], "12: a lost column: the next row key clears the pick (no item)")
+# IN A FIGHT: the whole point
 tick(1)
-for k in ('DOWN', 'DOWN', cols[3]):
+L.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true')
+for k in ('DOWN', 'DOWN', cols[3], cols[7]):
     key(k)
-L.execute('fire("PLAYER_REGEN_DISABLED")')
-check(L.eval('WowCompanion.pad.keys.swap == nil'), "14: PLAYER_REGEN_DISABLED unswaps")
-L.execute('COMBAT = true')
-tick(1)
-for k in ('DOWN', 'DOWN', cols[3], cols[5]):
+tick(0)
+got = actions()
+check(got == ['item:1007'], "13: IN COMBAT a bag item is used by keys", got)
+for k in ('DOWN', 'DOWN', cols[0], cols[2]):
     key(k)
-check(actions() == [] and L.eval('WowCompanion.pad.keys.swap == nil'), "15: in combat a secure far pick does nothing")
-L.execute('COMBAT = false')
+check(fired() == ['ibuy:2'], "14: in combat a PLAIN far row (ibuy) still goes through the dispatcher", '')
+key('DOWN'); key(cols[1])
+check(fired() == ['spick:1'], "15: in combat DOWN alone is still spick")
+L.execute('COMBAT = false; fire("PLAYER_REGEN_ENABLED")')
+check(not L.eval('#SNIPERR > 0'), "16: no snippet error", L.eval('SNIPERR[1]'))
 # keytest by keys answers the handshake
 tick(1)
 L.execute('SENT = {}') if L.eval('type(SENT)') == 'table' else None
 for k in ('DOWN', 'DOWN', cols[2], cols[0]):
     key(k)
 hs = [d for d in docs(L) if d.get('type') == 'padkeytest' and d.get('on')]
-check(bool(hs) and hs[-1].get('s') == KT['s'], "16: keytest:0 by keys answers the handshake with this session's token", hs[-1:] or '')
+check(bool(hs) and hs[-1].get('s') == KT['s'], "17: keytest:0 by keys answers the handshake with this session's token", hs[-1:] or '')
 
-# the selector's own release lands on the swapped cell (if the game routes it by the binding of now): no item, no unswap
-tick(1)
-L.execute('ACTIONS = {}')
-for k in ('DOWN', 'DOWN'):
-    key(k)
-L.execute('press("CTRL-SHIFT-%s", true)' % cols[3])          # the selector's press (dispatcher) ...
-L.execute('press("CTRL-SHIFT-%s", false)' % cols[3])         # ... its release, now on bag0 cell 3
-tick(0)
-check(actions() == [] and L.eval('WowCompanion.pad.keys.swap ~= nil'), "17: the selector's release fires nothing and keeps the swap")
-key(cols[3])
-tick(0)
-got = actions()
-check(got == ['item:1003'] and L.eval('WowCompanion.pad.keys.swap == nil'), "18: then bag0 slot 4 (column 3, = the selector) works", got)
-# ActionButtonUseKeyDown off: secure far rows are not published (the app clicks them)
+# ActionButtonUseKeyDown off: the router does not depend on it, the secure far rows stay published
 L.execute('_G.GetCVarBool = function(n) if n == "ActionButtonUseKeyDown" then return false end end')
 r2 = dict(L.eval('WowCompanion.pad.describe().keys')['rows'].items())
-check('bag0' not in r2 and 'ibuy' in r2, "19: key-up actions: no secure far row published, plain ones stay", r2.get('bag0'))
+check('bag0' in r2 and 'ibuy' in r2, "18: key-up setting off: the far rows (bags too) stay published", r2.get('bag0'))
+# the bag row's own tap work ran (its onClick: the bags' proof that a tap landed)
+check(L.eval('#BAGTAPS') >= 2, "19: the row's own tap work ran for each bag press", L.eval('#BAGTAPS'))
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
