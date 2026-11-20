@@ -2659,6 +2659,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // the add-ons speak after all: their notice goes
             if (::reportNotice.isInitialized && reportNotice.state is ReportNotice.State.AddonsOff) { reportNotice.hide(); SetupBridge.noticeAsking = false }
         }
+        // Linux Edition 2026-11-20 (the user: "cant type in guild-chat"; WoW's log: the chat's letters pressed "bagsort", two rows below
+        // "chs"): Chat taps by questsPad, which only a "quests" document refreshed - after a reload or a reconnect the backlog's OLD
+        // quests document set it with the old row map and no new one came. The pad is ONE shared grid: every CURRENT document that
+        // carries its row map refreshes it (a replayed one only fills it while there is none yet)
+        msg.optJSONObject("pad")?.let { p -> if (p.has("rows") && p.optJSONObject("rows")?.has("chq") == true && (current || questsPad == null)) questsPad = p }
         if (current) partyAsk(PartyModel.Ask.FIRST_DOC)
         if (current) GameLife.inWorld()                      // issue #12: the first current document = the game is in the world
         // memory relief 2 (the user's picks, 2026-11-14: "RELIEF AT ZONE CHANGES"): the add-on's loading-screen word (Core.lua core1);
@@ -2877,7 +2882,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (current && tradOpen()) targetRadial.onChatAnswer(msg)                          // q69: the pet's rename field (chat22)
             }
             "quests" -> msg.optJSONObject("q")?.let {
-                it.optJSONObject("pad")?.let { p -> questsPad = p }
+                it.optJSONObject("pad")?.let { p -> if (current || questsPad == null) questsPad = p }     // Linux Edition: a replayed one never over a live one
                 QuestItem.Cd.onQuests(it, current)          // q64: the quest items' cooldowns, before the views draw them
                 questsView.update(it); homeView.onQuests(it, current); mapView.onQuests(it); worldMapRoom.onQuests(it)
                 if (current) PreviewStage.feedQuests(it)
