@@ -2427,6 +2427,12 @@ local function routerCheck()
     if OV.rebind then OV.rebind = nil; R.lastBind = 0; pcall(routerBind, "uncommand") end      -- m41
     if not R.sbtn then routerStart() end
     local aside = windowOpen() or (roomHolder() and "room") or nil
+    -- beta (2026-11-20, the stutter review: this scanned dozens of bindings, each through a closure, every 0.1 s for ever): the step
+    -- aside / back stays at once (aside changed, a menu arm out), the scan for keys another owner took runs every SCAN_S (its re-take
+    -- is held to once a second anyway: R.lastBind below)
+    local nowT = GetTime()
+    if aside == R.aside and not R.menuAt and nowT - (R.scanAt or 0) < (R.SCAN_S or 0.5) then return end
+    R.scanAt = nowT
     local lost = false
     if not aside then
         for pos, key in pairs(face.keys) do

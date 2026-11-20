@@ -837,14 +837,19 @@ end
 -- ---------------------------------------------------------------- emission
 
 local lastCat, lastGf = nil, nil
+-- rider1 (beta 2026-11-20): heartbeat re-sends the last line unless dirty (no re-collect)
+local lastCatLine, catHbDirty = nil, true
 
 local function emitCatalogue(force)
+    catHbDirty = false      -- rider1: collected now
     local doc = WC.collectGfCatalogue()
     local key = WC.encode(doc)
     if key == lastCat and not force then return false end
     lastCat = key
     -- encode1: the key is the doc's JSON, sent as is (no second encode)
-    WC.send(WC.wrapJson and WC.wrapJson("gfcat", nil, "c", key, nil) or WC.encode({ type = "gfcat", c = doc }))
+    local line = WC.wrapJson and WC.wrapJson("gfcat", nil, "c", key, nil) or WC.encode({ type = "gfcat", c = doc })
+    lastCatLine = line      -- rider1
+    WC.send(line)
     return true
 end
 
@@ -868,7 +873,7 @@ end
 local queued, queuedPush, catDirty = false, false, false
 local function soon(push, cat)
     if push then queuedPush = true end
-    if cat then catDirty = true end
+    if cat then catDirty = true; catHbDirty = true end   -- rider1: catalogue events mark it dirty
     if queued then return end
     queued = true
     C_Timer.After(0.25, function()
@@ -992,7 +997,11 @@ end
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
     (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("GroupFinder1", function(reason)
-        if RIDE[reason] then emitCatalogue(true); emitState(true) end
+        if RIDE[reason] then
+            -- rider1 (beta 2026-11-20): heartbeat re-sends the last line unless dirty (no re-collect)
+            if reason == "heartbeat" and lastCatLine and not catHbDirty then WC.send(lastCatLine) else emitCatalogue(true) end
+            emitState(true)
+        end
         -- after an NPC window let the capture go, the room asks for it again (only while it still wants it)
         if retake then retake() end
     end)
@@ -1572,7 +1581,7 @@ if WC.pad then
     whoOptions()
     setupClose()
     -- a new UI scale moves every cell: re-publish the geometry at once
-    WC.pad.onLayout(function() soon(true) end)
+    WC.pad.onLayout(function() catHbDirty = true; soon(true) end)   -- rider1: slots in the catalogue follow the layout
 end
 
 hookWindow()
