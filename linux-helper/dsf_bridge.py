@@ -163,6 +163,15 @@ class Tailer:
     def __init__(self, path):
         self.path, self.asm = path, Assembler()
         self.offset, self.ino, self.head, self.carry = None, None, b"", b""
+    def unchanged(self):
+        """True when the log is exactly as last read (same file, same size): the 25 ms loop's check, cheap enough to run inline."""
+        if self.offset is None:
+            return False
+        try:
+            st = self.path.stat()
+        except FileNotFoundError:
+            return True
+        return st.st_ino == self.ino and st.st_size == self.offset
     def poll(self):
         """Return a list of messages (doc/gap/log restart)."""
         out = []
@@ -758,7 +767,7 @@ async def tail_loop():
     size = 0
     while True:
         try:
-            msgs = await asyncio.to_thread(tail.poll)
+            msgs = [] if tail.unchanged() else await asyncio.to_thread(tail.poll)   # beta: no thread hop while nothing changed
         except Exception as e:                  # MemoryError, odd file errors: log and keep following
             log("log follower:", e); msgs = []; await asyncio.sleep(2)
         if msgs:
