@@ -215,6 +215,8 @@ object SettingsTabs {
      *  Polestar and QuestTrail blocks are not shown (Spoken stays) */
     fun shown(b: Block): Boolean = when {
         b == Block.ADDON_VOICE -> VoiceModels.offered()
+        // Linux Edition 2026-11-20: frame limit / generation / performance mode / restart the game are the Thor's own game's (stream-only: none)
+        b == Block.FRAMES && StartMode.STREAM_ONLY -> false
         !Settings.ROUTE_MODES_ON -> b != Block.ADDON_POLESTAR && b != Block.ADDON_QUESTTRAIL
         // 2026-11-12 (the user: "remove ... quest trail from the options"): QuestTrail is never offered; a copy a player installed keeps
         // its block (its Uninstall) while it is there or on its way in

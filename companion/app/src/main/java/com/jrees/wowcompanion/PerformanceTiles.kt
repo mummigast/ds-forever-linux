@@ -45,8 +45,10 @@ object PerformanceTileModel {
     val ALL = SLOTS + Slot(STREAM)
 
     /** the slots shown for [s]: every slot, always (the user's ruling 2026-11-17: Stream settings shows in Local too, dimmed) */
+    // Linux Edition 2026-11-20 (the user: "yes hide it"): Frame limit and Frame generation set the game ON the Thor (its launch, the
+    // lsfg layer, which this edition does not even package); streaming they do nothing, so stream-only shows neither
     @Suppress("UNUSED_PARAMETER")
-    fun slots(s: State): List<Slot> = ALL
+    fun slots(s: State): List<Slot> = if (StartMode.STREAM_ONLY) ALL.filter { it.id != LIMIT && it.id != FG } else ALL
 
     /** a tile whose A opens a page instead of a band: Stream settings in Local (its one-line page) */
     fun opensPage(id: String, s: State): Boolean = id == STREAM && !s.streamOn

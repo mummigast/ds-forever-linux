@@ -238,7 +238,9 @@ class SettingsTabsTest {
     @Test fun performanceIsOnTheRow() {
         assertTrue(T.PERFORMANCE in SettingsTabs.visible)
         assertEquals(T.PERFORMANCE, SettingsTabs.step(T.ADDONS, 1))
-        assertEquals(listOf(B.FRAMES, B.LIGHTER, B.INDOOR, B.STREAMING), SettingsTabs.blocks(T.PERFORMANCE))
+        // Linux Edition 2026-11-20: stream-only hides the Thor game's Frame limit and generation block
+        val want = if (StartMode.STREAM_ONLY) listOf(B.LIGHTER, B.INDOOR, B.STREAMING) else listOf(B.FRAMES, B.LIGHTER, B.INDOOR, B.STREAMING)
+        assertEquals(want, SettingsTabs.blocks(T.PERFORMANCE))
     }
 
     /** moving a row changes only the tab that draws it: the ids its taps go by and the hub columns are the ones they were */

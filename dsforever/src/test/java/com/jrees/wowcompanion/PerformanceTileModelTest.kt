@@ -37,7 +37,21 @@ class PerformanceTileModelTest {
      * lines), its word "Open" as Top's Edit layout
      * (since the 11-17 ruling it shows in Local too: [streamSettingsShowsInLocalDimmed])
      */
+    /** Linux Edition 2026-11-20: stream-only shows no Frame limit / Frame generation (the Thor's own game's settings) */
+    @Test fun streamOnlyHidesTheThorGamesFrameTiles() {
+        val was = StartMode.STREAM_ONLY
+        try {
+            StartMode.STREAM_ONLY = true
+            assertEquals(listOf(M.MEM, M.INDOOR, M.STREAM), M.slots(PerformanceTileModel.State(streamOn = true)).map { it.id })
+            assertTrue(!SettingsTabs.shown(SettingsTabs.Block.FRAMES))
+        } finally { StartMode.STREAM_ONLY = was }
+    }
+
     @Test fun streamSettingsIsATile() {
+        val was = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false     // upstream's layout (Linux Edition: stream-only hides two)
+        try { streamSettingsIsATileUpstream() } finally { StartMode.STREAM_ONLY = was }
+    }
+    private fun streamSettingsIsATileUpstream() {
         val on = M.slots(PerformanceTileModel.State(streamOn = true))
         assertEquals(listOf(M.LIMIT, M.FG, M.MEM, M.INDOOR, M.STREAM), on.map { it.id })
         val g = M.grid(on, 1240f, -1, 0f)
@@ -60,6 +74,10 @@ class PerformanceTileModelTest {
      * off; dimmed, its word "Local", still a page (no band, no lines); set up, not dimmed and "Open"
      */
     @Test fun streamSettingsShowsInLocalDimmed() {
+        val was = StartMode.STREAM_ONLY; StartMode.STREAM_ONLY = false     // upstream's tiles (Linux Edition: stream-only hides two)
+        try { streamSettingsShowsInLocalDimmedUpstream() } finally { StartMode.STREAM_ONLY = was }
+    }
+    private fun streamSettingsShowsInLocalDimmedUpstream() {
         val local = PerformanceTileModel.State(streamOn = false)
         val set = PerformanceTileModel.State(streamOn = true)
         assertEquals(M.ALL, M.slots(local))
