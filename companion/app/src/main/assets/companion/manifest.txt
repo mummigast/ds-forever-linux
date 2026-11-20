@@ -1,9 +1,9 @@
 set 415
 7684f7ca245d9b43f71fc643db45dbe1  WowCompanion/ActionBar.lua
-ca09f930de4c45b3acbfd1ffbb7dda35  WowCompanion/Bags.lua
+94efbd8b7e0bf13985ffe02cf12c9e6b  WowCompanion/Bags.lua
 54397d535fa09a301496d15ebae0c312  WowCompanion/Chat.lua
 737413c5fe597fe3a9182316cea7ad04  WowCompanion/Coords.lua
-9baf0826622ffbcaa15b983ad5d357a5  WowCompanion/Core.lua
+ac4efda61af55b3a0e84b9dfd7fc8d6a  WowCompanion/Core.lua
 b4ff17e4d060b05d738663fbd96be570  WowCompanion/Harvest.lua
 1bd9700e3423d9f6db2fa24d5aac479e  WowCompanion/Map.lua
 4ed262b33e624e55e68fb4c82b620ac8  WowCompanion/MapArt.lua

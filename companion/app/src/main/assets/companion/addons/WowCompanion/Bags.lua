@@ -1320,6 +1320,9 @@ local function sendBags(reason)
     lastCtl = b.ctl and WC.encode(b.ctl) or nil
     WC.emit({ type = "full", v = WC.VERSION, reason = reason, bags = b })
 end
+-- beta B1a (2026-11-20, perf4 in game: a Core "full" spent ~14 ms, ~24 ms at a fight's end, re-collecting every bag slot): the JSON of the
+-- bags this file sent last - always the newest state, bags own their events - for Core to splice in place of its own collect
+function WC.bagsJsonNow() return lastBags end
 
 local function sendSoon(reason)
     if queued then return end
