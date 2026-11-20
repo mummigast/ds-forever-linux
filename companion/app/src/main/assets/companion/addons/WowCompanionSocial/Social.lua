@@ -1246,7 +1246,7 @@ end
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 local beats = 0
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Social1", function(reason)
         if not RIDE[reason] then return end
         local withGuild = reason ~= "heartbeat"
         if reason == "heartbeat" then

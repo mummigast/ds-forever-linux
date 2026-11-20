@@ -990,7 +990,7 @@ end
 -- own, and is how the app gets them back after the log rotates.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("GroupFinder1", function(reason)
         if RIDE[reason] then emitCatalogue(true); emitState(true) end
         -- after an NPC window let the capture go, the room asks for it again (only while it still wants it)
         if retake then retake() end

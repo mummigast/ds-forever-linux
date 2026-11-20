@@ -771,7 +771,7 @@ end
 -- Only on reasons that always emit; ACTIONBAR_* snapshots are usually deduped.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Spells1", function(reason)
         if RIDE[reason] then emitSpells(true) end
     end)
 end
@@ -3601,7 +3601,7 @@ end)
 MR.hookWindow()
 if type(WC.pad) == "table" and type(WC.pad.onLayout) == "function" then pcall(WC.pad.onLayout, function() if WC.pad.rows[MR.ROW] then MR.soon() end end) end
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Spells2", function(reason)
         if reason == "heartbeat" or reason == "login" then MR.soon() end
         MR.retake()
     end)

@@ -443,7 +443,7 @@ g:SetScript("OnEvent", function() if armed then disarm() end end)
 -- RIDE THE CORE HEARTBEAT (as Character.lua and Quests do): the whole list again, marked "full".
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Auras1", function(reason)
         if RIDE[reason] then pcall(emit, true) end
     end)
 end

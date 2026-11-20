@@ -189,7 +189,11 @@ local function start()
     -- rotates immediately. Position updates alone cannot rebuild the map -- they carry no
     -- quests, POIs or services -- so the room sat on "Waiting for the game" until the player
     -- happened to change zone. 15 s costs one flush; the alternative is a blank map.
-    C_Timer.NewTicker(15.0, function() WC.snapshot("heartbeat") end)
+    -- spread2 (2026-11-20): the beat's snapshot on a frame of its own too (its riders follow, one per frame: WC.onSnapshot)
+    C_Timer.NewTicker(15.0, function()
+        if type(WC.spread) == "function" then WC.spread("heartbeat", function() WC.snapshot("heartbeat") end)
+        else WC.snapshot("heartbeat") end
+    end)
 
     -- Chat: buffered, not per-message. The General channel alone can produce several lines a
     -- second and each emit would otherwise cost its own pad burst.

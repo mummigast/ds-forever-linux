@@ -1265,7 +1265,7 @@ end)
 -- snapshot's own pad burst. Only on reasons that always emit.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Hub1", function(reason)
         -- hub63: a part's own word holds between the app's taps (hub64: this session only): HS.apply changes only a part not where it should be
         -- (only while a part HAS a word: three riding parts are the old element, left alone between the app's taps)
         if RIDE[reason] then setup(); if hub.byId.hud and HS.anyWord() then pcall(HS.apply) end; ridersCheck(); cbCheck(); hmCheck(); emitHub(true) end

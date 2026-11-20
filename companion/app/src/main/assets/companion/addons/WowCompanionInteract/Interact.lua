@@ -2991,7 +2991,7 @@ end
 -- after the log rotates and drops a stale one if a close was ever missed. Our line is written
 -- inside the heartbeat's own frame, so it goes out in the same pad burst: no extra flush.
 if type(hooksecurefunc) == "function" and type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Interact1", function(reason)
         if reason == "heartbeat" then
             beat = true
             pcall(emitNow, true)

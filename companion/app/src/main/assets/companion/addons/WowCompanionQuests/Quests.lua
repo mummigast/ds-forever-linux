@@ -1764,7 +1764,7 @@ pcall(function() qf:RegisterEvent("PLAYER_ENTERING_WORLD") end)
 -- also call snapshot() and are usually deduped, and riding those would buy a flush each.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Quests1", function(reason)
         if RIDE[reason] then emitQuests(true) end
         if reason == "heartbeat" then pcall(pinsBeat); pcall(areasBeat) end   -- q22 / q33: the current map's documents again
     end)

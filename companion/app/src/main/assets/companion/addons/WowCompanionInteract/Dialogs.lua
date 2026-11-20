@@ -1003,7 +1003,7 @@ if type(hooksecurefunc) == "function" then
         pcall(hooksecurefunc, GamepadPopupHandler, "UpdateVisiblePopups", look)
     end
     if type(WC.snapshot) == "function" then
-        hooksecurefunc(WC, "snapshot", function(reason)
+        (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Dialogs1", function(reason)
             if reason == "heartbeat" then pcall(emit, true) end
         end)
     end

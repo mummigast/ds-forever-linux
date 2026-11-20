@@ -735,7 +735,7 @@ end
 -- RIDE THE CORE HEARTBEAT only while the room is open: the tree is a few kilobytes and the log's buffer is shared
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Talents1", function(reason)
         if RIDE[reason] and (open or reason == "login" or reason == "manual") then emitTree(true); emitDetail(true) end
     end)
 end

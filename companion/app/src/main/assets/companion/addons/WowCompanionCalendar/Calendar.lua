@@ -1119,7 +1119,7 @@ end
 -- flush of its own, and the day rolls over on the bottom screen within 15 s of midnight.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Calendar1", function(reason)
         if RIDE[reason] then emitCalendar(true); pump() end
         -- after an NPC window let the capture go, the room asks for it again (only while it still wants it)
         retake()

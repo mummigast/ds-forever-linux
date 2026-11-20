@@ -881,7 +881,7 @@ local riding = false
 local function ride()
     if riding or type(WC.snapshot) ~= "function" or type(hooksecurefunc) ~= "function" then return end
     riding = true
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Chat1", function(reason)
         if RIDE[reason] then
             dirty = false
             WC.send(WC.encode(document()))

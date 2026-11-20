@@ -828,7 +828,7 @@ end
 -- its own, and it is how the app gets them back after it restarts.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Professions1", function(reason)
         if RIDE[reason] then emit(true) end
     end)
 end

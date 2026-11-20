@@ -250,6 +250,19 @@ do
     function WC.spreadQueued() return #q end
 end
 
+-- spread2 (2026-11-20, perf3's hitch watcher: a ~140 ms frame at EVERY 15 s heartbeat, out of combat, no event: Core's full document
+-- and 18 add-ons' heartbeat riders -- each re-sending its whole list -- all ran in the one frame, inside WC.snapshot). A rider now
+-- hooks the snapshot through WC.onSnapshot(key, fn): fn(reason) runs on a later frame through WC.spread, one rider per frame, in
+-- the order asked. Same reasons, same documents, just not all at once. (key + reason: two different reasons both run.)
+function WC.onSnapshot(key, fn)
+    if type(WC.snapshot) ~= "function" then return false end
+    hooksecurefunc(WC, "snapshot", function(reason)
+        if type(WC.spread) ~= "function" then return fn(reason) end
+        WC.spread("ride:" .. key .. ":" .. tostring(reason), function() fn(reason) end)
+    end)
+    return true
+end
+
 -- ---------------------------------------------------------------- perf1 (Linux Edition 2026-11-20, the user: "a small stutter when i
 -- initiate combat", option 3: spread the combat-start work). MEASURE FIRST, READ ONLY: from the first PLAYER_REGEN_DISABLED handler
 -- (this file's frame registers before the other modules') to the next two frames: how long, how many documents were encoded and
@@ -303,4 +316,94 @@ do
         pcall(function() WC.send(WC.encode(r)) end)
     end)
     f:Hide()
+end
+
+-- ---------------------------------------------------------------- perf3 (Linux Edition 2026-11-20, the user: combat start "still stuttering,
+-- but ALOT less, check code for other instances of these stutters"). READ ONLY, A HITCH WATCHER: every frame that took > HITCH_MS
+-- (frame to frame, so it holds every event handler run in between) is reported as a "hitch" document: its ms, the events that fired
+-- in it (top 8 by count), the documents encoded in it by type (count, ms), bytes sent, the spread queue, and, where this client has
+-- C_AddOnProfiler, each add-on's own time in that frame (top 6). At most one per 2 s; the last 20 in WowCompanionDB.hitch.
+-- Loading screens are skipped (they are long frames by nature).
+do
+    local HITCH_MS, GAP_S = 40, 2
+    local H = { ev = {}, dt = {}, bytes = 0, last = 0, sentAt = -1e9, loading = false, n = 0 }
+    WC.hitch = H
+    local enc = WC.encode
+    if type(enc) == "function" then
+        WC.encode = function(t, ...)
+            local s0 = debugprofilestop()
+            local r = enc(t, ...)
+            local ty = type(t) == "table" and (rawget(t, "type") or "?") or "?"
+            local d = H.dt[ty]
+            if not d then d = { 0, 0 }; H.dt[ty] = d end
+            d[1] = d[1] + 1; d[2] = d[2] + (debugprofilestop() - s0)
+            return r
+        end
+    end
+    local snd = WC.send
+    WC.send = function(json, ...) if type(json) == "string" then H.bytes = H.bytes + #json end; return snd(json, ...) end
+    local evf = CreateFrame("Frame")
+    pcall(evf.RegisterAllEvents, evf)
+    evf:SetScript("OnEvent", function(_, e)
+        if e == "LOADING_SCREEN_ENABLED" then H.loading = true elseif e == "LOADING_SCREEN_DISABLED" then H.loading = false end
+        H.ev[e] = (H.ev[e] or 0) + 1
+    end)
+    local prof = type(C_AddOnProfiler) == "table" and type(C_AddOnProfiler.GetAddOnMetric) == "function"
+                 and type(Enum) == "table" and type(Enum.AddOnProfilerMetric) == "table" and Enum.AddOnProfilerMetric.LastTime
+    local names = nil
+    local function addonTimes()
+        if not prof then return nil end
+        if not names then
+            names = {}
+            local n = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns()) or 0
+            for i = 1, n do
+                local nm = C_AddOns.GetAddOnInfo(i)
+                if nm and C_AddOns.IsAddOnLoaded(i) then names[#names + 1] = nm end
+            end
+        end
+        local out = {}
+        for _, nm in ipairs(names) do
+            local ok, v = pcall(C_AddOnProfiler.GetAddOnMetric, nm, prof)
+            if ok and type(v) == "number" and v >= 1 then out[#out + 1] = { nm, math.floor(v * 10 + 0.5) / 10 } end
+        end
+        table.sort(out, function(a, b) return a[2] > b[2] end)
+        while #out > 6 do table.remove(out) end
+        return out
+    end
+    local function top(t, n, key)
+        local a = {}
+        for k, v in pairs(t) do a[#a + 1] = { k, v } end
+        table.sort(a, function(x, y) return key(x[2]) > key(y[2]) end)
+        local out = {}
+        for i = 1, math.min(n, #a) do out[i] = a[i] end
+        return out
+    end
+    local f = CreateFrame("Frame")
+    f:SetScript("OnUpdate", function()
+        local now = debugprofilestop()
+        local ms = now - H.last
+        H.last = now
+        if ms > HITCH_MS and not H.loading and H.last > 0 and GetTime() - H.sentAt >= GAP_S and ms < 5000 then
+            H.sentAt = GetTime(); H.n = H.n + 1
+            local docs = {}
+            for _, e in ipairs(top(H.dt, 8, function(v) return v[2] end)) do
+                docs[#docs + 1] = { e[1], e[2][1], math.floor(e[2][2] + 0.5) }
+            end
+            local evs = {}
+            for _, e in ipairs(top(H.ev, 8, function(v) return v end)) do evs[#evs + 1] = { e[1], e[2] } end
+            local r = { type = "hitch", v = "perf3", n = H.n, ms = math.floor(ms + 0.5), ev = evs, docs = docs, bytes = H.bytes,
+                        q = WC.spreadQueued and WC.spreadQueued() or -1, combat = InCombatLockdown() and true or false,
+                        fps = math.floor((GetFramerate and GetFramerate() or 0) + 0.5) }
+            local okA, at = pcall(addonTimes)
+            if okA and at then r.addons = at end
+            if type(WowCompanionDB) == "table" then
+                WowCompanionDB.hitch = WowCompanionDB.hitch or {}
+                table.insert(WowCompanionDB.hitch, r)
+                while #WowCompanionDB.hitch > 20 do table.remove(WowCompanionDB.hitch, 1) end
+            end
+            H.ev, H.dt, H.bytes = {}, {}, 0
+            pcall(function() WC.send(WC.encode(r)) end)
+        end
+        H.ev, H.dt, H.bytes = {}, {}, 0
+    end)
 end

@@ -1667,7 +1667,7 @@ local beats = 0
 local LIGHT = { win = true, xp = true, watch = true, who = true, st = true, pet = true, petinfo = true, sets = true,
                 tabs = true, str = true, grid = true, eqs = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Character1", function(reason)
         if not RIDE[reason] then return end
         -- the heartbeat heals a restarted app: the small parts every time; the long lists (statistics, reputations,
         -- skills, currency) every HEAVY_EVERY-th beat only (a real statistics tree is hundreds of rows), and all of it

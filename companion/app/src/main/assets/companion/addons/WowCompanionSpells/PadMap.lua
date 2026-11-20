@@ -6539,7 +6539,7 @@ if #missing > 0 then pcall(function() WC.send(WC.encode({ type = "cap", padmap =
 
 -- the map on login and on a manual snapshot (not on every heartbeat: it changes only when a button does)
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason) if reason == "login" or reason == "manual" then emit(true) end end)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("PadMap1", function(reason) if reason == "login" or reason == "manual" then emit(true) end end)
 end
 
 
@@ -7965,7 +7965,7 @@ local function partyMode()
     -- RIDE THE CORE HEARTBEAT (Chat.lua's pattern): an app restart loses nothing; they land in that snapshot's own push
     PM.RIDE = { heartbeat = true, login = true, zone = true, manual = true }
     if type(WC.snapshot) == "function" and type(hooksecurefunc) == "function" then
-        hooksecurefunc(WC, "snapshot", function(reason)
+        (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("PadMap2", function(reason)
             if PM.RIDE[reason] then
                 pcall(PM.sendCfg, reason, true)
                 PM.trySend(true, nil)

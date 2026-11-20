@@ -1126,7 +1126,7 @@ local function spellRadial()
     end)
     -- the document on login and on a manual snapshot (the app asks after a start)
     if type(WC.snapshot) == "function" then
-        hooksecurefunc(WC, "snapshot", function(reason) if reason == "login" or reason == "manual" then pcall(emit, true) end end)
+        (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Radial1", function(reason) if reason == "login" or reason == "manual" then pcall(emit, true) end end)
     end
 end
 spellRadial()

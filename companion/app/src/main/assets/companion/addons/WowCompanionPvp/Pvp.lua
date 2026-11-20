@@ -416,7 +416,7 @@ end
 -- every 15 s costs no flush. Only on reasons that always emit.
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }
 if type(WC.snapshot) == "function" then
-    hooksecurefunc(WC, "snapshot", function(reason)
+    (WC.onSnapshot or function(_, fn) hooksecurefunc(WC, "snapshot", fn) end)("Pvp1", function(reason)
         if RIDE[reason] then pcall(emitPvp, true) end
     end)
 end
