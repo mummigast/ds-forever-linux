@@ -550,7 +550,8 @@ local function emit(force)
     local key = WC.encode(doc)
     if key == lastKey and not force then return false end
     lastKey = key
-    WC.send(WC.encode({ type = "padmap", v = PV, m = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("padmap", PV, "m", key, nil) or WC.encode({ type = "padmap", v = PV, m = doc }))
     return true
 end
 

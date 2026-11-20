@@ -696,7 +696,8 @@ local function emitSpells(force)
     local key = WC.encode(doc)
     if key == lastKey and not force then return false end
     lastKey = key
-    WC.send(WC.encode({ type = "spells", v = SV, s = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("spells", SV, "s", key, nil) or WC.encode({ type = "spells", v = SV, s = doc }))
     return true
 end
 

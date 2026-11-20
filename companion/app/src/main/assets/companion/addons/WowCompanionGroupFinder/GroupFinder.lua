@@ -843,7 +843,8 @@ local function emitCatalogue(force)
     local key = WC.encode(doc)
     if key == lastCat and not force then return false end
     lastCat = key
-    WC.send(WC.encode({ type = "gfcat", c = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("gfcat", nil, "c", key, nil) or WC.encode({ type = "gfcat", c = doc }))
     return true
 end
 

@@ -651,7 +651,8 @@ local function emitPart(part, force)
     if key == lastKey[part] and not force then return false end
     lastKey[part] = key
     lastSent[part] = GetTime()
-    WC.send(WC.encode({ type = "social", v = SOV, k = part, s = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("social", SOV, "s", key, { k = part }) or WC.encode({ type = "social", v = SOV, k = part, s = doc }))
     return true
 end
 

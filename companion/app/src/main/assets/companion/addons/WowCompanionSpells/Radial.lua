@@ -438,7 +438,8 @@ local function emit(force, now)
     local key = WC.encode(doc)
     if key == lastKey and not force then return false end
     lastKey = key
-    WC.send(WC.encode({ type = "radial", v = RV, r = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("radial", RV, "r", key, nil) or WC.encode({ type = "radial", v = RV, r = doc }))
     if now and type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
     return true
 end
@@ -962,7 +963,8 @@ local function spellRadial()
         local key = WC.encode(doc)
         if key == lastKey and not force then return false end
         lastKey = key
-        WC.send(WC.encode({ type = "sradial", v = SRV, r = doc }))
+        -- encode1: the key is the doc's JSON, sent as is (no second encode)
+        WC.send(WC.wrapJson and WC.wrapJson("sradial", SRV, "r", key, nil) or WC.encode({ type = "sradial", v = SRV, r = doc }))
         -- `now` (an opening, Radial r10): flushed at once, so the app has the list before any press
         if now and type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
         return true

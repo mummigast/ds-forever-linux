@@ -652,7 +652,8 @@ local function emit(force)
         local key = WC.encode(rec)
         if key ~= lastRec or force then
             lastRec = key
-            WC.send(WC.encode({ type = "profrec", p = rec }))
+            -- encode1: the key is the doc's JSON, sent as is (no second encode)
+            WC.send(WC.wrapJson and WC.wrapJson("profrec", nil, "p", key, nil) or WC.encode({ type = "profrec", p = rec }))
             wrote = true
         end
     end
@@ -660,7 +661,8 @@ local function emit(force)
     local key = WC.encode(prof)
     if key ~= lastProf or force then
         lastProf = key
-        WC.send(WC.encode({ type = "prof", p = prof }))
+        -- encode1: the key is the doc's JSON, sent as is (no second encode)
+        WC.send(WC.wrapJson and WC.wrapJson("prof", nil, "p", key, nil) or WC.encode({ type = "prof", p = prof }))
         wrote = true
     end
     return wrote
