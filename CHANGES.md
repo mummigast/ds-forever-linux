@@ -1,6 +1,6 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 ## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
 
