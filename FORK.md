@@ -61,7 +61,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | **Normal game UI** switch (Settings > Top screen > Game windows): minimap, chat, tracker and cast bar back in one tap; `/wcui reset` typed in the game's chat brings back the whole UI | `GameUi.kt`, `GameUiSection.kt`, `Hub.lua` |
 | No top-screen taps under a loading screen (`LoadGate`, from the add-on's loading-screen reports); while streaming the login's one restore tap waits for the key handshake (at most 15 s) | `companion/.../LoadGate.kt`, `GameUi.kt`, `TapBridge.kt` |
 | The app never downloads a game client onto the device (no automatic update for the local game) | `StartMode.kt` (`STREAM_ONLY`), `WoWForeverScreen.kt` |
-| **Box under the dot** (2026-11-19): the game's tooltip for the unit under the reticle (`mouseover` > `softenemy` > `softfriend`), never over a tooltip someone else shows; a switch in the Tooltips tile's band (`dotbox on/off` cells on `iact`), `/wcbox` | `WowCompanionHub/Hub.lua` (hub72-73), `WowCompanionInteract/Interact.lua` (i167), `HomeSettings.kt` (`DotBoxSwitch`), `GameUiSection.kt`, `GameUiTiles.kt`, `CompanionHost.kt`, `SettingsPad.kt` |
+| **Ranged tooltips** (2026-11-19, called "Box under the dot" until 2026-11-21): the game's tooltip for the unit under the reticle (`mouseover` > `softenemy` > `softfriend`), never over a tooltip someone else shows; a switch in the Tooltips tile's band (`dotbox on/off` cells on `iact`), `/wcbox` | `WowCompanionHub/Hub.lua` (hub72-73), `WowCompanionInteract/Interact.lua` (i167), `HomeSettings.kt` (`DotBoxSwitch`), `GameUiSection.kt`, `GameUiTiles.kt`, `CompanionHost.kt`, `SettingsPad.kt` |
 | Loot window "top screen" holds in fights too (upstream's i144 sends fight loot to the bottom screen) | `WowCompanionInteract/Interact.lua` (i166, `LOOT.top`) |
 | Friendly plates On = every friendly plate, through fights (upstream: only the target's, alpha 0 for the rest) | `WowCompanion/Trail.lua` (ag15) |
 | Soft-target object tooltip on; account macros *DSF Soft On/Off* for the tooltip settings WoW Forever accepts; `/wcsoft` | `WowCompanionHub/Hub.lua` (hub71) |
@@ -83,7 +83,7 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | (beta 1.0.37.5-beta.2) **The auction house is the game's own window** (Interact `WINDOWS.auction = false`: not hidden, the controller not taken, no mirror document); the bottom screen types its search box through Chat's lent field (Done = SetText only, the search is the player's press) and shows your auctions / recent purchases read only (`doc.ahinfo`). The app's own auction-house screen is no longer used | `WowCompanionInteract/Interact.lua` (i180-i181), `AhPanel.kt`, `CompanionHost.kt` |
 | (beta 1.0.37.5-beta.2) **Sticky typing rows**: chq / chr / chs stay picked after a column (2 s), so a word is the row's keys once, then one key per letter; key presses skip the click double-tap guard | `TapPad.lua` (pad34), `TapKeys.kt` |
 | (beta 1.0.37.5-beta.2) More rows by keys: the Auras pick, the Talents rows, the chat rows | `TapPad.lua` (pad32-33) |
-| (beta 1.0.37.5-beta.2) The box under the dot takes over the game's leftover world tooltip of another unit; blocks traced | `WowCompanionHub/Hub.lua` (hub75) |
+| (beta 1.0.37.5-beta.2) Ranged tooltips take over the game's leftover world tooltip of another unit; blocks traced | `WowCompanionHub/Hub.lua` (hub75) |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
@@ -113,7 +113,7 @@ The Samsung perfsdk jar RELEASE_NOTICES.md mentions is not in this source snapsh
 - **"Normal game UI" doesn't bring back a hidden player, target or party frame**; `/wcui reset` in the game's chat does.
 - Right after connecting, the camera may turn by itself until the right stick is moved (cause not settled; not being worked on).
 - **Soft targeting is the controller's only** in WoW Forever (`SoftTargetEnemy`, its range and `SoftTargetInteract` are secure, even
-  from a macro): the box under the dot only ever sees enemies (`softenemy`), never friendly units or NPCs.
+  from a macro): ranged tooltips get enemies through `softenemy`, friendly units and NPCs only through their nameplates (Friendly plates On).
 
 ## Untested
 
@@ -130,7 +130,7 @@ Tested on the Thor (2026-11-21, 1.0.37.4): every shortcut through the secure rou
 fight, the one-step bag slot pick, vendor buy / sell, quests, HUD switches, chat item links, fights (stutter).
 
 Tested on the Thor (2026-11-19): DS Forever 1.0.36 (relog HUD, keys, power button), loot window on top in fights, every friendly
-plate, the box under the dot with quest lines (its Settings switch: not yet).
+plate, the box under the dot (now Ranged tooltips) with quest lines (its Settings switch: not yet).
 
 Tested on the Thor (2026-11-17/18): quests (pick, accept, reward), Sell junk, Repair, buy and sell, player and target frames,
 nameplates, Reload UI, 1.0.34's Edit layout (move + Save), Buffs and Cooldown Manager switches, an instant relog with the layout kept, per-character settings, Normal game UI on/off.

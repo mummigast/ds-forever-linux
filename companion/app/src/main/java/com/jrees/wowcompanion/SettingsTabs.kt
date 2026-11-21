@@ -124,7 +124,7 @@ object SettingsTabs {
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
             "Game tooltips",
             // lx2 (Linux Edition, 2026-11-19): the Tooltips tile's band row
-            "Box under the dot",
+            "Ranged tooltips",      // 2026-11-21: was "Box under the dot" (the user: "doesn't really make sense")
             "Cast bar", "Player frame", "Target frame",
             // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): three tiles where one was
             "Controller UI", "Buffs", "XP bar",

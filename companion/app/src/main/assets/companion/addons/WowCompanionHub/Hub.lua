@@ -4879,7 +4879,7 @@ SlashCmdList["WCBOX"] = function(arg)
     if arg == "on" then WowCompanionDB.dotBoxOff = nil elseif arg == "off" then WowCompanionDB.dotBoxOff = true
     else WowCompanionDB.dotBoxOff = DB.on() or nil end
     if not DB.on() then DB.hide() end
-    print("DS Forever: the dot's box " .. (DB.on() and "ON" or "OFF"))
+    print("DS Forever: ranged tooltips " .. (DB.on() and "ON" or "OFF"))
 end
 do
     local f = CreateFrame("Frame")

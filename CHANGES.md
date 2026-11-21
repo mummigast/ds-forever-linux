@@ -11,8 +11,8 @@ On top of beta.1. Built and passing the tests; the auction house is new and not 
   game's search box; press the game's Search with the controller), and see your auctions and what you bought lately (read only).
 - **Fewer automated inputs:** typing (the auction-house search, the app's chat) is the row's keys once, then one key per letter
   (was four keys per letter, or a click per letter before); the Auras pick and the Talents rows go as keys too.
-- **The box under the dot** takes over the game's leftover tooltip of another unit (it used to step aside for it), and notes what
-  else stood in its way, for the next look.
+- **"Box under the dot" is now called "Ranged tooltips"** (*Settings > Top screen > Tooltips*; `/wcbox` still switches it). It takes
+  over the game's leftover tooltip of another unit (it used to step aside for it), and notes what else stood in its way.
 
 ## Beta: linux-v1.0.37.5-beta.1, add-on set 418 (pre-release; the stable line is main / the latest release)
 
