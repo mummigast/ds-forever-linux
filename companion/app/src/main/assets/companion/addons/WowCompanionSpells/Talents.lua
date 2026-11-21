@@ -474,7 +474,8 @@ local function emitTree(force)
     local key = WC.encode(doc)
     if key == lastKey and not force then return false end
     lastKey = key
-    WC.send(WC.encode({ type = "talents", v = TV, t = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("talents", TV, "t", key, nil) or WC.encode({ type = "talents", v = TV, t = doc }))
     return true
 end
 function emitDetail(force)          -- the local declared above (waitForText's)
@@ -483,7 +484,8 @@ function emitDetail(force)          -- the local declared above (waitForText's)
     if key == lastSelKey and not force then return false end
     lastSelKey = key
     -- `sch` = the school the addon counts touch picks in: the app holds Add / Remove until this echoes its pick (pad owner's note)
-    WC.send(WC.encode({ type = "talentsel", v = TV, sch = school, sel = d }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("talentsel", TV, "sel", key, { sch = school }) or WC.encode({ type = "talentsel", v = TV, sch = school, sel = d }))
     return true
 end
 

@@ -232,6 +232,10 @@ fun WoWForeverScreen(
     var switchFn: (suspend () -> Boolean)? = null
 
     suspend fun fetchVersionStatus() {
+        // Linux Streaming Edition 2026-11-20 (the user: "it wanted some update ... downloading wow arm-64": a folder left on the Thor from
+        // before streaming was patched / moved to the launch client): the game runs on the PC, so the Thor's copy is never checked,
+        // switched or updated (no CDN asks, no download); the PC's Battle.net patches the PC's game
+        if (com.jrees.wowcompanion.StartMode.STREAM_ONLY) { versionStatus = null; isCheckingVersion = false; return }
         switchFn?.invoke()
         isCheckingVersion = true
         // the region the player picked decides the build checked (the user, 2026-11-11: regions fix), else the install's own
@@ -550,6 +554,7 @@ fun WoWForeverScreen(
      * start. True = the folder now runs the launch client.
      */
     suspend fun switchIfDue(): Boolean {
+        if (com.jrees.wowcompanion.StartMode.STREAM_ONLY) return false   // Linux Streaming Edition: no client on the device (above)
         val root = File(gamePath)
         if (isUpdating || isLaunching || !files.hasStorageAccess) return false
         if (!withContext(Dispatchers.IO) { runCatching { com.jrees.wowcompanion.WowSwitch.due(root) }.getOrDefault(false) }) return false
@@ -697,6 +702,7 @@ fun WoWForeverScreen(
     }
 
     fun performUpdate() {
+        if (com.jrees.wowcompanion.StartMode.STREAM_ONLY) { setupLog("update: refused (streaming: the PC's game is patched by Battle.net)"); return }
         // a Stop pressed before the download began (the art run's stop, the queue) wins: never wiped by the start below
         if (updateStop.get()) { stopBeforeDownload(); return }
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not

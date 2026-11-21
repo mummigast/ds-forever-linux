@@ -79,5 +79,14 @@ T = L.eval('WowCompanion.snapT')
 check(T['sent'] and T['reason'] == 'ACTIONBAR_UPDATE_USABLE' and all(T[k] is not None for k in ('bar', 'map', 'bags', 'player', 'send')),
       "6: WC.snapT has each part's time", dict(T.items()))
 
+# beta B1a: the bags' own last document is spliced in (no second collect)
+L.execute('WowCompanion.bagsJsonNow = function() return \'{"bags":[{"bag":0,"slots":20,"free":9}],"ctl":{"x":1}}\' end; '
+          'WowCompanion.collectBags = function() error("collected again") end')
+n0 = len(docs(L))
+L.execute('WowCompanion.snapshot("manual")')
+got = [d for d in docs(L)[n0:] if d.get('type') == 'full']
+check(len(got) == 1 and got[-1]['bags'] == {"bags": [{"bag": 0, "slots": 20, "free": 9}], "ctl": {"x": 1}},
+      "7: the bags' last document is spliced, no second collect", got[-1:] or '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

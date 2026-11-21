@@ -156,6 +156,7 @@ function compileSnippet(body, args)
     local fn, err = loadstring("local " .. args .. " = ...\n" .. body, "=snippet")
     if not fn then error("snippet does not compile: " .. tostring(err)) end
     setfenv(fn, setmetatable({}, { __index = function(_, k)
+        if k == "owner" and SNIP_OWNER then local H = rawget(_G, "handle"); return H and H(SNIP_OWNER) or SNIP_OWNER end
         local v = RESTRICTED[k]
         if v == nil then error("the restricted environment has no '" .. tostring(k) .. "'", 2) end
         return v
@@ -235,20 +236,44 @@ local function runMacro(text)
         end
     end
 end
+-- a custom button name ("wcsec") reads "<name>-<button>" first, as SecureButton_GetModifiedAttribute's button suffix does
+-- SecureButton_GetModifiedAttribute: <prefix><name><suffix>, *<name><suffix>, <prefix><name>*, *<name>*, <name>. The prefix is the
+-- modifiers held (HELD_PREFIX, set while a CTRL-SHIFT-<key> binding is pressed), the suffix the button's ("1" left, "2" right,
+-- "3" middle, else "-<button>")
+local SUFFIX = { LeftButton = "1", RightButton = "2", MiddleButton = "3" }
+local function modAttr(f, name, button)
+    local prefix = rawget(_G, "HELD_PREFIX") or ""
+    local suffix = (type(button) == "string" and button ~= "") and (SUFFIX[button] or ("-" .. button)) or ""
+    for _, k in ipairs({ prefix .. name .. suffix, "*" .. name .. suffix, prefix .. name .. "*", "*" .. name .. "*", name }) do
+        local v = f.a[k]
+        if v ~= nil then return v end
+    end
+    return nil
+end
 local function secureAct(f, button, down)
-    local t = f.a["type"]
+    local t = modAttr(f, "type", button)
     local hold = f.a["pressAndHoldAction"]
-    local onDown = ACT_ON_DOWN or hold
+    -- the frame's own useOnKeyDown attribute wins over the setting (SecureActionButton_ShouldUseOnKeyDown)
+    local uok = f.a["useOnKeyDown"]
+    local onDown
+    if uok ~= nil then onDown = uok and true or false else onDown = ACT_ON_DOWN end
+    onDown = onDown or hold
     local act
     if (down and onDown) or ((not down) and not onDown) then act = t
     elseif (not down) and hold and f.a["typerelease"] then act = f.a["typerelease"] end
     if not act then return end
     if act == "macro" then runMacro(f.a["macrotext"])
-    elseif act == "click" then local cb = f.a["clickbutton"]; if type(cb) == "table" and cb.a then doClick(cb, button, down) end
-    else ACTIONS[#ACTIONS + 1] = { kind = act, frame = f._name, spell = f.a["spell"], unit = f.a["unit"], item = f.a["item"] } end
+    elseif act == "click" then
+        -- SECURE_ACTIONS.click: delegate:Click(button) - the game passes NO down flag, so the delegate sees a release (down = false).
+        -- unproven which this client does: the stub passes the edge on (its older behaviour, CLICK_PASS_DOWN ~= false); = false: no flag
+        local cb = modAttr(f, "clickbutton", button); cb = type(cb) == "table" and (rawget(cb, "__frame") or cb) or cb
+        if type(cb) == "table" and cb.a then doClick(cb, button, rawget(_G, "CLICK_PASS_DOWN") ~= false and down or false, true) end
+    else ACTIONS[#ACTIONS + 1] = { kind = act, frame = f._name, spell = modAttr(f, "spell", button), unit = modAttr(f, "unit", button),
+                                     item = modAttr(f, "item", button) } end
 end
-function doClick(f, button, down)
-    local reg = false
+function doClick(f, button, down, programmatic)
+    local origButton = button
+    local reg = programmatic and true or false             -- Button:Click() (a "click" delegate) runs whatever RegisterForClicks says
     for _, c in ipairs(f.clicks) do
         if c == "AnyDown" and down then reg = true end
         if c == "AnyUp" and not down then reg = true end
@@ -260,16 +285,22 @@ function doClick(f, button, down)
     if f.scripts.PreClick then f.scripts.PreClick(f, button, down) end
     for _, fn in ipairs(f.hooks.PreClick or {}) do fn(f, button, down) end
     for _, w in ipairs(f.wraps.OnClick or {}) do
-        local r = runSecure(w.pre, f, button, down)
+        -- Wrapped_Click: the pre-body runs with `owner` = its header; false = no click, a string = the click's new button
+        local was = SNIP_OWNER; SNIP_OWNER = w.header
+        local H = rawget(_G, "handle")
+        local r = runSecure(w.pre, H and H(f) or f, button, down)
+        SNIP_OWNER = was
         if r == false then return end
+        if type(r) == "string" then button = r end
     end
     if f._tpl:find("SecureHandlerClickTemplate") and f.a["_onclick"] then
         runSecure(compileSnippet(f.a["_onclick"], "self, button, down"), f, button, down)
     end
     if f.scripts.OnClick then f.scripts.OnClick(f, button, down) end
     if f._tpl:find("SecureActionButtonTemplate") then secureAct(f, button, down) end
-    for _, fn in ipairs(f.hooks.OnClick or {}) do fn(f, button, down) end
-    for _, fn in ipairs(f.hooks.PostClick or {}) do fn(f, button, down) end
+    -- HookScript's hooks get the click's ORIGINAL button (a wrap's new button reaches the inner handler only)
+    for _, fn in ipairs(f.hooks.OnClick or {}) do fn(f, origButton, down) end
+    for _, fn in ipairs(f.hooks.PostClick or {}) do fn(f, origButton, down) end
 end
 
 -- ---------------------------------------------------------------- bindings (override only; a spy table)
@@ -287,6 +318,12 @@ KEYOF = { GAMEPADACTIONBUTTON1 = "PADDLEFT", GAMEPADACTIONBUTTON2 = "PADDUP", GA
           GAMEPADACTIONBUTTON8 = "PAD1", OPENRADIAL = "PADFORWARD", TOGGLEUIFOCUS = "PADBACK" }
 function GetBindingKey(b) return KEYOF[b] end
 function press(key, down)
+    HELD_PREFIX = nil
+    local mods = type(key) == "string" and key:match("^((%u+%-)*)%w") or nil
+    if type(key) == "string" then
+        local m = key:match("^(.-%-)[^%-]+$")
+        if m then HELD_PREFIX = m:lower() end
+    end
     local a = BIND[key]
     if type(a) ~= "string" then return false end
     local name, mb = a:match("^CLICK ([%w_]+):(%S+)$")
@@ -559,10 +596,10 @@ end)
 -- CLICKS: every click while one press / tap runs ("<frame>+" down, "<frame>-" up), the /click and "click" chains included
 CLICKS = nil
 local rawClick = doClick
-function doClick(f, button, down)
+function doClick(f, button, down, programmatic)
     if CLICKS then CLICKS[#CLICKS + 1] = tostring(type(f) == "table" and rawget(f, "_name") or "?") .. (down and "+" or "-") end
     if type(f) ~= "table" then return end
-    return rawClick(f, button, down)
+    return rawClick(f, button, down, programmatic)
 end
 -- GAMEKEYS: the presses the GAME got (a key with no override of ours: the game's own binding / its window's navigation)
 GAMEKEYS = {}

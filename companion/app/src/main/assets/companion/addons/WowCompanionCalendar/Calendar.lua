@@ -677,7 +677,8 @@ local function emitCalendar(force)
     local key = WC.encode(doc)
     if key == lastKey and not force then return false end
     lastKey = key
-    WC.send(WC.encode({ type = "calendar", c = doc }))
+    -- encode1: the key is the doc's JSON, sent as is (no second encode)
+    WC.send(WC.wrapJson and WC.wrapJson("calendar", nil, "c", key, nil) or WC.encode({ type = "calendar", c = doc }))
     return true
 end
 

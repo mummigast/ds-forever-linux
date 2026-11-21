@@ -80,7 +80,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.emit) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PADV = "pad27"     -- pad27 FAR ROWS: DOWN DOWN <selector> (ibuy, iqty, keytest, the bag rows by a secure swap). pad26 UP UP = isell (vendor Sell as keys). pad25 NO CURSOR FROM OUR OWN PRESSES (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; the Thor's taps.log: every press Desktop posts moves the game's own cursor to the cell, and pad13's rule showed it again on that move - ResetCursor - until it had rested a second at the park): a press of ours (a cell, the calibration strip, the layout catcher) ARMS the blank cursor at once; the moves a press explains (to the cell and the game's park, within PRESS_WIN of it, or back to the park spot it learned) keep it blank wherever it rests, over the world or a window; the first move nothing of ours explains (a real mouse, the trackpad, a touch on the top screen) disarms it and is kept as pad.humanAt (Dialogs d35 reads it); an item on the cursor or a spell aiming shows it, and it is still only under the game's own cursor drawing (pad14's soft()); nothing saved, no setting changed; pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
+local PADV = "pad30"     -- pad30 key-only rows (pad.keyRow; Bags' bcur0..5: a slot pick in one step). pad29 Bags' pick rows (bmvq, bagsort, bmv) are far rows: a slot pick by keys. pad28 THE SECURE KEY ROUTER: every key through a secure proxy; a bag far pick works in fights. pad27 FAR ROWS: DOWN DOWN <selector> (ibuy, iqty, keytest, the bag rows by a secure swap). pad26 UP UP = isell (vendor Sell as keys). pad25 NO CURSOR FROM OUR OWN PRESSES (the user, 2026-11-19, streaming 1.0.36: "the cursor keeps randomly showing on the game"; the Thor's taps.log: every press Desktop posts moves the game's own cursor to the cell, and pad13's rule showed it again on that move - ResetCursor - until it had rested a second at the park): a press of ours (a cell, the calibration strip, the layout catcher) ARMS the blank cursor at once; the moves a press explains (to the cell and the game's park, within PRESS_WIN of it, or back to the park spot it learned) keep it blank wherever it rests, over the world or a window; the first move nothing of ours explains (a real mouse, the trackpad, a touch on the top screen) disarms it and is kept as pad.humanAt (Dialogs d35 reads it); an item on the cursor or a spell aiming shows it, and it is still only under the game's own cursor drawing (pad14's soft()); nothing saved, no setting changed; pad24 THE STREAM'S TAPS MEASURED (the user, 2026-11-18, test 1494 streamed: "testing stream, ui still didnt hide"; pad23's ring proved every "ui" tap (row 51, aimed y 115.5) pressed "uisw" (row 50) and every "pnav" tap (row 1, y 15.5) pressed "chq" (row 2) while the rows between were right: on the PC the game sees a press about 2 % closer to y ~65 than the app aims it): THE CALIBRATION STRIP, one plain press-only Button of ours, CAL_W game px wide, CAL_GAP left of the grid, over the band's full placed height, that does nothing but keep where the game saw each press (GetCursorPosition, read only; describe()'s `calib`: its box, the count and the last 4 "x,y" in game px), so the app taps it twice (top and bottom) and aims every tap through what it measured; the ring of presses also keeps where each was seen (rxDoc `at`, beside `last`); the catcher's band zone takes the strip in; nothing else changed; pad23 WHERE A TAP LANDED (the user, 2026-11-18, test 1492 streamed: "it looked like it was doing a lot of clicks again and also the UI didnt hide"; the "ui" row's restore and layout taps were never answered on the PC while the "uisw" row 2 px above them was): every cell press is kept in a ring of the last 8 ("row:col", pad.rxDoc: the count and the ring, read by Hub's document), and describe() says `off` = the rows whose first cell does NOT stand where the grid says (its real top in game px, read off the frame; normally absent) - read only, nothing else changed; pad22 THE LAYOUT EDITOR'S CATCHER AND STORE (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI menu"; the design's picks, all the recommended ones: our own pieces first, taps that set an exact spot): WC.lay at the end of this file - the per-character saved layout of our own top-screen pieces (WowCompanionDB.lay[name-realm]), the editor's view of its draft, and THE CATCHER, one full-screen plain button at TOOLTIP strata under every cell and the sink, press only, that reads where a tap landed (its own 60 ms same-spot guard, the pad band and the sink left out, the reach switch); nothing else changed; pad21 THE SHARED ROW (the 1.0.32 test build, code 1472: the Macros room's lazy row "mac" had no row at the fullest layout - six bags, the cast bar, both radials - so the room said "No pad row"): a secure row registered with opts.share is a GUEST on another secure row (its own cells; one of the two on the row at a time, the host by default; the other hidden and left out of describe()), pad.lease(name) puts one on the row out of combat (in a fight it waits), pad.holds(name); the Macros room is the Calendar room's guest (Spells s12, Book b65: padtab 39 then 34 / 35); pad20: pad15's switch-back-on now finds an add-on the game has off by the game's own reason too (issue #278, the user relaying a player, 2026-11-13: "says waitin on wow controller. i press start and the wheel only pops up on top screen": the login probe said WowCompanionSpells:DISABLED and pad15 never switched it on - GetAddOnEnableState(name, character) did not say 0 on that client); pad19: pad.op(..., { last = true }) pins a row to the LAST row (ROWS_MAX - 1; Bags' shared drag row "bmv", the user 2026-11-13: "Bags share one row"); pad18: pad16's health probe and pad17's health strips REMOVED (the user, 2026-11-05: reading hidden health off the screen would break Blizzard's terms); pad17: five hair-thin health strips in the top-left corner, filled by the game (probe strips); pad16: a read-only health probe (every reader's kind on a health change, probe hpprobe); pad15: our add-ons the game has switched off are switched on again at login (the app reloads once); pad14: the software cursor (gxCursor 0, set once) and the hiding only under it (the hardware cursor drew the blank as a black box); pad13: the cursor hidden once still for a second anywhere over the world (the game parks it at y 41 %, not the centre); pad12: the PARKED CURSOR hidden (a blank cursor while it rests at the screen centre over the world); pad11 (Party mode, the lead's contract PARTY_BUILD.md 2.1): ROWS_MAX 56 for the party row; nothing else changed
 local COLS = 40          -- columns per row; the quest log holds at most 40, a bag at most 36
 local ROWS_MAX = 56      -- rows that may register; only those that end ABOVE the pop-up dialogs are placed (pad8 / pad9 / pad11, see below)
 local POPUP_MARGIN = 1   -- game px a row keeps clear of popupTop
@@ -390,6 +390,16 @@ function pad.op(name, ns, handler, opts)
     return r.row
 end
 
+-- pad30: a KEY-ONLY row: reached only by its far keys (KEY_FAR), never drawn, never laid on the pad, never clicked.
+-- handler(col), col 0..ncols-1. Plain Lua (no game action of its own), the same in a fight.
+pad.keyOnly = pad.keyOnly or {}
+function pad.keyRow(name, ncols, handler)
+    if type(name) ~= "string" or type(handler) ~= "function" then return false end
+    pad.keyOnly[name] = { n = math.max(1, math.min(tonumber(ncols) or COLS, COLS)), handler = handler }
+    if pad.keysSoon then pad.keysSoon() end
+    return true
+end
+
 -- ---------------------------------------------------------------- secure rows
 
 -- whether a secure cell has a secure action for this click: the template reads "type" with its modifier / button variants
@@ -465,6 +475,7 @@ function pad.buildSecure()
     end
     pad.secureAt = geomKey()
     pad.securePending = false
+    if pad.keysFarRefresh then pcall(pad.keysFarRefresh) end   -- pad28: the key router follows the secure rows
     return true
 end
 
@@ -564,7 +575,13 @@ local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay", UP = "isell", DOWN = "~far" }
 --    keys go back to the dispatcher at that cell's release, after KEY_SWAP_S at the latest, and at PLAYER_REGEN_DISABLED (before the
 --    lockdown). In a fight a secure far pick is refused ("combat"; the bags clear their use cells for the fight anyway).
 --  Columns 36-39 (KEY_COLX, navigation keys read by the dispatcher) cannot be rebound: the app clicks those cells of a far row.
-local KEY_FAR = { "ibuy", "iqty", "keytest", "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv" }
+-- pad29 (2026-11-21, the user: "picking an item in a bag has some delay"; the Thor's log: bmvq / bagsort / bmv "a cell without keys",
+-- spaced 370 ms as clicks): Bags' plain pick rows are far rows too (selectors K, L, M), so a finger on a slot goes as keys.
+-- pad30 (2026-11-21, the user: "we want as few automated clicks as possible, to not be flagged for botting"): KEY-ONLY rows
+-- (pad.keyRow: no cells, no place on the pad, a handler only) as far rows too: Bags' bcur0..bcur5 (selectors N..S) move the
+-- controller's cursor to a slot in ONE step (was bmvq 36 + bagsort + bmv: three steps, 12 keys). Keys only: no click can reach them.
+local KEY_FAR = { "ibuy", "iqty", "keytest", "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv", "bmvq", "bagsort", "bmv",
+                  "bcur0", "bcur1", "bcur2", "bcur3", "bcur4", "bcur5" }
 local KEY_SWAP_S = 1.0
 -- Linux Streaming Edition (2026-11-18, the 1.0.34 merge: Edit layout, the meters, Buffs / XP bar went as clicks and strayed): secure rows
 -- whose cells carry NO secure action (init sets nothing; the press only runs the row's own Lua onClick), so a key may press them as a
@@ -615,6 +632,11 @@ end
 
 local function onKey(_, button, down)
     if down == false then return end
+    if button == "wcsel" then                                      -- pad28: the router took a secure far row's selector
+        keys.pending = nil
+        if tracing() then trace({ k = "wcsel", row = "~router" }) end
+        return
+    end
     local k = type(button) == "string" and button or nil
     local t = clock()
     local rname = k and keys.rowOf[k]
@@ -644,6 +666,12 @@ local function onKey(_, button, down)
     if not p or t - p.at > KEY_PICK_TTL then return keyBad("no row", k) end
     if p.far then                                                    -- pad27: this column key is the far row's SELECTOR
         local fname = KEY_FAR[col + 1]
+        local ko = fname and pad.keyOnly[fname]
+        if ko then                                                   -- pad30: a key-only row
+            keys.pending = { name = fname, at = t, k = k, keyOnly = true }
+            if tracing() then trace({ k = k, row = fname }) end
+            return
+        end
         local fr = fname and pad.rows[fname]
         if not fr or keys.keyOf[fname] then return keyBad("no far row", tostring(fname or col)) end
         if fr.secure then
@@ -654,6 +682,14 @@ local function onKey(_, button, down)
         end
         keys.pending = { name = fname, at = t, k = k }
         if tracing() then trace({ k = k, row = fname }) end
+        return
+    end
+    if p.keyOnly then                                                -- pad30: the key-only row's column
+        local ko = pad.keyOnly[p.name]
+        if not ko or col >= ko.n then return keyBad("no cell", p.name .. ":" .. col) end
+        keys.n = keys.n + 1
+        if tracing() then trace({ k = k, row = p.name, col = col }) end
+        pcall(ko.handler, col)
         return
     end
     local r = pad.rows[p.name]
@@ -684,7 +720,18 @@ local function bindingOf(chord)
     if not ok then return nil end
     return a or ""
 end
-local function ours(k) return "CLICK " .. KEY_BTN .. ":" .. k end
+-- pad28 THE SECURE KEY ROUTER (beta 2026-11-20, the user: bag items by keys in fights too). Every key of ours is bound to its own
+-- SecureActionButton PROXY ("WCPadKeyP_<key>", type "click"), never to the plain dispatcher: the proxy clicks the dispatcher
+-- (KEY_DISP, a plain button: the same onKey as before, the key's name riding along as the button), so plain rows work exactly as they
+-- did. Its wrap snippet (the restricted environment: it runs in fights too) also follows the FAR pick: DOWN DOWN counts on the header,
+-- the selector of a SECURE far row (the bags) is swallowed and remembered ("sel"), and the next column key's proxy DOES that row's
+-- cell's action itself: the snippet copies the cell's type / item / macrotext / spell / unit (frame refs "c_<row>_<col>", set out of
+-- combat) onto the proxy's "wcsec" button and returns that button. So the action fires on the real key press (no dependence on what
+-- a click delegate's Click() passes), and a hook runs the row's own tap work (the bags' proof). No rebinding at a press any more, so
+-- the bags work in a fight as out of one. Any row key clears a stale pick.
+local KEY_DISP = "WowCompanionPadKeyDisp"
+local function proxyName(k) return "WCPadKeyP_" .. k end
+local function ours(k) return "CLICK " .. proxyName(k) .. ":" .. k end
 -- an emulated Alt exists only inside the game (a gamepad button set as GamePadEmulateAlt)
 local function emuAlt()
     local ok, v = pcall(GetCVar, "GamePadEmulateAlt")
@@ -694,16 +741,93 @@ end
 local function keyFree(k)
     if not keySafe(KEY_MOD_NAMES, k) then return false end
     local a = bindingOf(KEY_MODS .. k)
-    return a == "" or a == ours(k)
+    return a == "" or a == ours(k) or a == "CLICK " .. KEY_BTN .. ":" .. k
 end
-local function keyBind(k)
-    if not pcall(SetOverrideBindingClick, keys.owner, true, KEY_MODS .. k, KEY_BTN, k) then return false end
-    if bindingOf(KEY_MODS .. k) ~= ours(k) then return false end
+-- the proxy of key [k] (made once, out of combat): [col] = its column for a column key, nil for a row key
+-- (2026-11-21: NO clock in these snippets - WoW Forever's restricted environment has no GetTime ("attempt to call a nil value" on
+-- every key, the UI froze). Any row key resets the DOWN count and the pick, and a column key spends both, so a stale one lives only
+-- until the next key of ours.)
+local ROW_SNIP = [[
+    local d = 0
+    if "%s" == "DOWN" then
+        d = owner:GetAttribute("downs") or 0
+        if d ~= 1 then d = 0 end
+        d = d + 1
+    end
+    owner:SetAttribute("downs", d)
+    owner:SetAttribute("sel", nil)
+]]
+local COL_SNIP = [[
+    local sel = owner:GetAttribute("sel")
+    local downs = owner:GetAttribute("downs") or 0
+    owner:SetAttribute("downs", 0)
+    if sel then
+        owner:SetAttribute("sel", nil)
+        if not owner:GetAttribute("on_" .. sel) then return false end
+        if %d >= (owner:GetAttribute("n_" .. sel) or 0) then return false end
+        local t = owner:GetFrameRef("c_" .. sel .. "_%d")
+        if not t then return false end
+        local ty = t:GetAttribute("type")
+        if not ty then return false end
+        -- "*": the game looks up <modifiers><name><suffix> first, and CTRL-SHIFT is held for every key of ours (the review)
+        self:SetAttribute("*type-wcsec", ty)
+        self:SetAttribute("*item-wcsec", t:GetAttribute("item"))
+        self:SetAttribute("*macrotext-wcsec", t:GetAttribute("macrotext"))
+        self:SetAttribute("*spell-wcsec", t:GetAttribute("spell"))
+        self:SetAttribute("*unit-wcsec", t:GetAttribute("unit"))
+        self:SetAttribute("wcrow", sel)
+        self:SetAttribute("wcn", (self:GetAttribute("wcn") or 0) + 1)   -- the hook's signal (hooks see the ORIGINAL button)
+        return "wcsec"
+    end
+    if downs == 2 then
+        local fs = owner:GetAttribute("far%d")
+        if fs then owner:SetAttribute("sel", fs); return "wcsel" end      -- the dispatcher hears it as "wcsel": its far pick is spent
+    end
+]]
+local function proxyFor(k, col)
+    keys.proxy = keys.proxy or {}
+    local p = keys.proxy[k]
+    if p then return p end
+    if InCombatLockdown() or not keys.hdr or not keys.disp then return nil end
+    local ok = pcall(function()
+        p = CreateFrame("Button", proxyName(k), UIParent, "SecureActionButtonTemplate")
+        p:RegisterForClicks("AnyDown")
+        -- the proxy hears the PRESS only, so it must act on it whatever the player's "cast on key down" setting (SecureActionButton_
+        -- ShouldUseOnKeyDown reads this attribute before the setting): else, with the setting off, no key of ours would do anything
+        p:SetAttribute("useOnKeyDown", true)
+        p:SetAttribute("type", "click")
+        p:SetAttribute("clickbutton", keys.disp)
+        local body = col and COL_SNIP:format(col, col, col) or ROW_SNIP:format(k)
+        SecureHandlerWrapScript(p, "OnClick", keys.hdr, body)
+        -- the press used a far row's cell (button "wcsec"): that row's own once-per-tap work, as a click on the cell would run it
+        -- (the bags' "bagsTap" proof); the secure action itself already ran on this proxy (a real key press: on its down edge)
+        if col then
+            p:HookScript("OnClick", function(self)
+                local n = self:GetAttribute("wcn")              -- bumped by the snippet when it did a far cell's action
+                if n == nil or n == self.wcSeen then return end
+                self.wcSeen = n
+                local rn = self:GetAttribute("wcrow")
+                local r = rn and pad.rows[rn]
+                pad.pressT = clock()
+                if r then pcall(landed, r.row, col); if type(r.onClick) == "function" then pcall(r.onClick, col) end end
+            end)
+        end
+    end)
+    if not ok or not p then return nil end
+    keys.proxy[k] = p
+    return p
+end
+local function keyBind(k, col)
+    local target = KEY_BTN
+    if proxyFor(k, col ~= nil and col or keys.colOf[k]) then target = proxyName(k) end
+    if not pcall(SetOverrideBindingClick, keys.owner, true, KEY_MODS .. k, target, k) then return false end
+    local want = "CLICK " .. target .. ":" .. k
+    if bindingOf(KEY_MODS .. k) ~= want then return false end
     -- the emulated Alt's mirror: a binding only (we never send Alt), and only on a free chord
     if emuAlt() then
         local alt = "ALT-" .. KEY_MODS .. k
         local a = bindingOf(alt)
-        if a == "" or a == ours(k) then pcall(SetOverrideBindingClick, keys.owner, true, alt, KEY_BTN, k) end
+        if a == "" or a == ours(k) or a == "CLICK " .. KEY_BTN .. ":" .. k then pcall(SetOverrideBindingClick, keys.owner, true, alt, target, k) end
     end
     return true
 end
@@ -752,6 +876,28 @@ function pad.keySwap(r)
     return true
 end
 
+-- pad28: what the router knows of the secure far rows (out of combat: a header's attributes and frame refs are set only then): far<col>
+-- = the row at that selector, on_<row> = it holds its pad row, n_<row> = its cell count, c_<row>_<col> = the cell. Run after every
+-- secure build (pad.buildSecure) and every key bind.
+function pad.keysFarRefresh()
+    if not keys.hdr or InCombatLockdown() or type(SecureHandlerSetFrameRef) ~= "function" then return false end
+    for i, name in ipairs(KEY_FAR) do
+        local r, col = pad.rows[name], i - 1
+        local sec = r and r.secure and not keys.keyOf[name] and true or false
+        pcall(keys.hdr.SetAttribute, keys.hdr, "far" .. col, sec and name or nil)
+        if sec then
+            pcall(keys.hdr.SetAttribute, keys.hdr, "on_" .. name, (fits(r.row) and onRow(r)) and true or nil)
+            pcall(keys.hdr.SetAttribute, keys.hdr, "n_" .. name, math.min(r.n or 0, 36))
+            for c, cell in pairs(r.cells or {}) do
+                if c < 36 and c < (r.n or 0) then
+                    pcall(SecureHandlerSetFrameRef, keys.hdr, "c_" .. name .. "_" .. c, cell)
+                end
+            end
+        end
+    end
+    return true
+end
+
 -- bind what is not bound yet: the 40 column keys once, then each keyed row's own key (out of combat only)
 function pad.bindKeys()
     if type(SetOverrideBindingClick) ~= "function" or type(GetBindingAction) ~= "function" then return false end
@@ -765,11 +911,19 @@ function pad.bindKeys()
             keys.owner = CreateFrame("Frame", "WowCompanionPadKeyOwner", UIParent)
         end)
         if not ok or not keys.btn or not keys.owner then keys.btn = nil; return false end
+        -- pad28: the router's header and the dispatcher its proxies click (every click = a press: the proxy acts on the press)
+        pcall(function()
+            keys.hdr = CreateFrame("Frame", "WowCompanionPadKeyHdr", UIParent, "SecureHandlerBaseTemplate")
+            keys.disp = CreateFrame("Button", KEY_DISP, UIParent)
+            keys.disp:RegisterForClicks("AnyDown", "AnyUp")
+            keys.disp:SetScript("OnClick", function(self, button) onKey(self, button, true) end)
+        end)
+        if not (keys.hdr and keys.disp) then keys.hdr, keys.disp = nil, nil end
     end
     if not keys.colsDone then
         for col = 0, COLS - 1 do
             local k = (col < 36) and KEY_COLS[col + 1] or nil      -- 36-39: KEY_COLX (no punctuation keys bound)
-            if k and keyFree(k) and keyBind(k) then keys.colOf[k], keys.colKey[col] = col, k end
+            if k and keyFree(k) and keyBind(k, col) then keys.colOf[k], keys.colKey[col] = col, k end
         end
         keys.colsDone = true
     end
@@ -794,6 +948,7 @@ function pad.bindKeys()
         t = (okT and type(t) == "number") and t or 0
         keys.session = tostring((math.floor(t) % 1000000) * 1000 + math.random(0, 999))
     end
+    pcall(pad.keysFarRefresh)                 -- pad28
     return keys.bound
 end
 -- a bind pass at the end of this frame (rows register in bursts at load)
@@ -855,7 +1010,9 @@ local function keysDescribe()
             local r, sel = pad.rows[name], keys.colKey[i - 1]
             -- a secure one only while a binding click acts on the PRESS (ActionButtonUseKeyDown, the default): then a release that
             -- lands on a swapped cell (the selector's own) can never fire an item; with it off those rows stay clicks
-            if r and sel and not rows[name] and fits(r.row) and (not r.secure or (onRow(r) and keyDownActs())) then
+            local routed = keys.proxy and keys.proxy[sel] and keys.hdr ~= nil         -- the router really holds this selector's key
+            if not r and sel and pad.keyOnly[name] and not rows[name] and keySafe(KEY_MOD_NAMES, sel) then rows[name] = fk .. " " .. fk .. " " .. sel end
+            if r and sel and not rows[name] and fits(r.row) and (not r.secure or (onRow(r) and (routed or keyDownActs()))) then
                 rows[name] = fk .. " " .. fk .. " " .. sel
             end
         end

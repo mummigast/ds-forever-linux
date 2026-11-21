@@ -1310,15 +1310,27 @@ local lastDoc = nil         -- the last bags table sent: a controller press send
 local queued = false
 local lastCtl = nil         -- the last ctl the app was sent, in either document
 
+local lastCollected = nil   -- beta B1a: the newest collect, WITHOUT ctl (never cleared: Core's full document splices it)
 local function sendBags(reason)
     queued = false
     local b = WC.collectBags()
+    lastCollected = b
     b.ctl = WC._bagsCtlDoc and WC._bagsCtlDoc() or nil
     local json = WC.encode(b)
     if json == lastBags then return end
     lastBags = json; lastDoc = b
     lastCtl = b.ctl and WC.encode(b.ctl) or nil
     WC.emit({ type = "full", v = WC.VERSION, reason = reason, bags = b })
+end
+-- beta B1a (2026-11-20, perf4 in game: a Core "full" spent ~14 ms, ~24 ms at a fight's end, re-collecting every bag slot): the JSON of the
+-- bags this file sent last - always the newest state, bags own their events - for Core to splice in place of its own collect
+-- (the TABLE of the newest collect, ctl left out: a heartbeat's full must never carry an old bag cursor; lastBags itself is cleared to
+-- force a resend after a press, so it cannot be the source)
+function WC.bagsJsonNow()
+    if type(lastCollected) ~= "table" then return nil end
+    local t = {}
+    for k, v in pairs(lastCollected) do if k ~= "ctl" then t[k] = v end end
+    return WC.encode(t)
 end
 
 local function sendSoon(reason)
@@ -4461,6 +4473,20 @@ function WC._bagsCursorTap(bag, slot)
     report(nil)
     return true
 end
+
+-- bags-keycur1 (2026-11-21, the user: "we want as few automated clicks as possible, to not be flagged for botting"): KEY-ONLY rows
+-- bcur0..bcur5 (TapPad pad30 pad.keyRow, no pad row used): column = slot - 1 of that bag; one step = what bmvq 36 + the bag's name +
+-- the bmv cell did (the controller's cursor to the slot; no game action). The app uses them only while keys are live, else the 3 taps.
+local function curRegister()
+    if not (WC.pad and type(WC.pad.keyRow) == "function") then return end
+    for b = 0, 5 do
+        WC.pad.keyRow("bcur" .. b, 40, function(col)
+            ctl.cursorAt = GetTime()
+            if not WC._bagsCursorTap(b, (col or 0) + 1) and WC._bagsCursorMiss then WC._bagsCursorMiss() end
+        end)
+    end
+end
+curRegister()
 
 -- CAPTURE v11's CONTRACT (Interact i82b): true = held now; true + "queued" = behind another holder; true + "pending" = in a
 -- fight until the enter tap. Never act as holder before a plain true or state().holder == "bags": a finger on Bags' own

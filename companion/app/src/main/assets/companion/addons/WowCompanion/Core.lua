@@ -89,7 +89,9 @@ function WC.snapshot(reason)
     local t4 = clockMs()
     local map = enc(WC.collectMapSafe())
     local t5 = clockMs()
-    local bags = enc(WC.collectBags())
+    -- beta B1a: the bags' own last document (Bags.lua keeps it current), not a second collect of every slot; before it exists, a collect
+    local bags = type(WC.bagsJsonNow) == "function" and WC.bagsJsonNow() or nil
+    if type(bags) ~= "string" then bags = enc(WC.collectBags()) end
     local t6 = clockMs()
     WC.send(jobj({ { "actionbar", json }, { "bags", bags }, { "equipped", equipJson }, { "map", map }, { "player", player },
                    { "reason", enc(reason) }, { "type", '"full"' }, { "v", enc(WC.VERSION) } }))

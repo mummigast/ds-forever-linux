@@ -418,3 +418,11 @@ do
         H.ev, H.dt, H.bytes = {}, {}, 0
     end)
 end
+
+-- encode1 (beta 2026-11-20): a document {type=<t>, v=<v>, [field]=<doc>} built around a doc already encoded (its JSON string),
+-- so an emit that encoded the doc for its dedupe key does not encode it again to send. Extra plain fields: extra = { k = v, ... }.
+function WC.wrapJson(t, v, field, docJson, extra)
+    local s = '{"type":' .. WC.encode(t) .. (v ~= nil and (',"v":' .. WC.encode(v)) or "") .. ',"' .. field .. '":' .. docJson
+    if extra then for k, val in pairs(extra) do if val ~= nil then s = s .. ',"' .. k .. '":' .. WC.encode(val) end end end
+    return s .. "}"
+end
