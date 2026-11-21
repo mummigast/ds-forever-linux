@@ -43,9 +43,10 @@ helper with its matching add-ons, `SHA256SUMS`, the source and its notes: watch 
   [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md), and every pre-release's own notes
   on the [releases page](https://github.com/mummigast/ds-forever-linux/releases). When a beta has proven itself it becomes the next
   stable release.
-- **Current beta: [linux-v1.0.37.5-beta.1](https://github.com/mummigast/ds-forever-linux/releases/tag/linux-v1.0.37.5-beta.1)**
-  (on top of stable 1.0.37.4): the room switch closes game windows by keyboard shortcut instead of a click, and less work per
-  update inside the game. Not yet played in the game: try it if you like testing, and report what breaks.
+- **Current beta: [linux-v1.0.37.5-beta.2](https://github.com/mummigast/ds-forever-linux/releases/tag/linux-v1.0.37.5-beta.2)**
+  (on top of stable 1.0.37.4): the auction house is the game's own window on the top screen (the bottom screen is its keyboard),
+  fewer automated inputs (typing is one key per letter), less work per update inside the game. Try it if you like testing, and
+  report what breaks.
 - **Installing a beta:** download its APK and its `dsf-linux-helper-<version>.tar.gz` from the pre-release (both, the add-ons must
   match the app), install the APK over the stable one (same signing key, your settings stay) and run the helper's `./install.sh`.
   To go back, install the latest stable release's APK and helper the same way. The app's update check never offers a beta.
