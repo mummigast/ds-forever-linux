@@ -1624,6 +1624,10 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     private fun cursorTo(bag: Int, slot: Int): Boolean {
         if (state.ctlCur() == (bag to slot)) return true
+        // bags-keycur1 (2026-11-21, the user: "as few automated clicks as possible"): ONE key-only step (bcur<bag>, column slot - 1)
+        // while keys are live; the three taps below only when they are not
+        val one = listOf("bcur$bag" to slot - 1)
+        if (slot in 1..40 && TapBridge.keysNow(state.pad, one)) return GameInput.taps(context, state.pad, one)
         if (!rowsHave("bmvq")) return false
         val cells = BagsMoveRoute.cells(state.pad, bag, slot) ?: return false      // bags-onerow1: the bag's name, then the shared row
         return GameInput.taps(context, state.pad, listOf("bmvq" to 36) + cells)

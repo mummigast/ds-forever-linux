@@ -4474,6 +4474,20 @@ function WC._bagsCursorTap(bag, slot)
     return true
 end
 
+-- bags-keycur1 (2026-11-21, the user: "we want as few automated clicks as possible, to not be flagged for botting"): KEY-ONLY rows
+-- bcur0..bcur5 (TapPad pad30 pad.keyRow, no pad row used): column = slot - 1 of that bag; one step = what bmvq 36 + the bag's name +
+-- the bmv cell did (the controller's cursor to the slot; no game action). The app uses them only while keys are live, else the 3 taps.
+local function curRegister()
+    if not (WC.pad and type(WC.pad.keyRow) == "function") then return end
+    for b = 0, 5 do
+        WC.pad.keyRow("bcur" .. b, 40, function(col)
+            ctl.cursorAt = GetTime()
+            if not WC._bagsCursorTap(b, (col or 0) + 1) and WC._bagsCursorMiss then WC._bagsCursorMiss() end
+        end)
+    end
+end
+curRegister()
+
 -- CAPTURE v11's CONTRACT (Interact i82b): true = held now; true + "queued" = behind another holder; true + "pending" = in a
 -- fight until the enter tap. Never act as holder before a plain true or state().holder == "bags": a finger on Bags' own
 -- cells waits for that (the room shows, nothing happens); this also notices the hand-over Bags is never told about

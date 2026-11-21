@@ -175,5 +175,27 @@ for k in ('DOWN', 'DOWN', cols[10], 'INSERT', 'DOWN', 'DOWN', cols[11], cols[11]
 got = fired()
 check(got == ['bmvq:36', 'bagsort:11', 'bmv:3'], "26: a slot pick by keys: bmvq 36 (INSERT), bagsort 11, bmv 3", got)
 
+# pad30: key-only rows (Bags' bcur0..5): one far step moves the bag cursor; never laid on the pad, never in describe().rows
+L.execute("""
+local pad = WowCompanion.pad
+CURTAPS = {}
+pad.keyRow("bcur2", 40, function(col) CURTAPS[#CURTAPS + 1] = col end)
+pad.bindKeys()
+""")
+D = L.eval('WowCompanion.pad.describe()')
+KT = D['keys'] if D else None
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('bcur2') == 'DOWN DOWN ' + cols[15], "27: bcur2 = DOWN DOWN + selector 15", rows.get('bcur2'))
+check(D is not None and D['rows']['bcur2'] is None, "28: a key-only row takes no pad row (not in describe().rows)", '')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[15], cols[6]):
+    key(k)
+check(L.eval('#CURTAPS') == 1 and L.eval('CURTAPS[1]') == 6, "29: DOWN DOWN sel15 + column 6 = bcur2 column 6, in ONE step", L.eval('CURTAPS[1]'))
+check(fired() == [], "30: ... and no plain row fired with it", '')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[15], 'INSERT'):
+    key(k)
+check(L.eval('#CURTAPS') == 2 and L.eval('CURTAPS[2]') == 36, "31: a key-only row's column 36 by INSERT", L.eval('CURTAPS[2]'))
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

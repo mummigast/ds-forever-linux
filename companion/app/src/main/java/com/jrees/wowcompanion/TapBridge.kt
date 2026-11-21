@@ -69,6 +69,10 @@ object TapBridge {
     // ---------------------------------------------------------------- L1's handshake + sweep (TapPad pad10c)
     /** this game session's key token, from a CURRENT "padkeytest" answer to our click on keytest's cell 0; null = no keys */
     @Volatile private var keySession: String? = null
+
+    /** 2026-11-21 (key-only rows, TapPad pad30): whether [cells] would go as keys right now (a key-only row has no click fallback) */
+    fun keysNow(pad: JSONObject?, cells: List<Pair<String, Int>>): Boolean =
+        KEYS_ON && InputSink.sink != null && !GameInput.typing && TapKeys.script(pad, cells, 0L, keySession) != null
     @Volatile private var askedAt = 0L
 
     /** CompanionHost routes every "padkeytest" document here. Only a CURRENT handshake answer counts (a replayed one proves nothing) */
