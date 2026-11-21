@@ -32,10 +32,10 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 
 **Improved**
 - **Keyboard shortcuts instead of screen clicks** wherever possible: quests, vendors (buy, sell, repair), bags (in fights too),
-  a bag slot picked by touch, the room switch, auras, talents, typing, the top-screen switches. Streaming, a click lands where WoW
+  a bag slot picked by touch, the top-screen switches. Streaming, a click lands where WoW
   parks its cursor after controller play, so clicks often missed; shortcuts don't, and fewer automated inputs are sent.
 - **Less stutter while streaming:** the add-ons' big updates are built once and spread over frames (a fight's start ~32 + 20 ms
-  instead of one ~110 ms frame); log writes, equipment and bag data are reused instead of rebuilt.
+  instead of one ~110 ms frame).
 - **Chat item links** no longer stick on "Retrieving item information".
 - **Settings show only what works when streaming.**
 
@@ -48,7 +48,10 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 - **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the
   app's own auction-house screen is gone. The bottom screen is its keyboard (type the search, Done) and shows your auctions and
   what you bought lately.
-- **Typing is one key per letter** (the auction-house search, the app's chat), and fewer clicks on room switches.
+- **More keyboard shortcuts, fewer automated inputs:** typing is one key per letter (the auction-house search, the app's chat);
+  the room switch, the Auras pick and the Talents rows go as shortcuts.
+- **Less work per update inside the game:** ~6x fewer log writes per push, equipment and bag data reused instead of rebuilt,
+  unit events asked for only for the units the add-ons use.
 
 The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
 Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, the
