@@ -153,5 +153,27 @@ check(L.eval('#BAGTAPS') >= 2, "19: the row's own tap work ran for each bag pres
 
 # 2026-11-21: tests 20-22 (time-outs on the DOWN count / bag pick) REMOVED: the game's restricted environment has no GetTime,
 # the secure snippets keep no clock (the stub's RESTRICTED has none either, so a snippet calling it fails here as in the game).
+# pad29: Bags' pick rows (plain) are far rows with selectors 10-12; a finger on a slot = bmvq 36, bagsort 10 + bag, bmv slot - 1
+L.execute("""
+local pad = WowCompanion.pad
+for _, n in ipairs({ "bmvq", "bagsort", "bmv" }) do
+    if not pad.rows[n] then pad.op(n, n, function() end) end
+    local r, name = pad.rows[n], n
+    local h = r.handler
+    if type(h) == "function" and not r.wcTest then r.wcTest = true; r.handler = function(k, c) FIRED[#FIRED + 1] = name .. ":" .. tostring(c); return h(k, c) end end
+end
+pad.bindKeys()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('bmvq') == 'DOWN DOWN ' + cols[10], "23: bmvq = DOWN DOWN + selector 10", rows.get('bmvq'))
+check(rows.get('bagsort') == 'DOWN DOWN ' + cols[11], "24: bagsort = DOWN DOWN + selector 11", rows.get('bagsort'))
+check(rows.get('bmv') == 'DOWN DOWN ' + cols[12], "25: bmv = DOWN DOWN + selector 12", rows.get('bmv'))
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[10], 'INSERT', 'DOWN', 'DOWN', cols[11], cols[11], 'DOWN', 'DOWN', cols[12], cols[3]):
+    key(k)
+got = fired()
+check(got == ['bmvq:36', 'bagsort:11', 'bmv:3'], "26: a slot pick by keys: bmvq 36 (INSERT), bagsort 11, bmv 3", got)
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
