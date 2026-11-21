@@ -1,6 +1,12 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 417). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 418). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## Beta: next (beta.2, not released yet), add-on set 418
+
+- **Opening the game's bags when you enter Bags, and closing a game window when you switch rooms, are keyboard shortcuts** (they were
+  mouse clicks: one per Bags visit, up to three per room switch). A secure row's "click" cells (the backpack doors, the dialogs'
+  buttons) are now pressed through the shortcut's own secure button, which clicks that cell's target as the cell would.
 
 ## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
 
