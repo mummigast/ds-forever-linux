@@ -25,7 +25,7 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
   10 minutes without a Thor, and closes it from the pause menu's power button.
 - **Pairing over a VPN** with DS Forever's *Other network* code (`dsf-bridge code`).
 - Small extras on the top screen, each with its own switch in *Settings*:
-  - **Box under the dot**: the game's tooltip for the unit under the controller's aim dot (as far as the nameplates reach), with
+  - **Ranged tooltips**: the game's tooltip for the unit under the controller's aim dot (as far as the nameplates reach), with
     Questie's quest lines.
   - **Loot window on the top screen** stays the game's own, in fights too.
   - **Friendly plates** show for every friendly unit, not only the target.
@@ -94,7 +94,7 @@ options: [FORK.md](FORK.md#build).
 ## Known problems
 
 - Chat commands typed in the app's chat (`/reload`, ...) aren't sent: turn on *Normal game UI* and use the game's own chat.
-- WoW Forever keeps soft targeting for the controller only, and add-ons can't change that: the box under the dot finds friendly
+- WoW Forever keeps soft targeting for the controller only, and add-ons can't change that: ranged tooltips find friendly
   units and NPCs only by their nameplates (turn on *Friendly plates*).
 - Right after connecting, the camera may turn by itself until the right stick is moved.
 - More, and what is still untested: [FORK.md](FORK.md#known-problems).
