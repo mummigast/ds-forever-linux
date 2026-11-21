@@ -151,23 +151,7 @@ check(got == ['qact:1'], "18c: cast-on-key-down OFF: a plain row still works", g
 L.execute('ACT_ON_DOWN = true')
 check(L.eval('#BAGTAPS') >= 2, "19: the row's own tap work ran for each bag press", L.eval('#BAGTAPS'))
 
-# the review's stale count: a lone DOWN (its column lost), much later DOWN + the bag selector's letter = spick, never a bag pick
-fired(); actions()
-tick(1)
-key('DOWN')
-tick(2)
-key('DOWN'); key(cols[3])
-got = fired()
-check(got == ['spick:3'], "20: a lone DOWN does not pair with a DOWN two seconds later (spick, not the bag selector)", got)
-key(cols[5])
-check(actions() == [], "21: ... and the next column uses no bag item", '')
-# a selector whose column comes too late: no item
-tick(1)
-for k in ('DOWN', 'DOWN', cols[3]):
-    key(k)
-tick(1)
-key(cols[5])
-check(actions() == [], "22: a bag pick older than 0.5 s uses nothing", '')
-
+# 2026-11-21: tests 20-22 (time-outs on the DOWN count / bag pick) REMOVED: the game's restricted environment has no GetTime,
+# the secure snippets keep no clock (the stub's RESTRICTED has none either, so a snippet calling it fails here as in the game).
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

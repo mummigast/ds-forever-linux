@@ -148,7 +148,7 @@ ERRS = {}
 
 -- ---------------------------------------------------------------- the restricted environment (only what the snippets may use)
 local function newtable(...) return { ... } end
-RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tonumber = tonumber, type = type, GetTime = function() return GetTime() end,
+RESTRICTED = { newtable = newtable, ipairs = ipairs, pairs = pairs, tonumber = tonumber, type = type,
                select = select, GetGamePadState = function() return { buttons = PADSTATE } end,
                SecureCmdOptionParse = function(s) return SecureCmdOptionParse(s) end }
 PADSTATE = {}

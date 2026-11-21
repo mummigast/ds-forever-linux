@@ -714,26 +714,22 @@ local function keyFree(k)
     return a == "" or a == ours(k) or a == "CLICK " .. KEY_BTN .. ":" .. k
 end
 -- the proxy of key [k] (made once, out of combat): [col] = its column for a column key, nil for a row key
--- (the review, 2026-11-20: the count and the pick carry their time, as the dispatcher's KEY_PAGE2_GAP / KEY_PICK_TTL: a DOWN whose column
--- was lost must never pair with a much later DOWN, a selector whose column was lost never meet a later column)
+-- (2026-11-21: NO clock in these snippets - WoW Forever's restricted environment has no GetTime ("attempt to call a nil value" on
+-- every key, the UI froze). Any row key resets the DOWN count and the pick, and a column key spends both, so a stale one lives only
+-- until the next key of ours.)
 local ROW_SNIP = [[
-    local now = GetTime()
     local d = 0
     if "%s" == "DOWN" then
         d = owner:GetAttribute("downs") or 0
-        if d ~= 1 or now - (owner:GetAttribute("downsAt") or 0) > 0.3 then d = 0 end
+        if d ~= 1 then d = 0 end
         d = d + 1
-        owner:SetAttribute("downsAt", now)
     end
     owner:SetAttribute("downs", d)
     owner:SetAttribute("sel", nil)
 ]]
 local COL_SNIP = [[
-    local now = GetTime()
     local sel = owner:GetAttribute("sel")
-    if sel and now - (owner:GetAttribute("selAt") or 0) > 0.5 then sel = nil end
     local downs = owner:GetAttribute("downs") or 0
-    if downs == 2 and now - (owner:GetAttribute("downsAt") or 0) > 0.5 then downs = 0 end
     owner:SetAttribute("downs", 0)
     if sel then
         owner:SetAttribute("sel", nil)
@@ -755,7 +751,7 @@ local COL_SNIP = [[
     end
     if downs == 2 then
         local fs = owner:GetAttribute("far%d")
-        if fs then owner:SetAttribute("sel", fs); owner:SetAttribute("selAt", now); return "wcsel" end      -- the dispatcher hears it as "wcsel": its far pick is spent
+        if fs then owner:SetAttribute("sel", fs); return "wcsel" end      -- the dispatcher hears it as "wcsel": its far pick is spent
     end
 ]]
 local function proxyFor(k, col)
