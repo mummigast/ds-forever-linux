@@ -197,5 +197,52 @@ for k in ('DOWN', 'DOWN', cols[15], 'INSERT'):
     key(k)
 check(L.eval('#CURTAPS') == 2 and L.eval('CURTAPS[2]') == 36, "31: a key-only row's column 36 by INSERT", L.eval('CURTAPS[2]'))
 
+# pad31: a SECURE far row's "click" cells by keys (the dialogs' leave buttons, the backpack doors), columns 36-39 too
+L.execute("""
+local pad = WowCompanion.pad
+TGT_HITS = {}
+local function target(name) local f = CreateFrame("Button", name, UIParent); f:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = name end); return f end
+local t25, t38 = target("LeaveTarget25"), target("DoorTarget38")
+IDLGTAPS = {}
+pad.secureRow("idlg", 40, function(btn, col)
+    if col == 25 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", t25)
+    elseif col == 38 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", t38) end
+end, function(col) IDLGTAPS[#IDLGTAPS + 1] = col end)
+if pad.buildSecure then pad.buildSecure() end
+pad.bindKeys()
+if pad.keysFarRefresh then pad.keysFarRefresh() end
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('idlg') == 'DOWN DOWN ' + cols[19], "32: idlg = DOWN DOWN + selector 19", rows.get('idlg'))
+check(KT is not None and KT['sfx'] is True, "33: the keys say secure far rows take 36-39 (sfx)", '')
+def hits():
+    n = int(L.eval('#TGT_HITS')); out = [L.eval('TGT_HITS[%d]' % i) for i in range(1, n + 1)]; L.execute('TGT_HITS = {}'); return out
+fired(); hits(); tick(1)
+for k in ('DOWN', 'DOWN', cols[19], cols[25]):
+    key(k)
+got = hits()
+check(got == ['LeaveTarget25'], "34: DOWN DOWN sel19 + column 25 clicks the leave cell's own target", got)
+check(L.eval('#IDLGTAPS') >= 1 and L.eval('IDLGTAPS[#IDLGTAPS]') == 25, "35: ... and the row's own tap work ran for column 25", L.eval('#IDLGTAPS'))
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], 'END'):
+    key(k)
+got = hits()
+check(got == ['DoorTarget38'], "36: column 38 by END (a COLX key) clicks that cell's target", got)
+check(fired() == [], "37: ... and no plain row fired with either", '')
+# a target re-aimed out of combat follows (OnAttributeChanged mirror)
+L.execute('local t = CreateFrame("Button", "NewTarget25", UIParent); t:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = "NewTarget25" end); WowCompanion.pad.rows.idlg.cells[25]:SetAttribute("clickbutton", t)')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], cols[25]):
+    key(k)
+got = hits()
+check(got == ['NewTarget25'], "38: a re-aimed cell's new target is the one clicked", got)
+# a cell with no action (type cleared, as a door when the bags show): nothing
+L.execute('WowCompanion.pad.rows.idlg.cells[38]:SetAttribute("type", nil)')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], 'END'):
+    key(k)
+check(hits() == [], "39: a cell with no action: nothing clicked", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -478,6 +478,10 @@ local function unwrap(v) if type(v) == "table" and rawget(v, "__frame") then ret
 function Frame:SetAttribute(k, v)
     if isProtected(self) then blocked("SetAttribute " .. tostring(self._name) .. " " .. tostring(k)) end
     self.a[k] = unwrap(v)
+    -- as the game: OnAttributeChanged (script and hooks) after every SetAttribute (pad31's target mirror listens)
+    local fn = self.scripts and self.scripts.OnAttributeChanged
+    if fn then pcall(fn, self, k, self.a[k]) end
+    for _, h in ipairs(self.hooks and self.hooks.OnAttributeChanged or {}) do pcall(h, self, k, self.a[k]) end
 end
 local rawShow, rawHide = Frame.Show, Frame.Hide
 local function fireHooks(f, ev)
