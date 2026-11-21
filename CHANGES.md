@@ -34,7 +34,8 @@ On top of the stable linux-v1.0.37.4. Built and passing the tests; **not yet pla
 
 - A few window actions still go as mouse clicks: opening the game's bags when you enter Bags, closing a game window when you switch
   rooms, moving items between bags and Clean Up. Clicks can miss after controller play, and the aim is as few automated inputs as
-  possible (the next beta moves the bags door and the room switch to keyboard shortcuts).
+  possible (the beta moves the room switch to keyboard shortcuts; the bags door stays a click: the backpack button reads the shortcut's
+  Ctrl+Shift as a modifier).
 - The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
