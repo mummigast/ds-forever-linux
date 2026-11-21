@@ -28,6 +28,8 @@ object TapKeys {
         listOf("INSERT", "HOME", "END", "PAGEUP")).toSet()   // Linux Streaming Edition 11-18: columns 36-39 as layout-safe keys (TapPad KEY_COLX)
     /** the columns 36-39 that are navigation keys (TapPad KEY_COLX): never a far row's selector or cell */
     private val COLX = setOf("INSERT", "HOME", "END", "PAGEUP")
+    /** TapPad's SECURE far rows (pad.secureRow): their columns 36-39 cannot go by keys */
+    private val SECURE_FAR = setOf("bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv")
     /** what Windows / Wine / the launcher treat as system keys (with any Alt or Meta, every F-key, the numpad, the controller) */
     private val SYSTEM = setOf("ESCAPE", "ESC", "TAB", "ENTER", "RETURN", "SPACE", "BACKSPACE", "DELETE", "PRINTSCREEN", "SCROLLLOCK",
         "PAUSE", "NUMLOCK", "CAPSLOCK", "LWIN", "RWIN", "APPS", "MENU", "ALT", "LALT", "RALT")
@@ -64,7 +66,9 @@ object TapKeys {
             val sel = rks[2]
             if (rks[0] != rks[1] || rks[0] !in ROW_KEYS || systemChord(MODS, rks[0])) return null
             if (sel !in COL_KEYS || sel in COLX || systemChord(MODS, sel)) return null
-            if (ck !in COL_KEYS || ck in COLX || systemChord(MODS, ck)) return null
+            // 2026-11-21 (the user: a bag slot pick "an awful lot of clicks"; bmvq:36 had no keys, so the whole pick went as 3 clicks):
+            // only the SECURE far rows (the bags' use rows, worn gear) keep 36-39 as clicks; a plain far row's dispatcher reads them
+            if (ck !in COL_KEYS || (ck in COLX && op in SECURE_FAR) || systemChord(MODS, ck)) return null
             return rk to ck
         }
         if (rks.size !in 1..2 || rks.toSet().size != 1) return null
