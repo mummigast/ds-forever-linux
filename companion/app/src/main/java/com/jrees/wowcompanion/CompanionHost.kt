@@ -77,6 +77,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the interrupt layer: an open NPC window takes the whole screen, over the rooms AND the strip */
     private lateinit var interactView: InteractView
     private lateinit var interactKb: ChatKeyboard
+    /** Linux Streaming Edition 2026-11-21 (Interact i180 / i181): the game's own auction house; the bottom screen types its search, read only */
+    private lateinit var ahPanel: AhPanel
     /** the room's red combat cue (Home's): over the rooms only, while a room keeps the controller through a fight */
     private lateinit var roomCue: RoomCombatCue
     private lateinit var dialogView: DialogView
@@ -875,6 +877,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         interactKb = ChatKeyboard(this, swap = false, voice = true).apply { visibility = View.GONE }
         interactView.keyboard = interactKb
         interactView.padSource = { questsPad }
+        ahPanel = AhPanel(this, interactKb) { questsPad }
         dialogView = DialogView(this)
         dialogView.appOwnsPad = { padOwner.roomMode() }          // combat_nav: a pop-up / a roll answered with the pad in a fight
         dialogView.rollsOwnPad = { padOwner.holder == null || padOwner.holder == "app" }   // review 2026-11-11: never with a room's press
@@ -1270,6 +1273,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             addView(pinPicker, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { bottomMargin = Strip.HEIGHT })
             addView(interactView, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            // the game's auction house (i181): its read-only panel over the rooms, the keyboard below over it
+            addView(ahPanel.view, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // 1.0.8: the Chat keyboard for the NPC windows' fields (Send Mail, the auction-house search), along the bottom over them
             addView(interactKb, FrameLayout.LayoutParams(
@@ -2880,6 +2886,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "chatt", "chatq", "chatlink" -> {
                 chatView.onDoc(msg)      // Chat's rework: typed / quick chat answers, link tooltips
                 if (current && ::interactView.isInitialized) interactView.onChatAnswer(msg)     // 1.0.8: an NPC window's field (chat22)
+                if (current && ::ahPanel.isInitialized) ahPanel.onChatAnswer(msg)               // i181: the game's auction-house search
                 if (current && ::macrosView.isInitialized) macrosView.onChatAnswer(msg)           // the Macros room's field (chat22)
                 if (current && tradOpen()) targetRadial.onChatAnswer(msg)                          // q69: the pet's rename field (chat22)
             }
@@ -3038,6 +3045,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "auraack" -> homeView.auraAck(msg)
             "interact" -> {
                 interactView.update(msg, current)
+                if (current) ahPanel.update(msg)          // i181: the game's auction house: its search typed from here, read only
                 // bags-open1 (capture v21): the loot window a bag item opened holds over the Bags room, which waits behind it (BagsLoot)
                 if (current && ::bagsView.isInitialized) bagsView.lootOver = BagsLoot.over(msg)
                 // PARTY MODE (the user's ruling): anything that takes the controller ends it - in fights too (the app's tap is the route)
