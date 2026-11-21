@@ -77,6 +77,9 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | Chat link tooltips still loading ("Retrieving item information") are asked again, up to 8 times | `WowCompanion/Chat.lua` (chat43) |
 | The PC helper polls the game's log every 25 ms | `linux-helper/dsf_bridge.py` |
 | The Thor never checks for or downloads WoW updates itself (a WoW Forever patch made the launcher update the Thor's folder) | `WoWForeverScreen.kt` |
+| (beta 1.0.37.5) A secure row's "click" cells by keys where the target ignores modifiers (the dialogs, the per-window leave on a room switch): the cell's target is mirrored onto the key's proxy out of combat, which clicks it; columns 36-39 through the navigation keys' snippet; `keys.sfx` names the rows | `TapPad.lua` (pad31), `TapKeys.kt` |
+| (beta 1.0.37.5) Log lines up to 3600 chars (measured limit ~4000): ~6x fewer log writes per push | `WowCompanion/Sink.lua` (sink2) |
+| (beta 1.0.37.5) Worn equipment and the bags' JSON reused between full documents; unit events registered per unit | `Core.lua` (eq1), `Bags.lua` (bj1), `PadMap.lua`, `Hub.lua`, `Character.lua` (ue1) |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 

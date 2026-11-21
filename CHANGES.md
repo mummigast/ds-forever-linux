@@ -2,11 +2,21 @@
 
 Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 418). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## Beta: next (beta.2, not released yet), add-on set 418
+## Beta: linux-v1.0.37.5-beta.1, add-on set 418 (pre-release; the stable line is main / the latest release)
 
-- **Opening the game's bags when you enter Bags, and closing a game window when you switch rooms, are keyboard shortcuts** (they were
-  mouse clicks: one per Bags visit, up to three per room switch). A secure row's "click" cells (the backpack doors, the dialogs'
-  buttons) are now pressed through the shortcut's own secure button, which clicks that cell's target as the cell would.
+On top of the stable linux-v1.0.37.4. Built and passing the tests; **not yet played in the game** (that is what the beta is for).
+
+- **Fewer automated clicks: switching rooms in the app closes the game's window by keyboard shortcut** (it was a mouse click, up to
+  three per switch). The dialogs' and windows' buttons are pressed through the shortcut's own secure button, which clicks the same
+  button a touch on the screen does. Opening the game's bags on entering Bags stays a click for now (the backpack button reads
+  the shortcut's Ctrl+Shift as a modifier).
+- **Less work per update inside the game** (from the stable release's measured hitches: a full update ~45 ms):
+  - the add-ons' log lines carry up to 3600 characters instead of 900 (the game takes ~4000, measured): a push to the PC is
+    ~17 log writes instead of ~118, and a full update ~28 instead of ~112;
+  - what you wear is collected again only when it changes (gear, durability, item info, level, or every 30 s), not in every full
+    update (~6.5 ms each);
+  - the bags' part of a full update is encoded once per bag change, not once per update (~5.7 ms each);
+  - health, power and aura events are asked for only for the units the add-ons use (player, pet, target), not every nameplate.
 
 ## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
 
