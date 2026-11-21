@@ -1311,10 +1311,11 @@ local queued = false
 local lastCtl = nil         -- the last ctl the app was sent, in either document
 
 local lastCollected = nil   -- beta B1a: the newest collect, WITHOUT ctl (never cleared: Core's full document splices it)
+local lastCollectedJson = nil   -- perf bj1: its JSON, encoded once per collect (was once per full document, ~5.7 ms each)
 local function sendBags(reason)
     queued = false
     local b = WC.collectBags()
-    lastCollected = b
+    lastCollected, lastCollectedJson = b, nil
     b.ctl = WC._bagsCtlDoc and WC._bagsCtlDoc() or nil
     local json = WC.encode(b)
     if json == lastBags then return end
@@ -1328,9 +1329,11 @@ end
 -- force a resend after a press, so it cannot be the source)
 function WC.bagsJsonNow()
     if type(lastCollected) ~= "table" then return nil end
+    if lastCollectedJson then return lastCollectedJson end
     local t = {}
     for k, v in pairs(lastCollected) do if k ~= "ctl" then t[k] = v end end
-    return WC.encode(t)
+    lastCollectedJson = WC.encode(t)
+    return lastCollectedJson
 end
 
 local function sendSoon(reason)
