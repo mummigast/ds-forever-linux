@@ -87,9 +87,30 @@ object TapKeys {
     fun script(pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, liveSession: String?): String? {
         if (cells.isEmpty()) return null
         val pairs = cells.map { (op, col) -> cellKeys(pad, op, col, liveSession) ?: return null }
-        if (gapMs <= 0L) return "wckeys $MODS " + pairs.joinToString(" ") { "${it.first} ${it.second}" }
-        return pairs.joinToString(gapLine(gapMs)) { "wckeys $MODS ${it.first} ${it.second}" }
+        // TapPad pad34 (the user, 2026-11-21: as few automated inputs as possible): a TYPING row (keys.sticky) stays picked in the
+        // add-on after a column, so the next letter on the same row is its column key alone. Only while this app knows the row is
+        // still picked: the last keys it sent ended on that row, less than STICKY_MS ago (the add-on keeps it KEY_STICKY_TTL, 2 s),
+        // and the column is a plain one (36-39's navigation keys are always row keys in that mode). Anything else sent forgets it.
+        val sticky = usable(pad, liveSession)?.optJSONObject("sticky")
+        fun isSticky(op: String) = sticky?.optBoolean(op, false) == true
+        val now = System.nanoTime() / 1_000_000L
+        var row: String? = synchronized(this) { if (now - stickyAt <= STICKY_MS) stickyRow else null }
+        val parts = cells.mapIndexed { i, (op, _) ->
+            val (rk, ck) = pairs[i]
+            val cont = row == op && isSticky(op) && ck !in COLX
+            row = if (isSticky(op)) op else null
+            if (cont) ck else "$rk $ck"
+        }
+        synchronized(this) { stickyRow = row; stickyAt = now + gapMs.coerceAtLeast(0L) * (cells.size - 1) }
+        if (gapMs <= 0L) return "wckeys $MODS " + parts.joinToString(" ")
+        return parts.joinToString(gapLine(gapMs)) { "wckeys $MODS $it" }
     }
+
+    private const val STICKY_MS = 1200L
+    private var stickyRow: String? = null
+    private var stickyAt = 0L
+    /** the row is no longer known to be picked (keys refused, a sweep, a handshake by other means) */
+    fun forgetSticky() = synchronized(this) { stickyRow = null }
 
     /**
      * THE SWEEP (before keys go live, on the user's word): every row key ALONE (a pick that just expires), then the add-on's own
@@ -97,6 +118,7 @@ object TapKeys {
      * add-on ("padkeytest") while its trace is on (the handshake's click starts it). Null without a live handshake or a keytest key.
      */
     fun sweep(pad: JSONObject?, gapMs: Long, liveSession: String?): String? {
+        forgetSticky()
         val keys = usable(pad, liveSession) ?: return null
         val rowsObj = keys.optJSONObject("rows") ?: return null
         val kt = rowsObj.optString("keytest", "")

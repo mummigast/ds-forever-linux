@@ -297,5 +297,23 @@ for k in ('DOWN', 'DOWN', cols[25], 'INSERT', 'DOWN', 'DOWN', cols[24], cols[5])
     key(k)
 check(fired() == ['chs:36', 'chr:5'], "44: chs 36 (INSERT) then chr 5, by keys", '')
 
+# pad34: the typing rows stay picked: after the row's keys, one key per letter; "ll" is two letters; any row key ends it
+KT = L.eval('WowCompanion.pad.describe().keys')
+check(KT['sticky']['chr'] is True and KT['sticky']['qact'] is None, "45: keys.sticky lists the typing rows", '')
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[24], cols[5], cols[6], cols[6], cols[7]):
+    key(k)
+check(fired() == ['chr:5', 'chr:6', 'chr:6', 'chr:7'], "46: a word on chr: row keys once, then one key per letter (the double letter twice)", '')
+key('INSERT'); key(cols[3])
+check(fired() == ['qact:3'], "47: a row key (INSERT) right after typing is a row, never chr's column 36", '')
+tick(1)
+key(cols[5])
+check(fired() == [], "48: after the stickiness ran out a lone column key is nothing", '')
+for k in ('DOWN', 'DOWN', cols[24], cols[5]):
+    key(k)
+tick(3)
+key(cols[6])
+check(fired() == ['chr:5'], "49: 3 s later the row is no longer picked (KEY_STICKY_TTL 2 s)", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
