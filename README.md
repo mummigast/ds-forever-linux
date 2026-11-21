@@ -22,7 +22,8 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 - **A Linux helper instead of DS Forever Desktop** ([linux-helper/](linux-helper/README.md)): pairs with the Thor, starts WoW
   through Steam/Proton, installs the matching add-ons, and closes the game after 10 minutes without a Thor.
 - **Pairing over a VPN** with DS Forever's *Other network* code (`dsf-bridge code`).
-- **Keyboard shortcuts instead of screen clicks** for quests, vendors and the top-screen switches, so WoW's cursor stays put.
+- **Keyboard shortcuts instead of screen clicks** for quests, vendors, bags (in fights too) and the top-screen switches, so WoW's
+  cursor stays put and as few automated inputs as possible are sent.
 - **Streaming only:** a smaller app (about 130 MB) that installs beside the official one (`app.dsforever.companion.linux`).
 - Small extras on the top screen, each with its own switch in *Settings*:
   - **Box under the dot**: the game's tooltip for the enemy under the controller's aim dot, with Questie's quest lines.

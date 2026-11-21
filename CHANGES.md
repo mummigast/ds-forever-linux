@@ -1,11 +1,22 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 415). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 417). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## Beta: linux-v1.0.37.4-beta.1, add-on set 416 (pre-release; the stable line is main / the latest release)
+## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
+
+- A few window actions still go as mouse clicks: opening the game's bags when you enter Bags, closing a game window when you switch
+  rooms, moving items between bags and Clean Up. Clicks can miss after controller play, and the aim is as few automated inputs as
+  possible (the next beta moves the bags door and the room switch to keyboard shortcuts).
+- The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
+- Rarely "nothing received from the game" for a moment; it recovers by itself.
+- The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
+
+## 2026-11-21: linux-v1.0.37.4, add-on set 417 (the beta.1 line, tested)
 
 - **Bag items by keyboard shortcuts in fights too** (potions from the bags): every shortcut now goes through a secure button set up
   out of combat, which picks the bag slot itself at the press, so nothing needs to be rebound while the fight's lockdown holds.
+- **A bag slot picked by touch is one keyboard shortcut** (was three mouse clicks about 0.4 s apart, which also showed as clicks
+  in the game): fewer automated inputs, and the cursor is there at once.
 - **Less stutter.** A fight's start measured ~32 + ~20 ms (was ~70 + 65), its end ~59 ms (was 104):
   - the full document is built from its parts (the layout was encoded three times per update), and reuses the bags' own last
     document instead of reading every bag slot again (~14-24 ms per update);
@@ -13,9 +24,13 @@ Newest first. This is the BETA line (branch `beta`, published as pre-releases): 
   - eleven documents are encoded once instead of twice; the group finder's catalogue is re-sent, not re-read, on the heartbeat;
   - the Hub's target frame no longer redraws for every cast of every unit; the box under the dot looks at the existing nameplates
     once per step; the resource bar's aura icons are only touched when they change; PadMap's binding check runs every 0.5 s.
+- **Chat item links no longer stick on "Retrieving item information"**: a link whose item the game had not loaded yet is asked
+  again (up to 8 times, a second apart) instead of keeping the placeholder.
 - **Quicker answers:** the PC helper reads the game's log every 25 ms (was up to 200 ms after a quiet moment), and the keyboard
   shortcuts have shorter gaps between keys.
 - **The Thor never downloads or updates WoW itself any more** (a game patch made it start updating its own folder).
+- Fixed before release (beta.1 only): every keyboard shortcut raised a Lua error and the UI froze (WoW Forever's secure code has no
+  `GetTime`).
 
 ## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
 

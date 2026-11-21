@@ -28,6 +28,15 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 
 ## What is different from DS Forever
 
+**Biggest changes in linux-v1.0.37.4 (2026-11-21), compared with DS Forever 1.0.37:**
+- **Everything the app presses in the game goes as keyboard shortcuts, not mouse clicks**, wherever it can: every shortcut goes
+  through a secure button of the add-on's own (the *secure key router*), so bag items work in fights too, and a bag slot picked by
+  touch is one shortcut instead of three clicks. Fewer automated inputs, and none of them depend on where WoW parks its cursor.
+- **Less stutter while streaming**: the add-ons' big updates are built once and spread over frames (a fight's start ~32 + 20 ms
+  instead of one ~110 ms frame upstream).
+- **Chat item links** that the game had not loaded yet are asked again instead of sticking on "Retrieving item information"
+  (a plain fix that would suit DS Forever too).
+
 | Change | Where |
 |---|---|
 | Own app ID `app.dsforever.companion.linux` and name "DS Forever Linux Streaming": installs beside the official app | `app/build.gradle.kts`, `res/values*/strings.xml` |
@@ -61,6 +70,13 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | **The Thor's add-ons on the PC**: the helper answers `addons_want` like DS Forever Desktop for the managed packages (Polestar, Spoken, Manners, QuestTrail): each only from its own pinned source, size + sha256 checked, staged, never over a folder of yours, old copies to `AddOns-backup-dsforever`, never while WoW runs (before the next start / when it closes), on/off into AddOns.txt for its own folders. Not done: QuestieDB updates, imported add-ons | `linux-helper/pc_addons.py`, `dsf_bridge.py` |
 | The pause menu's power button / Exit game (`end_session`) closes WoW on the PC: its own exit waited for, then its window asked to close (`taskkill` without /F inside the prefix, so it saves), ended only if it stays; then the waiting add-ons go in | `linux-helper/dsf_bridge.py` |
 | Upstream's Reset knows this edition's saved switches (`dotBoxOff`, `softTgtOff` = settings; `softTgt`, `dotBox` = never) | `companion/.../ResetPlan.kt` |
+| **Secure key router** (1.0.37.4): every shortcut key is bound to a SecureActionButton proxy of ours, which clicks the plain dispatcher for ordinary rows and, for a secure bag row picked by "DOWN DOWN + selector", does that bag cell's action itself at the press (its restricted snippet copies the cell's type / item); works in combat, nothing rebound in a fight | `WowCompanion/TapPad.lua` (pad28-29) |
+| **Far rows** (DOWN DOWN + selector + column) for rows that had no key: vendor Buy and quantity, the bag rows, worn gear, the bags' pick rows | `TapPad.lua` (`KEY_FAR`), `TapKeys.kt` |
+| **Key-only rows** (no place on the tap pad, no click possible): Bags' `bcur0..5` move the bag cursor to a slot in one step (was `bmvq 36` + the bag's name + `bmv`: three clicks); the app uses them only while keys are live | `TapPad.lua` (pad30 `pad.keyRow`), `WowCompanion/Bags.lua` (bags-keycur1), `BagsView.kt`, `TapBridge.kt` (`keysNow`) |
+| Perf: the full document spliced from its parts (the HUD encoded once, not three times) and reusing the bags' last collect; fight-start documents spread over later frames; 11 documents encoded once; hitch / perf diagnostics documents | `WowCompanion/Core.lua`, `Sink.lua`, `Hub.lua`, `PadMap.lua`, `Trail.lua` |
+| Chat link tooltips still loading ("Retrieving item information") are asked again, up to 8 times | `WowCompanion/Chat.lua` (chat43) |
+| The PC helper polls the game's log every 25 ms | `linux-helper/dsf_bridge.py` |
+| The Thor never checks for or downloads WoW updates itself (a WoW Forever patch made the launcher update the Thor's folder) | `WoWForeverScreen.kt` |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
@@ -97,7 +113,11 @@ Built and passing the off-device tests, but **not yet tried in the game**. Repor
   keyboard layouts.
 - Layout row by keys (RIGHT RIGHT + column): minimap, chat and tracker toggles (added 2026-11-18).
 - B's pet follow kept per character (Hunter / Warlock).
-- Bags, spells and other secure rows still go as clicks (no keys yet).
+- Spells' secure rows, bag moves and Clean Up still go as clicks (no keys yet); opening the game's bags on entering Bags and closing a
+  game window on a room switch too (the next beta moves those to keys).
+
+Tested on the Thor (2026-11-21, 1.0.37.4): every shortcut through the secure router, a bag item by keys out of combat and in a
+fight, the one-step bag slot pick, vendor buy / sell, quests, HUD switches, chat item links, fights (stutter).
 
 Tested on the Thor (2026-11-19): DS Forever 1.0.36 (relog HUD, keys, power button), loot window on top in fights, every friendly
 plate, the box under the dot with quest lines (its Settings switch: not yet).
