@@ -1,6 +1,18 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 418). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 419). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+## Beta: linux-v1.0.37.5-beta.2, add-on set 419 (pre-release)
+
+On top of beta.1. Built and passing the tests; the auction house is new and not yet played.
+
+- **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the app's
+  auction-house screen is gone. The bottom screen is its keyboard: type the search there and press Done (the words go into the
+  game's search box; press the game's Search with the controller), and see your auctions and what you bought lately (read only).
+- **Fewer automated inputs:** typing (the auction-house search, the app's chat) is the row's keys once, then one key per letter
+  (was four keys per letter, or a click per letter before); the Auras pick and the Talents rows go as keys too.
+- **The box under the dot** takes over the game's leftover tooltip of another unit (it used to step aside for it), and notes what
+  else stood in its way, for the next look.
 
 ## Beta: linux-v1.0.37.5-beta.1, add-on set 418 (pre-release; the stable line is main / the latest release)
 

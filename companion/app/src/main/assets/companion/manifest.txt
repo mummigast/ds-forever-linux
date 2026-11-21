@@ -1,4 +1,4 @@
-set 418
+set 419
 7684f7ca245d9b43f71fc643db45dbe1  WowCompanion/ActionBar.lua
 38a51359f12c294ad8a6bdedf765f276  WowCompanion/Bags.lua
 54397d535fa09a301496d15ebae0c312  WowCompanion/Chat.lua
