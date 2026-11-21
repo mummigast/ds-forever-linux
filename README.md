@@ -17,18 +17,38 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 > - Not affiliated with or endorsed by DS Forever's author, Blizzard Entertainment, WoW Forever or GameNative. World of Warcraft
 >   and Battle.net are trademarks of Blizzard Entertainment; you need your own game and account.
 
-## What you get
+## What is different from DS Forever
 
+**Added**
 - **A Linux helper instead of DS Forever Desktop** ([linux-helper/](linux-helper/README.md)): pairs with the Thor, starts WoW
-  through Steam/Proton, installs the matching add-ons, and closes the game after 10 minutes without a Thor.
+  through Steam/Proton, installs the matching add-ons (also the Thor's Polestar / Spoken / Manners), closes the game after
+  10 minutes without a Thor, and closes it from the pause menu's power button.
 - **Pairing over a VPN** with DS Forever's *Other network* code (`dsf-bridge code`).
-- **Keyboard shortcuts instead of screen clicks** for quests, vendors, bags (in fights too) and the top-screen switches, so WoW's
-  cursor stays put and as few automated inputs as possible are sent.
-- **Streaming only:** a smaller app (about 130 MB) that installs beside the official one (`app.dsforever.companion.linux`).
 - Small extras on the top screen, each with its own switch in *Settings*:
-  - **Box under the dot**: the game's tooltip for the enemy under the controller's aim dot, with Questie's quest lines.
+  - **Box under the dot**: the game's tooltip for the unit under the controller's aim dot (as far as the nameplates reach), with
+    Questie's quest lines.
   - **Loot window on the top screen** stays the game's own, in fights too.
   - **Friendly plates** show for every friendly unit, not only the target.
+
+**Improved**
+- **Keyboard shortcuts instead of screen clicks** wherever possible: quests, vendors (buy, sell, repair), bags (in fights too),
+  a bag slot picked by touch, the room switch, auras, talents, typing, the top-screen switches. Streaming, a click lands where WoW
+  parks its cursor after controller play, so clicks often missed; shortcuts don't, and fewer automated inputs are sent.
+- **Less stutter while streaming:** the add-ons' big updates are built once and spread over frames (a fight's start ~32 + 20 ms
+  instead of one ~110 ms frame); log writes, equipment and bag data are reused instead of rebuilt.
+- **Chat item links** no longer stick on "Retrieving item information".
+- **Settings show only what works when streaming.**
+
+**Removed / left out**
+- **No local game:** this edition only streams. No Local card, no Battle.net sign-in on the Thor, and the local runtime (Proton,
+  DXVK, drivers, ...) is not packaged: the app is about 130 MB and installs beside the official one
+  (`app.dsforever.companion.linux`). The Thor never downloads or updates WoW itself.
+
+**New in the current beta** (see *Stable and beta* below; not in the stable release yet)
+- **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the
+  app's own auction-house screen is gone. The bottom screen is its keyboard (type the search, Done) and shows your auctions and
+  what you bought lately.
+- **Typing is one key per letter** (the auction-house search, the app's chat), and fewer clicks on room switches.
 
 The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
 Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, the
@@ -71,8 +91,8 @@ options: [FORK.md](FORK.md#build).
 ## Known problems
 
 - Chat commands typed in the app's chat (`/reload`, ...) aren't sent: turn on *Normal game UI* and use the game's own chat.
-- WoW Forever keeps soft enemy targeting for the controller only, and add-ons can't change that: the box under the dot shows
-  enemies, not friendly units or NPCs.
+- WoW Forever keeps soft targeting for the controller only, and add-ons can't change that: the box under the dot finds friendly
+  units and NPCs only by their nameplates (turn on *Friendly plates*).
 - Right after connecting, the camera may turn by itself until the right stick is moved.
 - More, and what is still untested: [FORK.md](FORK.md#known-problems).
 

@@ -80,6 +80,10 @@ World of Warcraft and Battle.net are trademarks of Blizzard Entertainment; you n
 | (beta 1.0.37.5) A secure row's "click" cells by keys where the target ignores modifiers (the dialogs, the per-window leave on a room switch): the cell's target is mirrored onto the key's proxy out of combat, which clicks it; columns 36-39 through the navigation keys' snippet; `keys.sfx` names the rows | `TapPad.lua` (pad31), `TapKeys.kt` |
 | (beta 1.0.37.5) Log lines up to 3600 chars (measured limit ~4000): ~6x fewer log writes per push | `WowCompanion/Sink.lua` (sink2) |
 | (beta 1.0.37.5) Worn equipment and the bags' JSON reused between full documents; unit events registered per unit | `Core.lua` (eq1), `Bags.lua` (bj1), `PadMap.lua`, `Hub.lua`, `Character.lua` (ue1) |
+| (beta 1.0.37.5-beta.2) **The auction house is the game's own window** (Interact `WINDOWS.auction = false`: not hidden, the controller not taken, no mirror document); the bottom screen types its search box through Chat's lent field (Done = SetText only, the search is the player's press) and shows your auctions / recent purchases read only (`doc.ahinfo`). The app's own auction-house screen is no longer used | `WowCompanionInteract/Interact.lua` (i180-i181), `AhPanel.kt`, `CompanionHost.kt` |
+| (beta 1.0.37.5-beta.2) **Sticky typing rows**: chq / chr / chs stay picked after a column (2 s), so a word is the row's keys once, then one key per letter; key presses skip the click double-tap guard | `TapPad.lua` (pad34), `TapKeys.kt` |
+| (beta 1.0.37.5-beta.2) More rows by keys: the Auras pick, the Talents rows, the chat rows | `TapPad.lua` (pad32-33) |
+| (beta 1.0.37.5-beta.2) The box under the dot takes over the game's leftover world tooltip of another unit; blocks traced | `WowCompanionHub/Hub.lua` (hub75) |
 | Own front page; DS Forever's README follows unchanged in a fold | `README.md` |
 | One-command Linux build | `linux-build.sh` |
 
@@ -87,6 +91,9 @@ Changed upstream files carry a `Linux Edition` / `Linux Streaming Edition` comme
 the edition's behaviour sits behind switches, and the runtime is left out at packaging time, so upstream merges stay small.
 
 ## What is left out
+
+- (beta 1.0.37.5-beta.2) **The app's own auction-house screen** (upstream's mirrored auction house on the bottom screen): the game's own
+  window on the top screen replaces it. Its code is still in the source, unused.
 
 The Streaming Edition's APK does not package what only the local game (WoW running on the Thor) uses. The code that would
 use it stays, unused:
