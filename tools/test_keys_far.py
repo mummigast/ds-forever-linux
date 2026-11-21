@@ -215,7 +215,7 @@ if pad.keysFarRefresh then pad.keysFarRefresh() end
 KT = L.eval('WowCompanion.pad.describe().keys')
 rows = dict(KT['rows'].items()) if KT else {}
 check(rows.get('idlg') == 'DOWN DOWN ' + cols[19], "32: idlg = DOWN DOWN + selector 19", rows.get('idlg'))
-check(KT is not None and KT['sfx'] is True, "33: the keys say secure far rows take 36-39 (sfx)", '')
+check(KT is not None and KT['sfx']['idlg'] is True and KT['sfx']['bag0'] is None, "33: sfx lists idlg (36-39 by keys), not bag0 (its doors stay clicks)", '')
 def hits():
     n = int(L.eval('#TGT_HITS')); out = [L.eval('TGT_HITS[%d]' % i) for i in range(1, n + 1)]; L.execute('TGT_HITS = {}'); return out
 fired(); hits(); tick(1)
@@ -243,6 +243,19 @@ tick(1)
 for k in ('DOWN', 'DOWN', cols[19], 'END'):
     key(k)
 check(hits() == [], "39: a cell with no action: nothing clicked", '')
+
+# pad31b: the bag row's click cells (the backpack door reads modifiers) get no mirror: no key path for them
+L.execute("""
+local pad = WowCompanion.pad
+DOORHIT = 0
+local door = CreateFrame("Button", "DoorBackpack", UIParent); door:SetScript("OnClick", function() DOORHIT = DOORHIT + 1 end)
+pad.rows.bag0.cells[5]:SetAttribute("type", "click"); pad.rows.bag0.cells[5]:SetAttribute("clickbutton", door)
+pad.keysFarRefresh()
+""")
+tick(1)
+for k in ('DOWN', 'DOWN', cols[3], cols[5]):
+    key(k)
+check(L.eval('DOORHIT') == 0, "40: a bag row's click cell is not pressed by keys (no mirror)", L.eval('DOORHIT'))
 
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -68,8 +68,9 @@ object TapKeys {
             if (sel !in COL_KEYS || sel in COLX || systemChord(MODS, sel)) return null
             // 2026-11-21 (the user: a bag slot pick "an awful lot of clicks"; bmvq:36 had no keys, so the whole pick went as 3 clicks):
             // only the SECURE far rows (the bags' use rows, worn gear) keep 36-39 as clicks; a plain far row's dispatcher reads them
-            // pad31 (keys.sfx): the add-on's router does a secure far row's 36-39 "click" cells itself (the doors, the dialogs)
-            if (ck !in COL_KEYS || (ck in COLX && op in SECURE_FAR && !keys.optBoolean("sfx", false)) || systemChord(MODS, ck)) return null
+            // pad31 (keys.sfx = { row = true }): the secure far rows whose 36-39 "click" cells the add-on's router does itself (idlg)
+            val sfx = keys.optJSONObject("sfx")?.optBoolean(op, false) == true
+            if (ck !in COL_KEYS || (ck in COLX && op in SECURE_FAR && !sfx) || systemChord(MODS, ck)) return null
             return rk to ck
         }
         if (rks.size !in 1..2 || rks.toSet().size != 1) return null

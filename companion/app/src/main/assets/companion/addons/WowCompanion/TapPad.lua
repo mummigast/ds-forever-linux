@@ -808,6 +808,11 @@ local COLX_SNIP = [[
         return "wcc_" .. sel
     end
 ]]
+-- pad31b (the review, 2026-11-21): a "click" cell is done by keys only where its TARGET ignores modifiers - every key of ours holds
+-- CTRL-SHIFT, and a click delegated inside the key press sees them. The dialogs' cells (StaticPopup / trade / charter buttons, the
+-- per-window leaves -> Interact's secure leave -> the window's close) do; the backpack door does NOT (BagSlotOnClick: with a
+-- modifier held it runs IsModifiedClick("OPENALLBAGS") instead of ToggleBag), so bag0's doors stay clicks. Rows listed here only.
+local KEY_SFX = { idlg = true }
 local function proxyFor(k, col)
     keys.proxy = keys.proxy or {}
     local p = keys.proxy[k]
@@ -911,7 +916,7 @@ end
 local COLX_KEY = {}
 for k, c in pairs(KEY_COLX) do COLX_KEY[c] = k end
 function pad.keysMirror(name, c, cell)
-    if InCombatLockdown() or not keys.proxy or type(cell) ~= "table" then return end
+    if InCombatLockdown() or not keys.proxy or type(cell) ~= "table" or not KEY_SFX[name] then return end
     local k = (c < 36) and keys.colKey[c] or COLX_KEY[c]
     local p = k and keys.proxy[k]
     if not p then return end
@@ -1073,7 +1078,10 @@ local function keysDescribe()
         cols[col + 1] = (k and keySafe(KEY_MOD_NAMES, k)) and k or ""
     end
     for k, col in pairs(KEY_COLX) do cols[col + 1] = keys.rowOf[k] and k or "" end
-    return { mods = KEY_MOD_NAMES, ttl = KEY_PICK_TTL, rows = rows, cols = cols, s = keys.session, sfx = true }   -- pad31 sfx: secure far rows take 36-39
+    -- pad31 sfx: the secure far rows whose 36-39 "click" cells the router does (KEY_SFX); the app clicks the others' 36-39
+    local sfx = {}
+    for name in pairs(KEY_SFX) do if rows[name] then sfx[name] = true end end
+    return { mods = KEY_MOD_NAMES, ttl = KEY_PICK_TTL, rows = rows, cols = cols, s = keys.session, sfx = sfx }
 end
 
 -- ---------------------------------------------------------------- layout
