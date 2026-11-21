@@ -277,5 +277,25 @@ for k in ('DOWN', 'DOWN', cols[22], cols[4]):
     key(k)
 check(fired() == ['talentn:4'], "42: talentn column 4 by keys", '')
 
+# pad33: the chat rows as far rows (selectors 23-25), unless a row has its own row key
+L.execute("""
+local pad = WowCompanion.pad
+for _, n in ipairs({ "chr", "chs" }) do
+    if not pad.rows[n] then pad.op(n, n, function() end) end
+    local r, name = pad.rows[n], n
+    local h = r.handler
+    if type(h) == "function" and not r.wcTest then r.wcTest = true; r.handler = function(k, c) FIRED[#FIRED + 1] = name .. ":" .. tostring(c); return h(k, c) end end
+end
+pad.bindKeys()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('chr') == 'DOWN DOWN ' + cols[24] and rows.get('chs') == 'DOWN DOWN ' + cols[25], "43: chr / chs = DOWN DOWN + selectors 24 / 25",
+      (rows.get('chr'), rows.get('chs')))
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[25], 'INSERT', 'DOWN', 'DOWN', cols[24], cols[5]):
+    key(k)
+check(fired() == ['chs:36', 'chr:5'], "44: chs 36 (INSERT) then chr 5, by keys", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
