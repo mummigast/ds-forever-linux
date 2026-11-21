@@ -10,6 +10,11 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
 
+## Unreleased (main)
+
+- The full document is built from its parts' JSON (the layout was encoded three times per update, now once); its parts' times go
+  into the hitch documents. Not tested in game yet.
+
 ## 2026-11-20 (evening): linux-v1.0.37.3, add-on set 415
 
 - **Selling, buying and using bag items work again while streaming.** They went as mouse clicks, which land on the spot WoW parks

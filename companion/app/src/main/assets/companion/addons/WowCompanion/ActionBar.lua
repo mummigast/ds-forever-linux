@@ -2061,6 +2061,7 @@ function WC.collectActionBar()
         lastHudJson = json
         requestState()          -- new layout -> the state must follow it
     end
+    WC._hudJsonNow = json       -- full1: Core's snapshot splices this instead of encoding the hud again
     return {
         slots = slots,
         combat = S(InCombatLockdown),

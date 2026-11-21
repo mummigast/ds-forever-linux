@@ -383,7 +383,10 @@ do
         local now = debugprofilestop()
         local ms = now - H.last
         H.last = now
-        if ms > HITCH_MS and not H.loading and H.last > 0 and GetTime() - H.sentAt >= GAP_S and ms < 5000 then
+        -- a burst (a fight's start is two heavy frames in a row): up to 3 consecutive hitch frames, then the 2 s gap again
+        local burst = H.prevHitch and (H.burst or 0) < 3
+        if ms > HITCH_MS and not H.loading and (burst or GetTime() - H.sentAt >= GAP_S) and ms < 5000 then
+            H.burst = burst and (H.burst or 0) + 1 or 1
             H.sentAt = GetTime(); H.n = H.n + 1
             local docs = {}
             for _, e in ipairs(top(H.dt, 8, function(v) return v[2] end)) do
@@ -394,6 +397,13 @@ do
             local r = { type = "hitch", v = "perf3", n = H.n, ms = math.floor(ms + 0.5), ev = evs, docs = docs, bytes = H.bytes,
                         q = WC.spreadQueued and WC.spreadQueued() or -1, combat = InCombatLockdown() and true or false,
                         fps = math.floor((GetFramerate and GetFramerate() or 0) + 0.5) }
+            -- perf4: Core's snapshot ran in this frame: each part's ms (bar, equipment, player, map, bags, send) and its reason
+            local ST = WC.snapT
+            if type(ST) == "table" and type(ST.at) == "number" and ST.at > now - ms then
+                local function r1(v) return type(v) == "number" and math.floor(v * 10 + 0.5) / 10 or nil end
+                r.snap = { reason = ST.reason, sent = ST.sent, bar = r1(ST.bar), eq = r1(ST.eq), player = r1(ST.player), map = r1(ST.map),
+                           bags = r1(ST.bags), send = r1(ST.send), bytes = ST.bytes }
+            end
             local okA, at = pcall(addonTimes)
             if okA and at then r.addons = at end
             if type(WowCompanionDB) == "table" then
@@ -404,6 +414,7 @@ do
             H.ev, H.dt, H.bytes = {}, {}, 0
             pcall(function() WC.send(WC.encode(r)) end)
         end
+        H.prevHitch = ms > HITCH_MS and H.burst ~= nil and GetTime() == H.sentAt
         H.ev, H.dt, H.bytes = {}, {}, 0
     end)
 end
