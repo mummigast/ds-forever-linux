@@ -257,5 +257,25 @@ for k in ('DOWN', 'DOWN', cols[3], cols[5]):
     key(k)
 check(L.eval('DOORHIT') == 0, "40: a bag row's click cell is not pressed by keys (no mirror)", L.eval('DOORHIT'))
 
+# pad32: the Auras pick and the Talents rows are far rows (selectors 20-22)
+L.execute("""
+local pad = WowCompanion.pad
+for _, n in ipairs({ "aurapick", "talents", "talentn" }) do
+    if not pad.rows[n] then pad.op(n, n, function() end) end
+    local r, name = pad.rows[n], n
+    local h = r.handler
+    if type(h) == "function" and not r.wcTest then r.wcTest = true; r.handler = function(k, c) FIRED[#FIRED + 1] = name .. ":" .. tostring(c); return h(k, c) end end
+end
+pad.bindKeys()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('aurapick') == 'DOWN DOWN ' + cols[20] and rows.get('talents') == 'DOWN DOWN ' + cols[21] and rows.get('talentn') == 'DOWN DOWN ' + cols[22],
+      "41: aurapick / talents / talentn = DOWN DOWN + selectors 20 / 21 / 22", (rows.get('aurapick'), rows.get('talents'), rows.get('talentn')))
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[22], cols[4]):
+    key(k)
+check(fired() == ['talentn:4'], "42: talentn column 4 by keys", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
