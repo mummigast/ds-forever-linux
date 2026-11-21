@@ -25,13 +25,15 @@ local BUFFER_BYTES = 49152          -- measured
 local PAD_TARGET   = 61440          -- 1.25x: we estimate our own bytes and cannot see the file,
                                     -- so overshoot. An undershoot costs the ENTIRE push.
 local LOG_PREFIX_BYTES = 29         -- "9/25 21:30:45.728  [N][Lua] "
-local MAX_LINE = 900                -- C_Log max message length is UNMEASURED; stay conservative
-local PADLINE  = string.rep("x", 500)
+-- sink2 (2026-11-21, measured by WC.probeLineLengths below on WoW Forever, six logins: 900, 2000 and 4000 chars arrive whole,
+-- 8000 / 16000 are cut at ~4075): lines up to 3600 chars, data and pad alike. A flush is ~17 C_Log calls instead of ~118, a
+-- 100 KB document ~28 lines instead of ~112: each call is a log write and a CONSOLE_MESSAGE event inside the game (7900 of them
+-- in one evening's hitch frames). The readers (the app's LogTail, the helper's WcbAssembler) have no line limit.
+local MAX_LINE = 3600
+local PADLINE  = string.rep("x", 3600)
 
--- Pad-length probe, run once at load. C_Log's maximum message length has never been
--- measured, so the pad is 500 chars and a flush costs ~118 separate calls. If longer lines
--- survive intact, the same 48 KiB costs a tenth of the calls. The reader checks which of
--- these arrive whole; until then nothing depends on the answer.
+-- Pad-length probe, run once at load (sink2 uses its answer: up to ~4000 chars arrive whole). Kept, so a client that ever
+-- cuts shorter shows it in the log.
 function WC.probeLineLengths()
     for _, n in ipairs({ 900, 2000, 4000, 8000, 16000 }) do
         pcall(C_Log.LogMessage, WC.PROTO .. "|probe" .. n .. "|" .. string.rep("p", n) .. "|END")
@@ -109,7 +111,7 @@ function WC.flush()
     local t0 = debugprofilestop()
     local need = PAD_TARGET - pendingBytes
     if need > 0 then
-        local lines = math.ceil(need / (500 + LOG_PREFIX_BYTES))
+        local lines = math.ceil(need / (#PADLINE + LOG_PREFIX_BYTES))
         for i = 1, lines do
             pcall(C_Log.LogMessage, WC.PROTO .. "|pad|" .. PADLINE)
         end

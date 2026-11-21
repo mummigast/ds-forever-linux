@@ -88,5 +88,18 @@ got = [d for d in docs(L)[n0:] if d.get('type') == 'full']
 check(len(got) == 1 and got[-1]['bags'] == {"bags": [{"bag": 0, "slots": 20, "free": 9}], "ctl": {"x": 1}},
       "7: the bags' last document is spliced, no second collect", got[-1:] or '')
 
+# perf eq1: what is worn is collected again only after an event that changes it, or after 30 s
+L.execute('EQN = 0; EQUIP = { head = { id = 9 } }; WowCompanion.collectEquipped = function() EQN = EQN + 1; return EQUIP end')
+L.execute('fire("PLAYER_EQUIPMENT_CHANGED"); WowCompanion.snapshot("manual"); WowCompanion.snapshot("manual")')
+check(L.eval('EQN') == 1, "8: two full docs, one equipment collect (the second reuses it)", L.eval('EQN'))
+got = [d for d in docs(L) if d.get('type') == 'full'][-1]
+check(got.get('equipped') == {"head": {"id": 9}}, "9: ... and the reused equipment is in the doc", got.get('equipped'))
+L.execute('fire("UPDATE_INVENTORY_DURABILITY"); WowCompanion.snapshot("manual")')
+check(L.eval('EQN') == 2, "10: a durability change collects again", L.eval('EQN'))
+L.execute('fire("UNIT_INVENTORY_CHANGED", "party1"); WowCompanion.snapshot("manual")')
+check(L.eval('EQN') == 2, "11: another unit's inventory does not", L.eval('EQN'))
+L.execute('NOW = NOW + 31; WowCompanion.snapshot("manual")')
+check(L.eval('EQN') == 3, "12: after 30 s it is collected again (timed text)", L.eval('EQN'))
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
