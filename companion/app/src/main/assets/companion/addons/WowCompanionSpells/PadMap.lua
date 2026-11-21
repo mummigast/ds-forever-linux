@@ -5657,8 +5657,12 @@ function OV.smartApply()
     end
 end
 OV.smartF = CreateFrame("Frame")
-for _, e in ipairs({ "BAG_UPDATE_DELAYED", "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_AURA",
-                     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_TARGET_CHANGED", "PLAYER_LEVEL_UP",
+-- perf ue1 (2026-11-21): the unit events for the player alone (RegisterUnitEvent: the game no longer calls us for every nameplate's
+-- health / aura change in a crowd); the handler's own player check stays for a client without RegisterUnitEvent
+for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER", "UNIT_AURA" }) do
+    if not pcall(function() OV.smartF:RegisterUnitEvent(e, "player") end) then pcall(function() OV.smartF:RegisterEvent(e) end) end
+end
+for _, e in ipairs({ "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_TARGET_CHANGED", "PLAYER_LEVEL_UP",
                      "PLAYER_ENTERING_WORLD", "GET_ITEM_INFO_RECEIVED" }) do
     pcall(function() OV.smartF:RegisterEvent(e) end)
 end

@@ -3039,7 +3039,10 @@ do
         if TB.f and c and not rawequal(TB.placedOn, c) then TB.placedOn = c; pcall(UF.placeTarget) end
         pcall(UF.targetStep)
     end
-    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "UNIT_AURA", "UNIT_SPELLCAST_START",
+    -- perf ue1 (2026-11-21): UNIT_AURA for the target alone (the handler only ever wanted the target's; every nameplate's aura change
+    -- in a crowd called it)
+    if not pcall(drv.RegisterUnitEvent, drv, "UNIT_AURA", "target") then pcall(drv.RegisterEvent, drv, "UNIT_AURA") end
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "UNIT_SPELLCAST_START",
                          "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_START",
                          "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_CHANNEL_UPDATE", "RAID_TARGET_UPDATE" }) do
         pcall(drv.RegisterEvent, drv, e)

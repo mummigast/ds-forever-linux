@@ -46,7 +46,9 @@ local EQ_EVENTS = { "PLAYER_EQUIPMENT_CHANGED", "GET_ITEM_INFO_RECEIVED", "UPDAT
                     "PLAYER_LEVEL_UP", "UNIT_INVENTORY_CHANGED", "PLAYER_ENTERING_WORLD", "ITEM_DATA_LOAD_RESULT" }
 do
     local f = CreateFrame("Frame")
-    for _, e in ipairs(EQ_EVENTS) do pcall(f.RegisterEvent, f, e) end
+    for _, e in ipairs(EQ_EVENTS) do
+        if e ~= "UNIT_INVENTORY_CHANGED" or not pcall(f.RegisterUnitEvent, f, e, "player") then pcall(f.RegisterEvent, f, e) end
+    end
     f:SetScript("OnEvent", function(_, e, unit)
         if e == "UNIT_INVENTORY_CHANGED" and unit ~= "player" then return end
         EQ.dirty = true

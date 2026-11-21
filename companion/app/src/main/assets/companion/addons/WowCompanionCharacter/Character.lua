@@ -1021,7 +1021,15 @@ f:SetScript("OnEvent", function(_, e, unit)
 end)
 local missing = {}
 for e in pairs(EVENTS) do
-    local ok, registered = pcall(function() return f:RegisterEvent(e) end)
+    -- perf ue1 (2026-11-21): the unit events for the player and the pet alone (the handler drops every other unit; UNIT_AURA /
+    -- UNIT_MAXHEALTH fire for every nameplate in a crowd); PLAYER_XP_UPDATE and UNIT_PET keep the plain registration
+    local ok, registered
+    if UNIT_EVENT[e] and e:sub(1, 5) == "UNIT_" and e ~= "UNIT_PET" then
+        ok, registered = pcall(function() return f:RegisterUnitEvent(e, "player", "pet") end)
+        if not ok then ok, registered = pcall(function() return f:RegisterEvent(e) end) end
+    else
+        ok, registered = pcall(function() return f:RegisterEvent(e) end)
+    end
     if not ok or registered == false then missing[#missing + 1] = e end
 end
 table.sort(missing)
