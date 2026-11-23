@@ -31,6 +31,7 @@ A.GetItemKeyInfo = function(k) return { itemName = "Linen Cloth", quality = 1 } 
 A.QueryOwnedAuctions = function() end
 A.ConfirmCommoditiesPurchase = function() end
 A.PlaceBid = function() end
+ORIG_CONFIRM, ORIG_BID = A.ConfirmCommoditiesPurchase, A.PlaceBid
 C_AuctionHouse = setmetatable(A, { __index = function() return function() end end })
 """
 L, errs = boot_world(pre=PRE)
@@ -56,6 +57,10 @@ check(info.get('owned') and info['owned'][0].get('name') == 'Linen Cloth' and in
 ok = L.eval('AH_T.spec and AH_T.spec.done("linen")')
 check(ok is True and L.eval('BOX.text') == 'linen', "4: Done writes the words into the game's search box", L.eval('BOX.text'))
 check(L.eval('SEARCHED') == 0, "5: ... and starts no search itself (the player's own press does)", L.eval('SEARCHED'))
+# i185: the game's buy calls are never hooked (a hook made OK do nothing on WoW Forever): still the very functions the game had
+check(L.eval('rawequal(C_AuctionHouse.ConfirmCommoditiesPurchase, ORIG_CONFIRM) and rawequal(C_AuctionHouse.PlaceBid, ORIG_BID)') == True,
+      "6a: C_AuctionHouse.ConfirmCommoditiesPurchase / PlaceBid are not hooked")
+L.execute('AuctionHouseFrame.CommoditiesBuyFrame = { GetItemID = function() return 2770 end, GetQuantity = function() return 20 end }')
 L.execute('fire("COMMODITY_PRICE_UPDATED", 12, 240); C_AuctionHouse.ConfirmCommoditiesPurchase(2770, 20); fire("COMMODITY_PURCHASE_SUCCEEDED"); runTimers(NOW + 2)')
 d = [x for x in docs(L) if x.get('type') == 'interact']
 b = ((d[-1] if d else {}).get('ahinfo') or {}).get('bought') or []
