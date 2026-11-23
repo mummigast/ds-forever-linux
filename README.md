@@ -49,9 +49,11 @@ More detail, commands and troubleshooting: [the helper's guide](linux-helper/REA
 ## Known issues
 
 - Chat commands typed in the app's chat (`/reload`, ...) aren't sent: use the game's own chat for those.
-- A few actions still go as clicks: the bags button, moving items between bags, picking a spell from the spellbook.
+- A few actions still go as clicks: opening your bags, moving items between bags, picking a spell from the spellbook.
 - *In fights: Top screen* can put the moved buttons in the wrong layout.
-- The full list: [CHANGES.md](CHANGES.md).
+- Live typing works in the auction house only, and types letters, digits and spaces (no å, ä or ö yet).
+- A listing you post shows on the bottom screen the next time you open the auction house.
+- The full list: [CHANGES.md](CHANGES.md#known-issues-main--the-stable-branch-bigger-changes-are-tested-on-the-beta-branch-first).
 
 ## FAQ
 

@@ -66,6 +66,7 @@ the Controller room and the tap-to-cast bar.
 - The tap-to-cast bar by keys is tested out of combat; in a fight it is built to work the same way (as bag items do), not yet played.
 - In the first seconds of a session, before the app's keyboard link with the add-ons is up, a few setting taps still go as clicks.
 - Live typing types letters, digits and spaces (not yet å, ä, ö or symbols), in the auction house only; the chat types as before.
+- A listing you post shows under "Your auctions" on the bottom screen the next time you open the auction house.
 - The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
