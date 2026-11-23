@@ -6674,7 +6674,9 @@ end
 -- game has nothing newer. Left out: what is not a setting (crash-recovery key state, probes, learned cooldowns, chat lines).
 do
     local SKIP = { WowCompanionSpellsDB = { keyProbe = true, faceSwap = true, faceCd = true, combatFace = true },
-                   WowCompanionDB = { chatTop = true } }
+                   -- Linux Streaming Edition (2026-11-23, the user: "a lot of stutters"; every 5 s a 13-16 KB svkeep and a ~45 ms
+                   -- hitch): the edition's diagnostics change all the time, so the table was "changed" (and sent) on every pass
+                   WowCompanionDB = { chatTop = true, perf = true, hitch = true, dotBox = true, softTgt = true } }
     local VARS = { "WowCompanionSpellsDB", "WowCompanionDB" }
     local last = {}
     local function keyLess(a, b)
@@ -6746,7 +6748,8 @@ do
     end
     WC.svKeep = { send = send, ser = ser, fix181 = fix181, FIX = FIX }
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        pcall(C_Timer.NewTicker, 5, function() pcall(send, false) end)
+        -- Linux Streaming Edition: every 30 s (was 5) and never in a fight - each pass reads and sorts the whole tables
+        pcall(C_Timer.NewTicker, 30, function() if not inCombat() then pcall(send, false) end end)
     end
 end
 
