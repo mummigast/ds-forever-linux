@@ -125,7 +125,7 @@ class BottomTilesRoomTest {
 
     // ---------------------------------------------------------------- the tab
 
-    /** the Bottom screen tab: Home's 8 tiles and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
+    /** the Bottom screen tab: Home's 11 tiles (11-20: Spell rank badges; 1518: Reset Home) and Map & chat's 3, each group ONE tile part; the old Tap-to-cast and Chat groups gone; no
      *  "What it does" panel (the tiles are the pictures, as on Top screen) */
     @Test fun bottomTabIsTwoGroupsOfTiles() {
         val r = room()
@@ -139,11 +139,11 @@ class BottomTilesRoomTest {
             assertEquals("$g not shown", View.GONE, r.groupBoxes.single { it.group == g }.box.visibility)
         // five columns of Top's 232 x 184 tiles on the 1240 px page
         val b = tileBoxes(r)
-        assertEquals(11, b.size)
+        assertEquals(15, b.size)                                             // movable Home: Edit Home first; 1518: Reset Home last of Home's, the XP bar before it
         for (t in b.values) { assertEquals(GameUiTiles.TILE_W, t.width(), 0.5f); assertEquals(GameUiTiles.TILE_H, t.height(), 0.01f) }
-        assertEquals(16f, b.getValue(BottomTiles.REST).left, 0.5f)
-        assertEquals(W - 16f, b.getValue(BottomTiles.CLOCK).right, 0.5f)
-        assertEquals(b.getValue(BottomTiles.REST).left, b.getValue(BottomTiles.TOOLBAR).left, 0.01f)
+        assertEquals(16f, b.getValue(BottomTiles.LAYOUT).left, 0.5f)
+        assertEquals(W - 16f, b.getValue(BottomTiles.QUEST).right, 0.5f)
+        assertEquals(b.getValue(BottomTiles.LAYOUT).left, b.getValue(BottomTiles.CLOCK).left, 0.01f)
         // the toolbar off: Hold to talk is not drawn (it cannot act), the Tap-to-cast tile takes its place
         toolbarWant = false; r.refreshGroups(); lay(r)
         assertEquals(BottomTiles.HOME_TILES - BottomTiles.TALK, (home.parts.single() as BottomTilesView).tileIds())
@@ -159,13 +159,15 @@ class BottomTilesRoomTest {
         assertTrue(r.pad.onTabRow)
         press(r, "PADDDOWN")
         val boxes = tileBoxes(r)
-        val tile = boxes.getValue(BottomTiles.REST)
+        var tile = boxes.getValue(BottomTiles.LAYOUT)                   // movable Home (D4): Edit Home is the first tile
         // (pick 5: no heading stops - the first stop under the tab row is a tile)
         repeat(4) { if (r.pad.focusBox() != tile) press(r, "PADDLEFT") }
         assertEquals("the first tile: top-left", tile, r.pad.focusBox())
         press(r, "PADDRIGHT")
-        assertEquals(boxes.getValue(BottomTiles.COMBAT), r.pad.focusBox())
-        press(r, "PADDLEFT")
+        assertEquals(boxes.getValue(BottomTiles.REST), r.pad.focusBox())
+        val first0 = tile
+        tile = boxes.getValue(BottomTiles.REST)                          // the Rest controller tile's band from here
+        assertTrue(first0.left < tile.left)
         HomeSettings.rest = HomeRest.DIAMONDS
         press(r, "PAD1")
         assertEquals(BottomTiles.REST, openTile(r))
@@ -197,13 +199,26 @@ class BottomTilesRoomTest {
         val p = partOf(r, BottomTiles.CASTBAR)
         assertEquals(BottomTiles.CASTBAR, p.openTile)
         var buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("Off / Left / Right / Both, no In combat while Off", 4, buttons.size)
+        assertEquals("Off / Chat / Map / Across / Split (P2), no In combat while Off", 5, buttons.size)
         for (b in buttons) assertTrue(b.height() >= 110f)
         tap(p, buttons[2].centerX(), buttons[2].centerY()); lay(r)
         assertEquals(CastStripModel.Side.RIGHT, HomeSettings.castBarSide)
+        assertEquals(HomeLayout.CastDock.UNDER_MAP, HomeSettings.layout.cast)
         buttons = p.focusTargets().drop(p.tileIds().size)
-        assertEquals("In combat Hide / Stay now", 6, buttons.size)
+        assertEquals("Map Above / Below, Size S / M / L and In combat Hide / Stay now", 12, buttons.size)
+        // the edge line: Above the map (the screen side kept), then Below again
         tap(p, buttons[5].centerX(), buttons[5].centerY()); lay(r)
+        assertEquals(HomeLayout.CastDock.ABOVE_MAP, HomeSettings.layout.cast)
+        assertEquals("Above map", BottomTiles.value(BottomTiles.CASTBAR, BottomTiles.Env(null, null)))
+        buttons = p.focusTargets().drop(p.tileIds().size)
+        tap(p, buttons[1].centerX(), buttons[1].centerY()); lay(r)
+        assertEquals("Chat keeps the edge", HomeLayout.CastDock.ABOVE_CHAT, HomeSettings.layout.cast)
+        buttons = p.focusTargets().drop(p.tileIds().size)
+        tap(p, buttons[6].centerX(), buttons[6].centerY()); lay(r)
+        assertEquals(HomeLayout.CastDock.UNDER_CHAT, HomeSettings.layout.cast)
+        HomeSettings.castBarSide = CastStripModel.Side.RIGHT; lay(r)
+        buttons = p.focusTargets().drop(p.tileIds().size)
+        tap(p, buttons[11].centerX(), buttons[11].centerY()); lay(r)
         assertEquals(CastStripModel.Combat.STAY, HomeSettings.castBarCombat)
         HomeSettings.castBarCombat = CastStripModel.Combat.HIDE
         // a tap on the open tile closes it; another tile's tap moves the one band
@@ -293,6 +308,10 @@ class BottomTilesRoomTest {
             if (id == BottomTiles.TALK) org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600))
             shot("bot_band_${i + 1}_$id")
         }
+        // In fights = Top screen: the fight's frames with the "up" plate (the controls went to the game screen)
+        HomeSettings.fightBand = HomeLayout.FightBand.TOP
+        open(BottomTiles.COMBAT); shot("bot_band_3b_combat_top_screen")
+        HomeSettings.fightBand = HomeLayout.FightBand.GROW
         // Hold to talk On (this character): the hold, the words in the box, A to send; then Send now, the line sent into the chat
         HomeSettings.setHoldTalk("Sample-Realm", true); HomeSettings.setTalkSendNow("Sample-Realm", false)
         open(BottomTiles.TALK); org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1600)); shot("bot_band_7b_talk_on")
@@ -355,5 +374,28 @@ class BottomTilesRoomTest {
             c.drawText(e.first, x.toFloat(), (y + ch + 26).toFloat(), tp)
         }
         File(out, "bot_sheet.png").outputStream().use { sheet.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /** review round 2 ("pictures never lie"): the Tap-to-cast tile's picture puts an Above chat / Above map bar at its column's TOP (the
+     *  column starts under it), an Under one at the foot - the very edge the tile's word and Home use */
+    @Test fun theCastBarPictureShowsTheBarsEdge() {
+        room(kit = false)
+        fun goldRows(dock: HomeLayout.CastDock, x0: Int, x1: Int): List<Int> {
+            HomeLayoutStore.character(null); HomeLayoutStore.set(HomeLayout(cast = dock))
+            val b = Bitmap.createBitmap(432, 216, Bitmap.Config.ARGB_8888)
+            BottomPictures.draw(Canvas(b), app, BottomTiles.CASTBAR, RectF(0f, 0f, 432f, 216f), BottomPictures.Look(BottomTiles.Env(null, null)), null, 0)
+            val g = Theme.gold
+            fun near(c: Int) = kotlin.math.abs(Color.red(c) - Color.red(g)) < 40 && kotlin.math.abs(Color.green(c) - Color.green(g)) < 40 &&
+                kotlin.math.abs(Color.blue(c) - Color.blue(g)) < 40
+            return (0 until 216).filter { y -> (x0 until x1).count { x -> near(b.getPixel(x, y)) } > (x1 - x0) / 2 }
+        }
+        try {
+            for ((dock, x0, x1) in listOf(Triple(HomeLayout.CastDock.ABOVE_CHAT, 30, 190), Triple(HomeLayout.CastDock.ABOVE_MAP, 242, 402))) {
+                val top = goldRows(dock, x0, x1)
+                assertTrue("$dock: the bar's edge near the picture's top: $top", top.isNotEmpty() && top.all { it < 216 / 3 })
+                val under = goldRows(dock.withTop(false), x0, x1)
+                assertTrue("${dock.withTop(false)}: at the foot: $under", under.isNotEmpty() && under.all { it > 216 * 2 / 3 })
+            }
+        } finally { HomeLayoutStore.set(HomeLayout()) }
     }
 }

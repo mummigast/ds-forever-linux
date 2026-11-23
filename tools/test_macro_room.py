@@ -339,7 +339,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s17"' in SRC["spells"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local SV = "s18"' in SRC["spells"] and 'local BV = "b76"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")
@@ -391,7 +391,8 @@ check(k.get('h') == 0 and k.get('f') == 1 and k.get('fb') == 2 and k.get('wx') =
 check(clean(L) == {}, "b. clean", clean(L))
 # a full pad: the row cannot be made, the document says so
 L2, _ = world()
-L2.execute('for i = WowCompanion.pad.nrows, 55 do WowCompanion.pad.op("filler" .. i, nil, function() end) end')
+# (TapPad pad26: rows sit on their ranked places, so a free row can be anywhere: every free one is filled)
+L2.execute('for i = 0, 55 do if not WowCompanion.pad.byRow[i] then WowCompanion.pad.op("filler" .. i, nil, function() end) end end')
 L2.execute('fire("UPDATE_MACROS"); advance(1)')
 ensure_row(L2)
 check(L2.eval('WowCompanion.pad.rows.mac') is None and mdoc(L2).get('norow') is True, "b. no free row: no row, the document says norow")

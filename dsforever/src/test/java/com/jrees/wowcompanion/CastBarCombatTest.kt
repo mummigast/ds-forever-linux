@@ -27,7 +27,7 @@ class CastBarCombatTest {
         assertEquals(HIDE, HomeSettings.castBarCombat)
         assertEquals(HIDE, CastStripModel.combatOf(null))
         assertEquals(HIDE, CastStripModel.combatOf("SOMETHING"))
-        assertEquals(listOf("Hide", "Stay"), CastStripModel.Combat.values().map { it.label })
+        assertEquals(listOf("Off", "On"), CastStripModel.Combat.values().map { it.label })      // cb14 (D5b): "Show in combat: Off | On"
     }
 
     @Test fun theChoiceIsSavedByName() {
@@ -113,26 +113,30 @@ class CastBarCombatTest {
      *  (only a module full screen outside the takeover drops it), so Stay keeps it in fights with Party mode on and off */
     @Test fun homeFollowsItsOwnFightSignal() {
         val h = src("HomeView.kt")
-        assertTrue(h.contains("private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }"))
-        assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown())"))
-        // the player's own rule (a preview look - the cast bar question's picture - shows Hide)
-        assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat"))
+        // movable Home P2: both halves of a Split bar (castStrip2) take the same gate
+        assertTrue(h.contains("private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }"))
+        assertTrue(h.contains("CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)"))     // cb15: Bar in Party mode
+        // the player's own rule (a preview look - the cast bar question's picture - shows Hide); In fights = Top screen keeps the bar
+        // (the 11-22 shots: TopCombatBar.stripCombat - STAY with Top screen live, Party mode's fight too (the 1519 audit), else the player's setting)
+        assertTrue(h.contains("if (renderLook?.castSide != null) CastStripModel.Combat.HIDE\n" +
+            "        else TopCombatBar.stripCombat(layoutNow(), HomeSettings.castBarCombat)"))
         // cb7: a change of hidden lays the page again with the one motion; apply itself only gates (no re-lay from inside apply)
         assertTrue(h.contains("if (laidSide == CastStripModel.Side.OFF || castHiddenNow() == laidHidden) return"))
         val apply = h.substringAfter("private fun apply(s: HomeScreen, animate: Boolean) {").substringBefore("\n    private fun big(")
         assertTrue(apply.contains("castStripGate()")); assertFalse(apply.contains("castStripFight()"))
         assertTrue(h.contains("fun fightShown(): Boolean = flow.takeover || grow.fighting(System.currentTimeMillis())"))
-        assertTrue(h.contains("if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }"))
-        assertTrue(h.contains("return withStrip(withParty(base, s, w), w, h)"))
-        // checked on every tick (a fight's start / end) and every settings change; the gate on every apply
-        assertEquals(2, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
+        // movable Home: the solver lays the bar (HomeLayoutSolver: a module full screen outside the takeover has none, the bar in the takeover)
+        assertTrue(h.contains("if (full) laidSide = CastStripModel.Side.OFF"))
+        assertTrue(h.contains("castHidden = !full && castHiddenNow()"))
+        // checked on every tick (a fight's start / end), every settings change and (cb15) Party mode's on / off; the gate on every apply
+        assertEquals(3, Regex("""castStripFight\(\)""").findAll(h).count() - 1)
     }
 
     @Test fun theRowAndItsPicture() {
-        assertEquals(listOf("Tap-to-cast bar", "In combat"), SettingsTabs.Block.CAST_BAR.rows)
+        assertEquals(listOf("Tap-to-cast bar", "Show in combat"), SettingsTabs.Block.CAST_BAR.rows)      // cb14 (D5b)
         val hs = src("HomeSettings.kt")
-        assertTrue(hs.contains("row(c, y + GAP, \"In combat\""))
-        assertTrue(hs.indexOf("\"Tap-to-cast bar\", listOf(") < hs.indexOf("\"In combat\", listOf("))
+        assertTrue(hs.contains("row(c, y + GAP, \"Show in combat\""))
+        assertTrue(hs.indexOf("\"Tap-to-cast bar\", listOf(") < hs.indexOf("\"Show in combat\", listOf("))
     }
 
     @Test fun theWordsAreInSpanishAndFrench() {
@@ -140,7 +144,8 @@ class CastBarCombatTest {
             .map { java.io.File(it) }.first { it.isDirectory }
         for (l in listOf("es", "fr")) {
             Tr.load(l, java.io.File(dir, "$l.json").readText(Charsets.UTF_8))
-            for (w in listOf("In combat", "Hide", "Stay", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
+            for (w in listOf("In combat", "Hide", "Stay", "Show in combat", "Off", "On", "Off: the bar slides away in a fight.", "Tap to cast",
+                "Turn on", "Hidden in fights", "Bar is off", "Show tap-to-cast", "Out of combat", "Controller", "Hide: the bar slides away in a fight.", "Cast bar in combat: Hide",
                 "Cast bar in combat: Stay", "In a fight the tap-to-cast bar slides", "down; chat and map take its room.",
                 "In a fight the tap-to-cast bar stays,", "one tap casts each.", "Hide: the bar slides away", "Stay: the bar stays",
                 "Eight spells in one bar under both;", "Eight spells, one tap each.",

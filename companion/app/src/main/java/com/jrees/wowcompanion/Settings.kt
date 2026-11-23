@@ -211,14 +211,41 @@ object Settings {
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
+     * VIDEO MEMORY CAP (#56 G1, the user's approval 2026-11-19; Settings > Performance > Memory): our container tells the game a
+     * smaller video memory, by the Thor's RAM (GameVideoMemory.capMb). Our emulator's config, not a game setting. On by default;
+     * Off = the driver's own size, as before. From the next game start; Local play only.
+     */
+    var vramCap: Boolean
+        get() = prefs?.getBoolean("vramCap", true) ?: true
+        set(v) { if (v != vramCap) { prefs?.edit()?.putBoolean("vramCap", v)?.apply(); changed() } }
+
+    /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
      * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":
-     * Config.wtf as the game left it. No account name is ever read into, stored in or logged by DS Forever.
+     * Config.wtf as the game left it, plus (the user's ruling 2026-11-20, A) the player's last-picked game account marked "!" in its
+     * accountList at every start ([gameAccountPick]; GameConfigWtf.markAccount). Account labels are never logged.
      */
     var gameAccountAsk: Boolean
         get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
         set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
+
+    /**
+     * THE LAST-PICKED GAME ACCOUNT (the user's ruling 2026-11-20, A: "Learn the pick automatically ... Store only the account LABEL, in
+     * the app's private prefs"): the label the game itself marked in Config.wtf's accountList (WoW1, WoW2 or the account's own name;
+     * GameConfigWtf.accountPickIn), learned at each Play before Config.wtf is written; never typed by the player. Used only with
+     * "Remembered". Never logged, never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in,
+     * as [gameAccountAsk]); forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
+     */
+    var gameAccountPick: String?
+        get() = prefs?.getString("gameAccountPick", null)?.let(GameConfigWtf::cleanAccountLabel)
+        set(v) {
+            val clean = GameConfigWtf.cleanAccountLabel(v)
+            if (clean != gameAccountPick) prefs?.edit()?.apply { if (clean == null) remove("gameAccountPick") else putString("gameAccountPick", clean) }?.apply()
+        }
+
+    /** the saved login forgotten or changed: the next Battle.net login's game accounts may be others, so the pick is learned again */
+    fun forgetGameAccountPick() { gameAccountPick = null }
 
     /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
@@ -237,6 +264,15 @@ object Settings {
     var voiceTyping: Voice.Mode
         get() = Voice.Mode.of(prefs?.getString("voiceTyping", null))
         set(v) { if (v != voiceTyping) { prefs?.edit()?.putString("voiceTyping", v.key)?.apply(); changed() } }
+
+    /**
+     * VOICE LANGUAGE (issue #477: "let me pick the speech language (Russian), independent of the app language"): what voice typing
+     * listens for - "app" (Same as the app, the default), "auto" (Auto-detect) or one of Whisper's language codes ([VoiceLanguage]).
+     * App-wide, like Voice typing; Reset settings' (ResetPlan's settings bucket).
+     */
+    var voiceLanguage: String
+        get() = VoiceLanguage.sanitize(prefs?.getString(VoiceLanguage.PREF, null))
+        set(v) { val s = VoiceLanguage.sanitize(v); if (s != voiceLanguage) { prefs?.edit()?.putString(VoiceLanguage.PREF, s)?.apply(); changed() } }
 
     /**
      * WINDOWS ID (the user, 2026-11-14: "build it"; the BLZ51914400 wave): which Windows machine identity the game's container shows,

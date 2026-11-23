@@ -73,6 +73,47 @@ object UiKit {
         c.drawText(n.toString(), r.right - r.width() * 0.10f, r.bottom - r.height() * 0.10f, p)
     }
 
+    /** #471: [spellRank]'s corners. TOP LEFT everywhere a button's glyph sits top right (Home, the Controller room, the book, the cast
+     *  bar); BOTTOM LEFT on the spell wheels (the pointed slice's A glyph sits top left there, a pin top right, a count bottom right) */
+    const val RANK_TOP_LEFT = 0
+    const val RANK_BOTTOM_LEFT = 1
+
+    /**
+     * #471 THE RANK BADGE: "R3" in a small dark chip inside [icon]'s [corner] - the game's number font, its gold (the theme's accent) for
+     * the highest rank the player knows, the game's grey for a lower one (a hint that a higher rank exists). Clear of the glyph (top
+     * right), the stack count (bottom right), the cooldown's seconds (the middle) and the DS mark (a macro's, never a spell's).
+     * Returns the chip's box (a copy; empty when nothing was drawn).
+     */
+    fun spellRank(c: Canvas, icon: RectF, b: SpellRanks.Badge, corner: Int = RANK_TOP_LEFT, alpha: Int = 255): RectF {
+        if (icon.isEmpty || alpha <= 0) return RectF()
+        val h = (icon.height() * 0.30f).coerceAtLeast(13f)
+        // a fresh paint each time, as radialCd's: the number font is the harvest's, and may arrive after the first draw
+        val p = numberPaint(h * 0.84f, Color.WHITE, shadow = false).apply { textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        val words = b.text
+        val w = p.measureText(words) + h * 0.42f
+        val inset = (icon.width() * 0.04f).coerceAtLeast(1f)
+        val l = icon.left + inset
+        val t = if (corner == RANK_BOTTOM_LEFT) icon.bottom - inset - h else icon.top + inset
+        val chip = rankChip.apply { set(l, t, l + w, t + h) }
+        val round = h * 0.28f
+        pRankFill.color = Color.BLACK; pRankFill.alpha = 190 * alpha / 255
+        c.drawRoundRect(chip, round, round, pRankFill)
+        pRankEdge.strokeWidth = (h * 0.07f).coerceAtLeast(1f)
+        pRankEdge.color = if (b.top) Theme.bronze else RANK_GREY_EDGE
+        pRankEdge.alpha = alpha
+        c.drawRoundRect(chip, round, round, pRankEdge)
+        p.color = if (b.top) Theme.gold else RANK_GREY
+        p.alpha = alpha
+        c.drawText(words, chip.centerX(), chip.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        return RectF(chip)
+    }
+    /** the game's GRAY_FONT_COLOR, a little lifted to read on the dark chip; its edge darker */
+    private val RANK_GREY = Color.rgb(158, 158, 158)
+    private val RANK_GREY_EDGE = Color.rgb(84, 84, 84)
+    private val rankChip = RectF()
+    private val pRankFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val pRankEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
     /** text for parchment: dark ink, and no shadow (the game draws none on paper) */
     fun inkPaint(size: Float, heading: Boolean = false) =
         paint(if (heading) title else body, size, Theme.parchmentInk, false)
@@ -151,7 +192,26 @@ object UiKit {
         val gone = LowMemCuts.kitOverCap(texCache.mapValues { it.value.byteCount.toLong() }, texUsed, SystemClock.uptimeMillis())
         var b = 0L
         for (n in gone) { texCache.remove(n)?.let { b += it.byteCount.toLong() }; texUsed.remove(n) }
-        return b
+        return b + sideLetGo()
+    }
+
+    /**
+     * THE KIT'S SIDE CACHES (memory work #56, D2, the user's yes 2026-11-19): the edge tiles cut from a picture ([tileCache], copies as
+     * big as the picture) and the pictures' light measures ([statsCache], which held the PICTURE itself: a picture the cap let go stayed
+     * in memory through it) were never let go. Now both follow the picture: a picture not in [texCache] any more takes its tiles and its
+     * measure with it ([LowMemCuts.sideGone]), at every cap and every trim. Main thread. The bytes let go.
+     */
+    private fun sideLetGo(): Long = synchronized(this) {
+        var b = 0L
+        for (n in LowMemCuts.sideGone(tileCache.keys, texCache.keys)) tileCache.remove(n)?.let { a -> b += a.sumOf { it.byteCount.toLong() } }
+        for (n in LowMemCuts.sideGone(statsCache.keys, texCache.keys)) statsCache.remove(n)
+        // a measure of an older copy of a picture still loaded (a theme change decoded it again) holds that old copy
+        statsCache.entries.removeAll { (n, v) -> texCache[n] !== v.first && run { b += v.first.byteCount.toLong(); true } }
+        b
+    }
+    /** the side caches' bytes (the memory line's "kit") */
+    private fun sideBytes(): Long = synchronized(this) {
+        tileCache.values.sumOf { a -> a.sumOf { it.byteCount.toLong() } } + tabEdges.values.sumOf { it.byteCount.toLong() }
     }
 
     /**
@@ -2880,7 +2940,7 @@ object UiKit {
      * chip exactly as before (the time + battery never move).
      */
     fun clockChip(c: Canvas, cx: Float, top: Float, time: String, battery: Int, charging: Boolean = false, alpha: Int = 255,
-                  gold: Long? = null): RectF {
+                  gold: Long? = null, pose: CellPose? = null): RectF {
         val pt = numberPaint(32f, Theme.text).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
         val pp = numberPaint(21f, Theme.textDim).apply { this.alpha = alpha }
         val label = "$battery%"
@@ -2910,7 +2970,11 @@ object UiKit {
         if (gold == null) return r
         val pg = goldPaint(alpha)
         val gw = coinsWidth(gold, pg, CHIP_COIN, CHIP_COIN_GAP)
+        // edit mode (P2): the gold line wiggles as its own app ([pose] -1, about its own middle); null = exactly as always
+        val ps = if (pose != null) c.save() else -1
+        pose?.apply(c, -1, cx, top + ClockBand.GOLD_Y)
         coins(c, cx - gw / 2f, top + ClockBand.GOLD_Y - (pg.ascent() + pg.descent()) / 2f, gold, pg, CHIP_COIN, CHIP_COIN_GAP, alpha)
+        if (ps >= 0) c.restoreToCount(ps)
         return RectF(minOf(r.left, cx - gw / 2f - 20f), top, maxOf(r.right, cx + gw / 2f + 20f), top + ClockBand.CHIP_H + ClockBand.GOLD_H)
     }
 
@@ -2946,6 +3010,18 @@ object UiKit {
         }
     }
 
+    /**
+     * EDIT MODE'S EXTRAS AS APPS (P2, the user's ruling 2026-11-22): the pose of the row's cell [i] (-1 = the chip's gold line) put on the
+     * canvas before it is drawn, about its centre ([cx], [cy], unscaled px). The draws take it as an option: null = byte for byte as before
+     */
+    interface CellPose { fun apply(c: Canvas, i: Int, cx: Float, cy: Float) }
+
+    /** where [clockChip]'s gold line stands (scale 1, the chip's top at [top]) for [gold] copper: its coins' box, a hair round them */
+    fun clockGoldBox(cx: Float, top: Float, gold: Long): RectF {
+        val gw = coinsWidth(gold, goldPaint())
+        return RectF(cx - gw / 2f - 4f, top + ClockBand.GOLD_Y - 13f, cx + gw / 2f + 4f, top + ClockBand.GOLD_Y + 13f)
+    }
+
     /** one item of THE EXTRAS ROW (ClockBand; feat/clock-extras-v2): an icon over its value (the clock and the gold line stay clockChip) */
     sealed class BandItem {
         /** an icon over its short value ("" = the icon alone); [cooling] = the icon dimmed; [glow] = the soft ready halo (the Hearthstone) */
@@ -2974,7 +3050,8 @@ object UiKit {
      * (ClockBand.place), each cell an icon over its value on one shared baseline, never above [floor] (the top clock chip's bottom).
      * No well, no box: the kit's text with its shadow, each icon in a thin bronze edge. [alpha] = the caller's fades.
      */
-    fun clockBand(c: Canvas, spot: FloatArray, items: List<BandItem>, floor: Float = Float.NEGATIVE_INFINITY, alpha: Int = 255) {
+    fun clockBand(c: Canvas, spot: FloatArray, items: List<BandItem>, floor: Float = Float.NEGATIVE_INFINITY, alpha: Int = 255,
+                  pose: CellPose? = null) {
         if (items.isEmpty() || alpha <= 0) return
         val pv = bandPaint(alpha)
         val (pl, fit, top) = bandLayout(spot, items, floor, pv)
@@ -2982,7 +3059,9 @@ object UiKit {
         val k = fit * pl.scale
         for ((i, it) in items.withIndex()) {
             val w = widths[i] / fit
-            c.save(); c.translate(pl.lefts[i], top); c.scale(k, k)
+            c.save()
+            pose?.apply(c, i, pl.lefts[i] + w * k / 2f, top + ClockBand.CELL_H * k / 2f)
+            c.translate(pl.lefts[i], top); c.scale(k, k)
             when (it) {
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, alpha)
@@ -3016,18 +3095,18 @@ object UiKit {
      * piece's place and size eased between the two, so the block scales smoothly. [rowAlpha] = the row's own fade (the triggers).
      */
     fun clockBlock(c: Canvas, cx: Float, chipTop: Float, time: String, battery: Int, charging: Boolean, gold: Long?, spot: FloatArray?,
-                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255) {
+                   items: List<BandItem>, g: Float, rowAlpha: Int = 255, chipAlpha: Int = 255, pose: CellPose? = null) {
         val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
         val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
         val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
         if (chipAlpha > 0) {
             val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
             c.save(); c.scale(s, s, cx, chipTop)
-            clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold)
+            clockChip(c, cx, chipTop, time, battery, charging, chipAlpha, gold, pose)
             c.restore()
         }
         if (spot == null || items.isEmpty() || rowAlpha <= 0) return
-        if (grown == null || e <= 0f) { clockBand(c, spot, items, floor, rowAlpha); return }
+        if (grown == null || e <= 0f) { clockBand(c, spot, items, floor, rowAlpha, pose); return }
         val pv = bandPaint(rowAlpha)
         val small = clockBandBoxes(spot, items, floor)
         for ((i, it) in items.withIndex()) {
@@ -3038,7 +3117,9 @@ object UiKit {
             val k = k0 + (grown.rowScale - k0) * e
             val left = sb.left + (grown.lefts[i] - sb.left) * e
             val top = sb.top + (grown.rowTop - sb.top) * e
-            c.save(); c.translate(left, top); c.scale(k, k)
+            c.save()
+            pose?.apply(c, i, left + w * k / 2f, top + ClockBand.CELL_H * k / 2f)
+            c.translate(left, top); c.scale(k, k)
             when (it) {
                 is BandItem.Icon -> {
                     bandIcon(c, w / 2f, it.icon, it.cooling, it.glow, rowAlpha)
@@ -3047,6 +3128,36 @@ object UiKit {
             }
             c.restore()
         }
+    }
+
+    /**
+     * where [clockBlock] draws its pieces (the same arithmetic, the tests' and edit mode's reading): the clock chip's box, the gold line's
+     * box (null = no gold) and each row cell's box, in the caller's px
+     */
+    fun clockBlockBoxes(cx: Float, chipTop: Float, time: String, battery: Int, gold: Long?, spot: FloatArray?, items: List<BandItem>,
+                        g: Float): Triple<RectF, RectF?, List<RectF>> {
+        val floor = chipTop - ClockBand.CHIP_TOP + ClockBand.chipBottom(gold != null) + ClockBand.CHIP_PAD
+        val grown = if (g > 0.001f && spot != null) clockGrown(spot, chipTop, time, battery, gold, items) else null
+        val e = if (grown == null) 0f else g.coerceIn(0f, 1f)
+        val s = 1f + (grown?.let { it.chip - 1f } ?: 0f) * e
+        fun scaled(r: RectF) = r.also { it.set(cx + (it.left - cx) * s, chipTop + (it.top - chipTop) * s, cx + (it.right - cx) * s, chipTop + (it.bottom - chipTop) * s) }
+        val goldBox = gold?.let { gd -> scaled(clockGoldBox(cx, chipTop, gd)) }
+        val cs = clockChipSize(time, battery, gold)
+        val chip = scaled(RectF(cx - cs[0] / 2f, chipTop, cx + cs[0] / 2f, chipTop + cs[1]))
+        if (spot == null || items.isEmpty()) return Triple(chip, goldBox, emptyList())
+        val small = clockBandBoxes(spot, items, floor)
+        if (grown == null || e <= 0f) return Triple(chip, goldBox, small)
+        val pv = bandPaint(255)
+        val cells = items.indices.map { i ->
+            val sb = small[i]
+            val w = bandWidth(items[i], pv)
+            val k0 = sb.height() / ClockBand.CELL_H
+            val k = k0 + (grown.rowScale - k0) * e
+            val left = sb.left + (grown.lefts[i] - sb.left) * e
+            val top = sb.top + (grown.rowTop - sb.top) * e
+            RectF(left, top, left + w * k, top + ClockBand.CELL_H * k)
+        }
+        return Triple(chip, goldBox, cells)
     }
 
     /** the grown layout for these pieces ([ClockBand.grow] with their measured sizes) */
@@ -3397,8 +3508,9 @@ object UiKit {
         val p = bodyPaint(28f, Theme.text)
         var x = right
         for ((glyph, word) in pairs.reversed()) {
-            x -= p.measureText(word)
-            c.drawText(Tr.t(word), x, cy - (p.ascent() + p.descent()) / 2f, p)
+            val t = Tr.t(word)                                         // (measured as drawn: es / fr words are longer)
+            x -= p.measureText(t)
+            c.drawText(t, x, cy - (p.ascent() + p.descent()) / 2f, p)
             x -= 34f
             pad(c, glyph, x, cy, 48f)
             x -= 24f + 34f
@@ -4047,9 +4159,11 @@ object UiKit {
      * round frame. [chosen] = the entry a finger or the controller is on. [onDark] = not on a page.
      * [autoCast] (a PET's spell; hunter pets, warlock demons): 0 = it cannot cast itself, 1 = it
      * may (the game's gold corners, quiet), 2 = it does (the corners bright and the game's ring).
+     * [rank] (#471): the spell's rank badge ([SpellRanks.of]), top left on the icon; null = none (rankless, a lone rank, not a spell).
      */
     fun spell(c: Canvas, icon: Bitmap?, x: Float, y: Float, size: Float, state: Spell = Spell.KNOWN, onBar: Boolean = true,
-              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0, noMana: Boolean = false) {
+              passive: Boolean = false, chosen: Boolean = false, onDark: Boolean = false, autoCast: Int = 0, noMana: Boolean = false,
+              rank: SpellRanks.Badge? = null) {
         val known = state == Spell.KNOWN
         val ir = RectF(x, y, x + size, y + size)
         val pIcon = if (known) pBmp else pFaint.apply { alpha = if (onDark) 204 else 153 }
@@ -4074,6 +4188,7 @@ object UiKit {
             pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f
             pFlat.color = if (chosen) Theme.gold else Theme.bronze
             c.drawRect(ir, pFlat)
+            if (rank != null) spellRank(c, ir, rank)
             return
         }
         val ox = if (known) 41f else 40f; val oy = if (known) 18f else 16f
@@ -4116,6 +4231,7 @@ object UiKit {
                 pBmp.alpha = 255
             }
         }
+        if (rank != null) spellRank(c, ir, rank)                                   // #471: over the frame, under nothing
     }
 
     /**
@@ -4125,7 +4241,7 @@ object UiKit {
      */
     fun bookEntry(c: Canvas, r: RectF, icon: Bitmap?, name: String, sub: String?, state: Spell = Spell.KNOWN,
                   onBar: Boolean = true, chosen: Boolean = false, passive: Boolean = false, size: Float = 80f,
-                  autoCast: Int = 0, noMana: Boolean = false) {
+                  autoCast: Int = 0, noMana: Boolean = false, rank: SpellRanks.Badge? = null) {
         if (chosen) {
             val band = RectF(r.left, r.top + 5f, r.right, r.bottom - 5f)
             pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(51, 110, 60, 14)
@@ -4135,7 +4251,7 @@ object UiKit {
             c.drawRect(band, pFlat)
         }
         val ix = r.left + 24f; val iy = r.top + (r.height() - size) / 2f - 2f
-        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast, noMana = noMana)
+        spell(c, icon, ix, iy, size, state, onBar, passive, chosen, autoCast = autoCast, noMana = noMana, rank = rank)
         val tx = ix + size + 16f
         val room = r.right - 8f - tx
         val known = state == Spell.KNOWN
@@ -4654,7 +4770,9 @@ object UiKit {
                      /** q1b: a spell radial's cooldown counted by the app (RadialModel.Cd): seconds left and its whole length, 0 = none */
                      val cdLeft: Float = 0f, val cdLen: Float = 0f,
                      /** r20 / q4: dimmed with no number (a potion held until the fight ends; running in a fight, its length never learned) */
-                     val cdDim: Boolean = false)
+                     val cdDim: Boolean = false,
+                     /** #471: a spell wheel's spell's rank badge (bottom left: the pointed slice's A glyph is top left) */
+                     val rank: SpellRanks.Badge? = null)
 
     /** r20 / q4: the dim over an icon in [r] with no number (held, or a length never learned): the sweep's dark, whole */
     fun radialCdDim(c: Canvas, r: RectF, alpha: Int) {
@@ -5112,6 +5230,7 @@ object UiKit {
                 counts.style = Paint.Style.FILL; counts.color = Color.WHITE; counts.alpha = (255 * fade).toInt()
                 c.drawText(Tr.t(it.count.toString()), bx, by, counts)
             }
+            if (k > 0.9f) it.rank?.let { rb -> spellRank(c, r, rb, RANK_BOTTOM_LEFT, al) }    // #471
             if (it.pinned || it.ranOut) {
                 // the pin: the Friends list's gold pin over the icon's top-right corner (grey when its item ran out)
                 tex(if (it.ranOut) "rwheel_pin_off" else "rwheel_pin")?.let { pin ->
@@ -7798,9 +7917,11 @@ object UiKit {
 
     private val fonts = HashMap<String, Typeface>()
     private val texCache = HashMap<String, Bitmap>()
-    init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } } }
-    // test build 1489 (#56): the relief's let-go (game start, world, loading screens) caps the kit while the game runs
-    init { MemWatch.onTrim("kit") { _ -> if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit() else 0L } }
+    // memory work #56 (D2): the side caches (edge tiles, traced tab edges) counted with the pictures
+    init { MemWatch.source("kit") { texCache.values.sumOf { it.byteCount.toLong() } + castCache.values.sumOf { it.byteCount.toLong() } + sideBytes() } }
+    // test build 1489 (#56): the relief's let-go (game start, world, loading screens) caps the kit while the game runs; memory work #56
+    // (D2): the side caches follow the pictures at every trim, the game up or not
+    init { MemWatch.onTrim("kit") { _ -> if (runCatching { PlayGate.gameActiveNow() }.getOrDefault(false)) capKit() else sideLetGo() } }
     private val tileCache = HashMap<String, Array<Bitmap>>()
     private val missing = HashMap<String, Long>()
 

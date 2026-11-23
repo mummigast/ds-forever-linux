@@ -101,29 +101,27 @@ class CastBarTabShotsTest {
         draw()
     }
 
-    /** the left page's slot tile centres (PadTabPage's CB_* : 8 x 72 px, 12 apart, centred on the left page, top 360) */
-    private fun tile(p: Int): Pair<Float, Float> {
-        val x0 = (8f + 740f) / 2f - (8 * 72f + 7 * 12f) / 2f
-        return x0 + (p - 1) * 84f + 36f to 396f
-    }
+    /** the left page's slot tile centres (p56: the bar's section under the controller, [SituationPage.tile]) */
+    private fun tile(p: Int): Pair<Float, Float> = SituationPage.tile(p).let { it.centerX() to it.centerY() }
     private val change = 990f to h - 85f
 
-    @Test fun theTabShowsOnlyWhileTheBarIsOn() {
+    @Test fun theTabIsASubTabNow() {
+        // p55 (the user, 2026-11-19, D1): no Cast bar top tab; its page is WoW Defaults > Tap to cast (ControllerTapTabsTest)
         val r = rig()
-        assertTrue(r.v.tabViews().contains("castbar"))
+        assertFalse(r.v.tabViews().contains("castbar"))
         HomeSettings.castBarSide = CastStripModel.Side.OFF
-        assertFalse("Off: no Cast bar tab", r.v.tabViews().contains("castbar"))
-        HomeSettings.castBarSide = CastStripModel.Side.LEFT
-        assertTrue(r.v.tabViews().contains("castbar"))
-        CastStripModel.Live.set(CastStripModel.parse(JSONObject("""{"type":"castbar","v":"cb6","n":8,"e":[]}"""))!!)
-        assertFalse("an add-on bar of spells only (cb6): no tab", r.v.tabViews().contains("castbar"))
+        assertFalse(r.v.tabViews().contains("castbar"))
+        r.v.onPadTabCtl(ctl(1)); r.draw()
+        assertEquals("the page still opens (D2: dimmed, Turn on)", "castbar", r.v.page().currentView())
     }
 
     @Test fun theRoomOpenTellsTheAddOnTheSetting() {
         val r = rig()
         assertTrue(r.v.enterRoom())
         val first = r.cells.first { it.contains("spells" to 5) }
-        assertEquals("the setting before the open, then the croom tap", listOf("padtab" to 39, "padtab" to 30, "spells" to 5), first)
+        assertEquals("the setting (p55: and Show in combat) before the open, then the croom tap",
+            listOf("padtab" to 39, "padtab" to 30, "padtab" to 39, "padtab" to if (CastStripModel.showOf(HomeSettings.castBarCombat)) 2 else 3,
+                "padtab" to 39, "padtab" to 38, "padtab" to if (HomeSettings.castBarPartyShow) 2 else 3, "spells" to 5), first)     // p56: Bar in Party mode too
     }
 
     @Test fun aFingerOnASlotIsItsButtonCode() {
@@ -147,10 +145,11 @@ class CastBarTabShotsTest {
         assertEquals("spells", r.v.page().chooserTab())
         assertEquals(ChooserTabs.ALL_TABS, ChooserTabs.keys(false))
         val r2 = rig()                                                  // the controller's chooser on Extra
-        r2.v.onPadTabCtl(ctl(8, ""","chooser":{"list":"extra","row":1,"id":"TARGETNEARESTENEMY"}"""))
+        // p58: Extra's categories all open (the add-on's `xo`)
+        r2.v.onPadTabCtl(ctl(8, ""","chooser":{"list":"extra","row":1,"id":"TARGETNEARESTENEMY"},"xo":"cmd,ds,bind,mount,item""""))
         val ids = r2.v.page().chooserRowIds(book())
         assertTrue("Extra lists the commands, mounts, items: $ids", ids.containsAll(listOf("TARGETNEARESTENEMY", "m:6", "i:118")))
-        assertFalse("no game binding on the cast bar: $ids", ids.any { it == "JUMP" || it == "TOGGLEAUTORUN" || it == "h:Controller" })
+        assertFalse("no game binding on the cast bar: $ids", ids.any { it == "JUMP" || it == "TOGGLEAUTORUN" || it == "h:bind" })
     }
 
     @Test fun moveIsTheEightsPickUp() {
@@ -174,8 +173,10 @@ class CastBarTabShotsTest {
         r.v.openOnCastBar()
         assertTrue(r.v.enterRoom())
         val open = r.cells.first { it.contains("spells" to 5) }
-        assertEquals("the setting, the room's own open, then the Cast bar tab and slot 1",
-            listOf("padtab" to 39, "padtab" to 30, "spells" to 5, "padtab" to 39, "padtab" to 29, PadMapModel.ROW to PadMapModel.colPos(1)), open)
+        assertEquals("the setting, Show in combat (p55), the room's own open, then WoW Defaults > Tap to cast and slot 1",
+            listOf("padtab" to 39, "padtab" to 30, "padtab" to 39, "padtab" to if (CastStripModel.showOf(HomeSettings.castBarCombat)) 2 else 3,
+                "padtab" to 39, "padtab" to 38, "padtab" to if (HomeSettings.castBarPartyShow) 2 else 3,         // p56: Bar in Party mode
+                "spells" to 5, "padtab" to 39, "padtab" to 29, PadMapModel.ROW to PadMapModel.colPos(1)), open)
         assertEquals("castbar", r.v.page().currentView())
         assertFalse("once", r.v.castBarOwed)
         r.cells.clear()

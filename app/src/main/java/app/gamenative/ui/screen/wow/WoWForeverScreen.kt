@@ -137,8 +137,16 @@ fun WoWForeverScreen(
     var addonsProblem by remember { mutableStateOf<String?>(null) }
     /** a required-art failure's reason: the bottom's "Try again" (nothing retries by itself after a failure) */
     var artFailed by remember { mutableStateOf<String?>(null) }
+    /** issue #571: the game folder has never run (DataStaleness.firstRun, read from the folder at each checkFiles) */
+    var neverRun by remember { mutableStateOf(false) }
+    /** #577: Repair game files is running ([repairStatus] its line; Play waits), and what the last one did until OK */
+    var isRepairing by remember { mutableStateOf(false) }
+    var repairStatus by remember { mutableStateOf("") }
+    var repairNote by remember { mutableStateOf<String?>(null) }
     /** the dependency add-ons' line (QuestieDB, M4); null = not checked in this launcher run */
     var dependencies by remember { mutableStateOf<String?>(null) }
+    /** #556: the background dependency step is running (its steps' lines may update [dependencies] until its result lands) */
+    var depsRunning by remember { mutableStateOf(false) }
     var versionStatus by remember { mutableStateOf<WowClientDownloader.VersionCheckResult?>(null) }
     var isCheckingVersion by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
@@ -262,6 +270,7 @@ fun WoWForeverScreen(
     fun checkFiles(): Boolean {
         GamePath.save(context, gamePath)
         files = GamePath.status(context, gamePath)
+        neverRun = files.hasStorageAccess && runCatching { com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath)) }.getOrDefault(false)
         artReady = runCatching { com.jrees.wowcompanion.ArtHarvest.beforePlayReady(context) }.getOrDefault(false)
         refreshMaps()
         loginSaved = com.jrees.wowcompanion.HomeLoginStore.has(context)
@@ -288,6 +297,9 @@ fun WoWForeverScreen(
         statusText = READY_STATUS
     }
 
+    /** issue #571: [seedGame], declared below (launchGame sends a never-run folder to its first run) */
+    var seedFn: () -> Unit = {}
+
     /** [by] = who launches ("play": the bottom's Play / auto-launch, "restart": the restart's own) - the restart's log names it */
     fun launchGame(by: String = "play") {
         val restart = com.jrees.wowcompanion.SetupBridge.restarting
@@ -295,8 +307,8 @@ fun WoWForeverScreen(
             if (restart) com.jrees.wowcompanion.SetupBridge.log?.invoke("restart: Play by $by refused ($why)")
             if (restart && by == "restart") com.jrees.wowcompanion.SetupBridge.restarting = false
         }
-        if (isLaunching || isUpdating || (isHarvesting && !artReady) || files.isWrongGame) {
-            refused("launching=$isLaunching updating=$isUpdating harvesting=$isHarvesting wrongGame=${files.isWrongGame}"); return
+        if (isLaunching || isUpdating || (isHarvesting && !artReady) || files.isWrongGame || isRepairing) {
+            refused("launching=$isLaunching updating=$isUpdating harvesting=$isHarvesting wrongGame=${files.isWrongGame} repairing=$isRepairing"); return
         }
         // the "DS Forever vX is out" pop-up waits for Update or Later before any launch (board b-update-blocks-play). The state
         // itself, not the composition's appUpdate val: the auto-launch calls the first composition's launchGame
@@ -310,6 +322,14 @@ fun WoWForeverScreen(
         // refusing - test55: after the launch switch Play said "Game art is required before Play" and no harvest ran
         if (!artReady) Timber.i("WoWForeverScreen: Play by $by waits for the game art (not ready)")
         if (!files.hasStorageAccess) return                // the bottom asks for it
+        // ISSUE #571: a game folder that has never run (whichever path made it) gets its one-time first run here, whatever launched:
+        // the art cannot be built before it, and it is built after it (seedGame's RETRY_ART). The sign-in waits for the real Play
+        if (by != SEED_RUN && com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) {
+            com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: Play by $by on a game folder that has never run: its first run first " +
+                "(${com.jrees.wowcompanion.DataStaleness.traces(File(gamePath))})")
+            seedFn()
+            return
+        }
         // 2026-11-11 (review of the issue #108-cluster fix): a new Play = any earlier launch is over; its window must not hold back the
         // art before Play (PlayGate.artMayOpen), or Play would sit at "Preparing your game art..."
         com.jrees.wowcompanion.LauncherHooks.endLaunchWindow()
@@ -497,7 +517,10 @@ fun WoWForeverScreen(
         val root = File(gamePath)
         WoWLauncherState.seeding = true
         com.jrees.wowcompanion.SetupBridge.seeding = true
-        com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: starting the game once")
+        com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: starting the game once (${com.jrees.wowcompanion.DataStaleness.traces(root)})")
+        // issue #571: a never-run folder with no local indexes from another path (Choose a folder, a copy, an upstream install) is a
+        // streamed one, as a direct install's: marked so, the art fetches the build's tables and is not taken for an out-of-date folder
+        if (com.jrees.wowcompanion.DataStaleness.adoptStreamed(root)) com.jrees.wowcompanion.SetupBridge.log?.invoke("seed: no local indexes: the folder is marked streamed")
         artFailed = null
         launchGame(by = SEED_RUN)
         CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
@@ -526,11 +549,16 @@ fun WoWForeverScreen(
         }
     }
 
+    seedFn = { seedGame() }
+
     fun harvestArt(retry: Boolean = false, force: Boolean = false) {
         // [force]: the launch switch's own start (the screen's flags may still be the old build's, or Play's)
         if (!force && (isLaunching || isUpdating || isHarvesting || files.isWrongGame || filesMissing)) return
-        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
+        // #577 review: never while Repair writes the folder (its own end starts the art again, from a clean open)
+        if (isRepairing) { Timber.i("WoWForeverScreen: art waits for the repair"); return }
+        // issue #571: file access first, so an unreadable folder is never taken for one that has never run
         if (!files.hasStorageAccess) return
+        if (com.jrees.wowcompanion.DataStaleness.firstRun(File(gamePath))) { if (retry || artFailed == null) seedGame(); return }
         if (artFailed != null && !retry) return
         GamePath.save(context, gamePath)
         artFailed = null
@@ -556,7 +584,8 @@ fun WoWForeverScreen(
     suspend fun switchIfDue(): Boolean {
         if (com.jrees.wowcompanion.StartMode.STREAM_ONLY) return false   // Linux Streaming Edition: no client on the device (above)
         val root = File(gamePath)
-        if (isUpdating || isLaunching || !files.hasStorageAccess) return false
+        // #577 review: never during Repair (both write the folder); the switch goes at the next start
+        if (isUpdating || isLaunching || isRepairing || !files.hasStorageAccess) return false
         if (!withContext(Dispatchers.IO) { runCatching { com.jrees.wowcompanion.WowSwitch.due(root) }.getOrDefault(false) }) return false
         PluviaApp.events.emit(AndroidEvent.ClearBootingSplash)        // minutes of download: the player sees the line, not the splash
         isUpdating = true
@@ -619,6 +648,7 @@ fun WoWForeverScreen(
     LaunchedEffect(artReady, files.hasStorageAccess, gamePath) {
         if (!artReady || !files.hasStorageAccess || filesMissing || dependencies != null) return@LaunchedEffect
         dependencies = "QuestieDB: checking for the latest"
+        depsRunning = true
         try {
             dependencies = withContext(Dispatchers.IO) {
                 runCatching {
@@ -627,12 +657,16 @@ fun WoWForeverScreen(
                     com.jrees.wowcompanion.Settings.init(context)
                     // the third-party add-ons (Settings > Add-ons; Polestar, fetched here and moved in on a Yes), applied by the same step
                     com.jrees.wowcompanion.ThirdPartyAddons.init(context)
+                    // #556: a package going in (Spoken Quests' 1.5 GB unpack, ~7 min) says how far on the add-ons row meanwhile
                     com.jrees.wowcompanion.DependencyAddons.run(WowClientDownloader.flavorDir(File(gamePath)),
-                        File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"))
+                        File(context.cacheDir, "dsforever"), File(context.filesDir, "dsforever/dependencies.json"),
+                        onStep = { step -> com.jrees.wowcompanion.ThirdPartyAddons.backgroundLine(step)?.let { l ->
+                            scope.launch(Dispatchers.Main) { if (depsRunning) dependencies = l } } })
                 }.getOrElse { "QuestieDB skipped (${it.message})" }
-            }
+            }.also { depsRunning = false }
         } catch (e: CancellationException) {
             // a key changed mid-check (file access, the folder): free the line so the next run of this effect checks again
+            depsRunning = false
             dependencies = null
             throw e
         }
@@ -644,8 +678,52 @@ fun WoWForeverScreen(
         com.jrees.wowcompanion.SetupBridge.log?.invoke(msg)
     }
 
+    /**
+     * #577 (1.0.37: damaged game files after an unclean stop, every open "CascLib error 1000", no way back but a reinstall): REPAIR, with
+     * the game closed. The launcher's part (WowClientDownloader.repairFiles: the build's configs, the client's own files, the CDN
+     * indexes), then the game folder's storage checked file by file and each damaged file downloaded again in place (GameRepair). Its
+     * result stays on the bottom screen until OK; the art is tried again from a clean open.
+     */
+    /** [performUpdate], declared below (a repair's end starts the update that waited for it) */
+    var updateFn: () -> Unit = {}
+
+    fun performRepair() {
+        // never with the game up: the repair writes into the folder the game reads
+        val gameUp = com.jrees.wowcompanion.DependencyAddons.gameRunning()
+        if (isRepairing || isLaunching || isUpdating || isHarvesting || filesMissing || !files.hasStorageAccess || gameUp) {
+            setupLog("repair: refused (busy: launching $isLaunching, updating $isUpdating, art $isHarvesting, game up $gameUp)"); return
+        }
+        val root = File(gamePath)
+        isRepairing = true
+        repairStatus = com.jrees.wowcompanion.GameRepair.checkLine(0)
+        repairNote = null
+        setupLog("repair: starting (${com.jrees.wowcompanion.CascHeal.route(root).name.lowercase()} install, CascLib error ${com.jrees.wowcompanion.GameFiles.damagedErr})")
+        scope.launch {
+            val status: (String) -> Unit = { msg -> scope.launch(Dispatchers.Main) { if (isRepairing) repairStatus = msg } }
+            // #577 review: whatever the repair throws (out of memory on a big folder, ...) is said, and Repair always ends (Play waits
+            // for it): never a crash, never a "repairing" left on until the app restarts
+            val note = try {
+                val (clientFixed, clientWhy, local) = withContext(Dispatchers.IO) {
+                    val client = runCatching { WowClientDownloader.repairFiles(root, status) }
+                    client.exceptionOrNull()?.let { Timber.w(it, "repair: the game's own files") }
+                    val local = runCatching { com.jrees.wowcompanion.GameRepair.run(context, status) }
+                    Triple(client.getOrDefault(-1), client.exceptionOrNull()?.message, local)
+                }
+                local.fold({ com.jrees.wowcompanion.GameRepair.summary(it, clientFixed, clientWhy) },
+                    { Timber.e(it, "repair: the game folder's storage"); com.jrees.wowcompanion.GameRepair.couldNotRun(it) })
+            } finally {
+                isRepairing = false
+            }
+            setupLog("repair: done: $note")
+            repairNote = note
+            // the art again, from a clean open: whole, it builds; still damaged, its pop-up (and Repair) comes back under the result.
+            // An update that waited for the repair goes first (#577 review): it builds the art again for its build when it is done
+            if (updateQueued) updateFn() else harvestArt(retry = true)
+        }
+    }
+
     fun performInstall() {
-        if (isUpdating) return
+        if (isUpdating || isRepairing) return
         val root = GamePath.installDir()
         if (!StorageUtils.hasStoragePermission(context, root.path)) { StorageUtils.requestManageExternalStoragePermission(context); return }
         val metered = runCatching {
@@ -706,7 +784,8 @@ fun WoWForeverScreen(
         // a Stop pressed before the download began (the art run's stop, the queue) wins: never wiped by the start below
         if (updateStop.get()) { stopBeforeDownload(); return }
         // never silent (the user, 2026-10-28: A on Update did nothing while a background art step ran): go, queue, or say why not
-        val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess)
+        val gate = com.jrees.wowcompanion.SetupFlow.updateGate(versionStatus != null, isUpdating, isLaunching, isHarvesting, files.hasStorageAccess,
+            repairing = isRepairing)
         val line = com.jrees.wowcompanion.SetupFlow.updateGateLine(gate, -1)
         when (gate) {
             com.jrees.wowcompanion.SetupFlow.UpdateGate.GO -> { updateQueued = false; setupLog("update: starting") }
@@ -726,7 +805,7 @@ fun WoWForeverScreen(
                 }
                 return
             }
-            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH -> {
+            com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH, com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_REPAIR -> {
                 if (!updateQueued) setupLog("update: waiting (${gate.name.lowercase()}): $line")
                 updateQueued = true
                 return
@@ -781,6 +860,8 @@ fun WoWForeverScreen(
         }
     }
 
+    updateFn = { performUpdate() }
+
     // 2026-11-07 (the user: "they cant play without it just start the update and remove the prompt"): an out-of-date game updates by
     // itself, once per new build (a failed one waits for Try again, never a loop)
     var autoUpdatedFor by remember { mutableStateOf<String?>(null) }
@@ -822,9 +903,9 @@ fun WoWForeverScreen(
         if (regionRecheck && !isUpdating) { regionRecheck = false; checkVersionStatus() }
     }
 
-    // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end)
-    LaunchedEffect(updateQueued, isHarvesting, isLaunching) {
-        if (updateQueued && !isHarvesting && !isLaunching) performUpdate()
+    // the queued Update goes as soon as nothing holds it (an art step's end, a launch's end, a repair's end: #577 review)
+    LaunchedEffect(updateQueued, isHarvesting, isLaunching, isRepairing) {
+        if (updateQueued && !isHarvesting && !isLaunching && !isRepairing) performUpdate()
     }
 
     // the auto-launch held back in the chooser's route: it goes when Local is picked (the chooser's card launched at once before, when
@@ -890,6 +971,7 @@ fun WoWForeverScreen(
         storage = files.hasStorageAccess,
         loginSaved = loginSaved,
         loginSkipped = loginSkipped,
+        firstRun = neverRun && !filesMissing,
         art = when {
             artFailed != null -> com.jrees.wowcompanion.SetupFlow.Art.FAILED
             artReady -> com.jrees.wowcompanion.SetupFlow.Art.READY
@@ -918,6 +1000,8 @@ fun WoWForeverScreen(
         installBar = if (installStartedAt != 0L) com.jrees.wowcompanion.SetupFlow.timeBar(com.jrees.wowcompanion.SetupFlow.Step.INSTALL, (System.currentTimeMillis() - installStartedAt) / 1000.0) else null,
         artWhat = (harvestState as? com.jrees.wowcompanion.ArtHarvest.State.Running)?.what.orEmpty(),
         artWhy = artFailed.orEmpty(),
+        repairable = artFailed != null && com.jrees.wowcompanion.GameFiles.repairWanted,
+        repairNote = repairNote,
         addonsInstalled = addonsInstalled,
         addonsProblem = addonsProblem,
         dependencies = dependencies,
@@ -941,6 +1025,7 @@ fun WoWForeverScreen(
         regionSwitch = regionSwitch?.let { sw -> com.jrees.wowcompanion.GameRegion.ALL.firstOrNull { it.code == sw.to }?.label }?.takeIf { isUpdating || updateQueued },
         stopping = stopping,
         busy = when {
+            isRepairing -> repairStatus
             isUpdating -> updateStatusText
             updateQueued -> com.jrees.wowcompanion.SetupFlow.updateGateLine(
                 if (isHarvesting) com.jrees.wowcompanion.SetupFlow.UpdateGate.STOP_ART else com.jrees.wowcompanion.SetupFlow.UpdateGate.WAIT_LAUNCH, -1)
@@ -959,6 +1044,8 @@ fun WoWForeverScreen(
             com.jrees.wowcompanion.SetupFlow.Action.GRANT_STORAGE -> StorageUtils.requestManageExternalStoragePermission(context)
             com.jrees.wowcompanion.SetupFlow.Action.SKIP_LOGIN -> loginSkipped = true
             com.jrees.wowcompanion.SetupFlow.Action.RETRY_ART -> harvestArt(retry = true)
+            com.jrees.wowcompanion.SetupFlow.Action.REPAIR_GAME -> performRepair()
+            com.jrees.wowcompanion.SetupFlow.Action.REPAIR_OK -> repairNote = null
             com.jrees.wowcompanion.SetupFlow.Action.UPDATE_GAME -> performUpdate()
             com.jrees.wowcompanion.SetupFlow.Action.STOP_UPDATE -> when (com.jrees.wowcompanion.SetupFlow.stopRoute(regionSwitch != null, isUpdating, updateQueued, stopping)) {
                 // queued, nothing running: stopped at once (the queue never starts it afterwards)
@@ -979,7 +1066,8 @@ fun WoWForeverScreen(
                 com.jrees.wowcompanion.DeviceTier.init(context)
                 // 2026-11-11 (issue #108 cluster): the background art waits for the game to close on EVERY model now (PlayGate),
                 // so the notice is for every model too
-                if (!artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
+                // issue #571: a folder that has never run has no art yet: Play goes to its first run (launchGame), never the notice
+                if (!neverRun && !artNoticeSeen && com.jrees.wowcompanion.ArtHarvest.backgroundLeft(context)) artNotice = true
                 else launchGame()
             }
             com.jrees.wowcompanion.SetupFlow.Action.ART_NOTICE_PLAY -> { artNotice = false; artNoticeSeen = true; launchGame() }
@@ -1217,6 +1305,8 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     // launch support: the client this folder runs (the beta or the launch client, from its .build.info), for every path below
     val choice = WowProduct.choose(gameRoot)
     val product = choice?.product ?: WowProduct.of(gameRoot)
+    // bug 2026-11-20: this start's game-account states, logged with the sign-in route once it is known (GameAccountDiag)
+    var accountPlay: com.jrees.wowcompanion.GameAccountDiag.Play? = null
     try {
         // 2026-11-07: the player's region (the login prompt's Region row) is the portal the game signs in to
         com.jrees.wowcompanion.DeviceTier.init(context); com.jrees.wowcompanion.Settings.init(context)
@@ -1227,13 +1317,33 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
         // the size of the screen the game shows on, at every start
         val screen = gameScreenSize(context)
         Timber.i("Config.wtf: the game's window fills its screen (gxMaximize 1, gxWindowedResolution %s)", screen ?: "1920x1080: size unread")
-        val accountCleared = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
+        // A (the user's ruling 2026-11-20): the game account the game itself marked after the last login, learned BEFORE anything is
+        // written (both routes: saved login and Browser login), kept as a label in the app's private settings; never logged
+        val learned = com.jrees.wowcompanion.GameConfigWtf.accountPickIn(gameRoot, product)
+        val pickBefore = com.jrees.wowcompanion.Settings.gameAccountPick
+        // bug 2026-11-20 (test 1513): the file's account keys as the game left them, before any write (states and counts only)
+        val shapeBefore = com.jrees.wowcompanion.GameAccountDiag.shape(com.jrees.wowcompanion.GameAccountDiag.configWtf(gameRoot, product))
+        if (learned != null && learned != pickBefore) com.jrees.wowcompanion.Settings.gameAccountPick = learned
+        val ask = com.jrees.wowcompanion.Settings.gameAccountAsk
+        val pick = com.jrees.wowcompanion.Settings.gameAccountPick
+        val accountKeys = com.jrees.wowcompanion.GameConfigWtf.ensure(gameRoot, product, choice?.row,
             com.jrees.wowcompanion.GameRegion.chosen(context), lowMemory = com.jrees.wowcompanion.Settings.lowMemGraphics,
-            askAccount = com.jrees.wowcompanion.Settings.gameAccountAsk, screen = screen,
-            // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows
-            lowMemory8 = com.jrees.wowcompanion.DeviceTier.eightGb())
-        if (com.jrees.wowcompanion.Settings.gameAccountAsk) {
-            Timber.i("Config.wtf game account: ask each time; cleared %s", accountCleared.joinToString(" ").ifEmpty { "nothing (no remembered choice)" })
+            askAccount = ask, screen = screen,
+            // test build 1489 (#56): on the 8 GB Thors Low-memory graphics also lowers view distance, particles, spells and shadows;
+            // #56 G2 (the user's approval 2026-11-19): on the 12 GB Pro too (DeviceTier.lowMemCuts)
+            // A: NO "!" written any more (the user's pick 2026-11-20 with "Controller picks the row"): the mark only serves a typed login
+            // with a saved login name, and a list the game did not write may be what broke logins with BLZ51914400 (the fork's #62).
+            // The pick is still LEARNED above from a mark the game wrote itself; Ask each time still clears a marked list
+            accountPick = null, lowMemory8 = com.jrees.wowcompanion.DeviceTier.lowMemCuts())
+        val learnedWord = when { learned == null -> "none marked"; learned == pickBefore -> "same"; else -> "new" }
+        accountPlay = com.jrees.wowcompanion.GameAccountDiag.Play(ask, pick != null,
+            com.jrees.wowcompanion.GameAccountDiag.learned(learned, pickBefore), shapeBefore, !ask && accountKeys.isNotEmpty())
+        if (ask) {
+            Timber.i("Config.wtf game account: ask each time; cleared %s; pick %s (learned: %s)", accountKeys.joinToString(" ").ifEmpty { "nothing (no remembered choice)" },
+                if (pick != null) "set" else "unset", learnedWord)
+        } else {
+            Timber.i("Config.wtf game account: remembered; pick %s (learned: %s); %s", if (pick != null) "set" else "unset", learnedWord,
+                if (accountKeys.isEmpty()) "accountList unchanged" else "accountList marked")
         }
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
@@ -1265,7 +1375,17 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, onS
     val browser = app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin.beginRun(context, com.jrees.wowcompanion.SetupBridge.seeding)
     Timber.i("Sign-in this start: %s", if (browser) "browser login (no login.txt)" else "saved login")
     val wineRoot = com.jrees.wowcompanion.NativeLogin.prepare(context, gameRoot, product.flavorDir, browser) ?: gameRoot
-    val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}")
+    // bug 2026-11-20: the "Game account:" line (logcat, the report's log, login.log, the report); never a label
+    accountPlay?.let { play ->
+        com.jrees.wowcompanion.GameAccountDiag.record(play, when {
+            browser -> com.jrees.wowcompanion.GameAccountDiag.Route.BROWSER
+            com.jrees.wowcompanion.NativeLogin.active -> com.jrees.wowcompanion.GameAccountDiag.Route.SAVED_LOGIN
+            else -> com.jrees.wowcompanion.GameAccountDiag.Route.OWN_SCREEN
+        })
+    }
+    // #56 G1 + G3 (the user's approval 2026-11-19): our container's own video memory cap and BCn mode (GameVideoMemory), never a game CVar
+    val gfx = videoMemoryChoice(context)
+    val config = containerConfig(wineRoot, gpu, "G:\\${product.flavorDir}\\${arm64Exe.name}", gfx)
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1292,11 +1412,40 @@ private fun gameScreenSize(context: Context): String? = runCatching {
     d?.mode?.let { com.jrees.wowcompanion.GameConfigWtf.screenSize(it.physicalWidth, it.physicalHeight) }
 }.getOrNull()
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String): JSONObject {
+/** #56 G1 + G3: this launch's video memory cap and BCn emulation (GameVideoMemory), logged and kept for the WCMEM lines */
+private class VideoMemoryChoice(val env: String, val bcn: String)
+
+private fun videoMemoryChoice(context: Context): VideoMemoryChoice {
+    val G = com.jrees.wowcompanion.GameVideoMemory
+    val tier = com.jrees.wowcompanion.DeviceTier
+    val total = tier.totalMb
+    val cap = G.capMb(total, runCatching { tier.isLite() }.getOrDefault(false))
+    val on = com.jrees.wowcompanion.Settings.vramCap
+    // no Adreno read (an unreadable renderer) = the Wrapper's own "auto": BCn emulated only where the driver cannot sample it
+    val bcn = G.bcnEmulation(runCatching { GPUInformation.isAdrenoGPU(context) }.getOrDefault(false))
+    val line = G.line(cap, on, total, bcn)
+    Timber.i("Container graphics: %s", line)
+    com.jrees.wowcompanion.MemWatch.launchGfx = G.short(cap, on)
+    com.jrees.wowcompanion.MemWatch.note("launch: $line")
+    // Light 8 (LIGHT8_PLAN.md change 5; the user's answer Q2 2026-11-21): the 8 GB Thors' two DXVK options beside the cap, read live and
+    // logged once per launch with the exact DXVK_CONFIG; every other Thor's environment is test build 1516's (G.env(cap, on))
+    val light8 = runCatching { tier.light8() }.getOrDefault(false)
+    val env = G.env(cap, on, light8)
+    if (light8) {
+        val l8 = G.dxcfgLine(env)
+        Timber.i("Container graphics: %s", l8)
+        com.jrees.wowcompanion.MemWatch.note("launch: $l8")
+    }
+    return VideoMemoryChoice(env, bcn)
+}
+
+private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: String, gfx: VideoMemoryChoice): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144$samsungEnv " +
         // b-dxvk-load-crash: DXVK's own warnings into a private log (the container's vars come after DXVKHelper's "none")
-        com.jrees.wowcompanion.DxvkLogs.ENV
+        com.jrees.wowcompanion.DxvkLogs.ENV +
+        // #56 G1: DXVK's DXGI memory report capped (DXVK_CONFIG; the container's vars come after DXVKHelper's, so this one counts)
+        (if (gfx.env.isNotEmpty()) " " + gfx.env else "")
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
@@ -1304,7 +1453,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: Str
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
         put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=${gfx.bcn},quality=high")
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")

@@ -84,8 +84,8 @@ class SettingsTabsTest {
             G.SUPPORT to listOf("Support the Project"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
-                "Free bag slots", "Ammo", "DS WoW toolbar", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk
-            G.CAST_BAR to listOf("Tap-to-cast bar", "In combat"),
+                "Free bag slots", "Ammo", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges
+            G.CAST_BAR to listOf("Tap-to-cast bar", "Show in combat"),     // cb14 (D5b): the row renamed
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
             // the layout editor's row; HUD height and HUD scale moved into its page (the width stays a row)
@@ -154,7 +154,8 @@ class SettingsTabsTest {
             // added since: GitHub #43's tap-to-cast bar (Bottom screen > Home; cb3: its own group, Bottom screen > Tap-to-cast bar)
             listOf("Tap-to-cast bar") +
             // the user 2026-11-13 ("a settings toggle to make them Hide/stay in combat"): Bottom screen > Tap-to-cast bar > In combat
-            listOf("In combat") +
+            // cb14 (the user, 2026-11-19, D5b): renamed "Show in combat" (the Controller room's In combat check box is the same setting)
+            listOf("Show in combat") +
             // new since the six tabs: General > Account > Game account (#47)
             listOf("Game account") +
             // added since: the clock extras (feat/item-cooldowns)
@@ -189,7 +190,9 @@ class SettingsTabsTest {
             // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset
             listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything") +
             // Linux Edition 2026-11-19 ("This box should be a switch also"): Top screen > Game windows, the Tooltips band
-            listOf("Ranged tooltips")
+            listOf("Ranged tooltips") +
+            // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): Bottom screen > Home, after the toolbar
+            listOf("Spell rank badges")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")

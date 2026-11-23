@@ -46,7 +46,7 @@ object PreviewStage {
     /** the companion's own keyboard, drawn at [w] x [h] (the Message input row): a board of its own, never wired to anything */
     private var kb: ChatKeyboard? = null
     fun keyboard(ctx: Context, c: Canvas, w: Float, h: Float) {
-        val k = kb ?: ChatKeyboard(ctx).also { it.open(); kb = it }
+        val k = kb ?: ChatKeyboard(ctx).also { it.open(); it.scaleOverride = 1f; kb = it }
         val fh = ChatKeyboard.fullHeight()
         k.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(fh, View.MeasureSpec.EXACTLY))
         k.layout(0, 0, 1240, fh)
@@ -69,6 +69,9 @@ object PreviewStage {
     var roomBarOn: () -> Boolean = { false }
 
     private class Tree(val home: HomeView, val cast: CastView, val map: MapView)
+    /** the stage's HomeView is being made now (HomeView's init: not a new live Home) */
+    @Volatile var building = false
+        private set
     private var tree: Tree? = null
 
     /**
@@ -108,7 +111,9 @@ object PreviewStage {
             c.scale(k, k)
             t.home.draw(c)
             m?.let { map ->
-                val chat = RectF(W - map.right, map.top, W - map.left, map.bottom)
+                // movable Home: the chat's column is wherever the layout put it (its pane's box), else the map's mirror (today's)
+                val pane = t.home.previewBoxes()["CHAT"]
+                val chat = if (pane != null) RectF(pane.left, map.top, pane.right, map.bottom) else RectF(W - map.right, map.top, W - map.left, map.bottom)
                 mapOf("map" to RectF(map), "chat" to chat, "controller" to RectF(0f, 0f, W.toFloat(), map.top))
             }
         }
@@ -288,6 +293,7 @@ object PreviewStage {
         t.home.draw(c)
         val st = stripView ?: Strip(a.ctx) { }.also { stripView = it }
         st.active = Room.HOME
+        st.showOrder(RoomBar.shown(HomeSettings.layout), 0L)        // P4: the bar in the active record's order
         st.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(Strip.HEIGHT, View.MeasureSpec.EXACTLY))
         st.layout(0, 0, W, Strip.HEIGHT)
         c.translate(0f, H.toFloat()); st.draw(c)
@@ -300,7 +306,9 @@ object PreviewStage {
         val cast = CastView(ctx) { }
         val chatView = ChatView(ctx) { }
         holder.addView(map); holder.addView(cast); holder.addView(chatView)
-        val home = HomeView(ctx, map, cast, chatView) { }
+        // movable Home P2: the stage's own Home is never the live one (it leaves the live Home's edit draft alone)
+        building = true
+        val home = try { HomeView(ctx, map, cast, chatView) { } } finally { building = false }
         val t = Tree(home, cast, map)
         lay(t)
         home.borrow()

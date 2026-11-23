@@ -30,6 +30,9 @@ object SetupFlow {
         /** "Play without" was picked on the login pop-up (this launcher run) */
         val loginSkipped: Boolean = false,
         val art: Art = Art.IDLE,
+        /** issue #571: the game folder has never run (DataStaleness.firstRun, read from the folder): Play leads to its first run and the
+         *  art is built after it, so the art never holds Play here */
+        val firstRun: Boolean = false,
         val artPercent: Int = 0,
         /** the art is being built again for a new game version (after an update): its row says so */
         val artRebuild: Boolean = false,
@@ -39,6 +42,10 @@ object SetupFlow {
         val installBar: Float? = null,
         val artWhat: String = "",
         val artWhy: String = "",
+        /** #577: the art failed on damaged game files (GameFiles.damagedErr): its pop-up offers Repair */
+        val repairable: Boolean = false,
+        /** #577: what the last Repair did, in words (GameRepair.summary), until OK; null = none */
+        val repairNote: String? = null,
         /** our bundled add-ons are in the game's AddOns folder */
         val addonsInstalled: Boolean = false,
         /** the add-on install's problem in terse words (LauncherSetup.problem: a failed install, or the set removed again and again;
@@ -92,6 +99,8 @@ object SetupFlow {
         val lastCrash: String? = null,
         /** the Polestar quest guide has not been answered yet (PolestarGuide.ask; the user, 2026-11-12): its one question */
         val polestarAsk: Boolean = false,
+        /** Light 8 (the 8 GB Thors, DeviceTier.light8; the user's answer Q5 2026-11-21): the one-line tip before Play ([PLAY_TIP_8GB]) */
+        val light8Tip: Boolean = false,
     )
 
     enum class Action {
@@ -119,7 +128,9 @@ object SetupFlow {
         POLESTAR_YES, POLESTAR_NO,
         /** the region's download (the user, 2026-11-17: "downloading a new build" after a region picked by mistake): stop it, the old
          *  install kept and the region before it put back */
-        STOP_UPDATE
+        STOP_UPDATE,
+        /** #577: Repair game files (the damaged-files pop-up), and its result's OK */
+        REPAIR_GAME, REPAIR_OK
     }
     data class Button(val label: String, val action: Action, val enabled: Boolean = true)
     data class Prompt(val id: String, val title: String, val text: String, val buttons: List<Button>)
@@ -168,7 +179,8 @@ object SetupFlow {
      * the WAIT_ ones queue it (it starts by itself when the step ends; the status line says so), the rest are refusals said plainly.
      */
     /** STOP_ART (2026-11-04, was WAIT_ART): an art run is stopped and the update goes at once (the art is built again after it) */
-    enum class UpdateGate { GO, STOP_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION }
+    /** WAIT_REPAIR (#577 review): Repair game files writes the same folder: the update waits in the queue for its end */
+    enum class UpdateGate { GO, STOP_ART, WAIT_LAUNCH, BUSY, NO_STORAGE, NO_VERSION, WAIT_REPAIR }
 
     /**
      * THE REGION SWITCH'S STOP (the user, 2026-11-17; verifier: a Stop during the art run's stop was wiped, a queued switch had none).
@@ -183,10 +195,12 @@ object SetupFlow {
         else -> StopRoute.NONE
     }
 
-    fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean): UpdateGate = when {
+    fun updateGate(hasVersion: Boolean, updating: Boolean, launching: Boolean, harvesting: Boolean, storage: Boolean,
+                   repairing: Boolean = false): UpdateGate = when {
         updating -> UpdateGate.BUSY
         !hasVersion -> UpdateGate.NO_VERSION
         !storage -> UpdateGate.NO_STORAGE
+        repairing -> UpdateGate.WAIT_REPAIR
         launching -> UpdateGate.WAIT_LAUNCH
         harvesting -> UpdateGate.STOP_ART
         else -> UpdateGate.GO
@@ -197,6 +211,7 @@ object SetupFlow {
         UpdateGate.GO -> "Updating the game"
         UpdateGate.STOP_ART -> "Getting ready to update"
         UpdateGate.WAIT_LAUNCH -> "Update starts when the launch is done"
+        UpdateGate.WAIT_REPAIR -> "Update starts when the repair is done"
         UpdateGate.BUSY -> "Already updating"
         UpdateGate.NO_STORAGE -> "Update needs access to the game folder"
         UpdateGate.NO_VERSION -> "Checking the game's version - press Update again in a moment"
@@ -252,8 +267,16 @@ object SetupFlow {
     fun terse(checks: List<Check>): List<Check> =
         checks.map { if (it.mark == Mark.BAD || it.full) it else it.copy(label = it.label.substringBefore(':').trim()) }
 
+    /** LIGHT 8'S ONE-LINE TIP before Play (the 8 GB Thors only; the user's answer Q5 2026-11-21): in place of "Ready", Spanish and French in
+     *  the app's i18n */
+    const val PLAY_TIP_8GB = "Ready. Close other apps for smoother play"
+
+    /** issue #571: the status line of a game folder that has never run (Play starts its first run) */
+    const val FIRST_RUN_LINE = "Play runs the game once first"
+
     fun canPlay(i: Inputs): Boolean =
-        i.folderFound && !i.wrongGame && i.storage && i.art == Art.READY && i.busy == null && !i.gameRunning && i.appUpdate == null
+        i.folderFound && !i.wrongGame && i.storage && (i.art == Art.READY || (i.firstRun && i.art != Art.RUNNING)) &&
+            i.busy == null && !i.gameRunning && i.appUpdate == null
 
     /** A DIRECT INSTALL'S STEPS, their times as measured on the Thor on home Wi-Fi (2026-11-01, 1.60.1.70707) */
     enum class Step(val typicalS: Int) { INSTALL(525), PREPARE(80), ART(1280) }
@@ -329,8 +352,14 @@ object SetupFlow {
             !i.storage -> Prompt("storage", "Allow file access",
                 "Android needs \"All files access\" so the game and DS Forever can read the game folder.",
                 listOf(Button("Open settings", Action.GRANT_STORAGE)))
+            // #577: what the last Repair did, until OK (its own pop-up: the damaged-files one may come back under it)
+            i.repairNote != null && i.busy == null -> Prompt("repair", "Repair game files", i.repairNote, listOf(Button("OK", Action.REPAIR_OK)))
+            // #577: damaged game files: Repair first (it checks them and downloads the damaged ones again), Try again beside it
             i.art == Art.FAILED -> Prompt("art", "The game art couldn't be built",
-                i.artWhy.ifEmpty { "The game files could not be read." }, listOf(Button("Try again", Action.RETRY_ART)))
+                i.artWhy.ifEmpty { "The game files could not be read." },
+                // #577 review: Try again waits too while Repair runs (an art run then would read the files the repair writes)
+                if (i.repairable) listOf(Button("Repair files", Action.REPAIR_GAME, i.busy == null), Button("Try again", Action.RETRY_ART, i.busy == null))
+                else listOf(Button("Try again", Action.RETRY_ART)))
             // before the client's pop-up: its "Play anyway" waits for this choice (canPlay)
             i.appUpdate != null -> Prompt("app", "DS Forever ${i.appUpdate} is out", "Update now, or later from this screen.",
                 listOf(Button("Update", Action.UPDATE_APP, i.busy == null), Button("Later", Action.LATER_APP)))
@@ -354,9 +383,9 @@ object SetupFlow {
         val play = Button("Play", Action.PLAY, canPlay(i))
         val line = i.busy ?: when (i.art) {
             Art.RUNNING -> if (i.artWhat.startsWith(TablesProgress.PREFIX)) i.artWhat else "Preparing the game art: ${i.artPercent}%"
-            Art.IDLE -> if (i.folderFound) "Checking the game art" else ""
+            Art.IDLE -> if (i.firstRun && i.folderFound) FIRST_RUN_LINE else if (i.folderFound) "Checking the game art" else ""
             else -> ""
-        }
+        }.let { l -> if (l.isEmpty() && i.light8Tip && prompt == null && canPlay(i)) PLAY_TIP_8GB else l }
         return Screen(prompt, play, if (i.progress != null) "" else line, Button("Report a problem", Action.REPORT))
     }
 
@@ -409,7 +438,8 @@ object SetupFlow {
         if (i.staleData != null) add(Check("Game folder: its Data is out of date - copy it again from your PC", Mark.BAD))
         if (!streamOnly) add(if (i.loginSaved) Check("Battle.net login: saved", Mark.OK) else Check("Battle.net login: not saved", Mark.WAIT))
         add(when (i.art) {
-            Art.IDLE -> Check(if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
+            Art.IDLE -> Check(if (i.firstRun && i.folderFound) "Game art: after the game's first run"
+                else if (i.folderFound) "Game art: checking" else "Game art: waits for the game folder", Mark.WAIT)
             Art.RUNNING -> Check(if (i.artRebuild) "Game art: updating for the new game version: ${i.artPercent}%"
                 else if (i.artWhat.startsWith(TablesProgress.PREFIX)) "Game art: ${i.artWhat}"
                 else "Game art: ${i.artPercent}%${if (i.artWhat.isBlank()) "" else " (${i.artWhat})"}", Mark.WAIT)

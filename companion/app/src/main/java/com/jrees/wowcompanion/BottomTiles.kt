@@ -15,9 +15,9 @@ import kotlin.math.abs
 
 /**
  * SETTINGS > BOTTOM SCREEN AS PICTURE TILES (the beautify pass; the user, 2026-11-17: "I REALLY REALLY love what you did with the top screen
- * settings menu with the pictures and want to do something similar to the other menus"; the design's section 3, critic C5 / C6): 11
- * tiles in TWO groups - Home (8: Rest controller, Combat layout, Swing timer, Focused quest, Clock band, DS WoW toolbar, Hold to talk,
- * Tap-to-cast bar) and Map & chat (3: Minimap zoom, World map, Message input). The pictures are real miniatures of our own Home
+ * settings menu with the pictures and want to do something similar to the other menus"; the design's section 3, critic C5 / C6): 12
+ * tiles in TWO groups - Home (9: Rest controller, Combat layout, Swing timer, Focused quest, Clock band, DS WoW toolbar, Hold to talk,
+ * Tap-to-cast bar, Spell rank badges) and Map & chat (3: Minimap zoom, World map, Message input). The pictures are real miniatures of our own Home
  * ([BottomPictures]). The settings are written through the same HomeSettings / Settings setters as the rows were (same keys, same
  * per-character store for hold to talk); only where and how they are drawn changed.
  *
@@ -27,6 +27,12 @@ import kotlin.math.abs
  * and ONE write per press.
  */
 object BottomTiles {
+    /** MOVABLE HOME (SPEC section 3 way 2, final_11; the user's D4): the FIRST tile, "Edit Home": its A opens edit mode (1518: no
+     *  layouts, no band of presets / slots) */
+    const val LAYOUT = "layout"
+    /** 1518 (the user's ruling 2026-11-21: layouts removed, ONE reset kept): the LAST Home tile, "Reset Home" - its band's "Reset Home
+     *  to Classic" (this character's) and "Use this Home for all characters" */
+    const val HOME_RESET = "homereset"
     const val REST = "rest"
     const val COMBAT = "combat"
     const val SWING = "swing"
@@ -35,6 +41,11 @@ object BottomTiles {
     const val TOOLBAR = "toolbar"
     const val TALK = "talk"
     const val CASTBAR = "castbar"
+    /** the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's "R3" chips on every ranked spell picture */
+    const val RANK = "rank"
+    /** 1518 build 2 (the room bar is no edit-mode widget any more, so its menu went): the XP track on Home, Show / Hide (this
+     *  character's record, [HomeLayout.xpBar]: Home takes its 34 px; every room keeps it) */
+    const val XP = "xpbar"
     const val ZOOM = "zoom"
     const val WORLD = "worldmap"
     const val INPUT = "input"
@@ -42,8 +53,9 @@ object BottomTiles {
     /** what the tiles read besides the settings: Spells' D-pad state (the DS WoW toolbar; null = an older add-on), the character */
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
-    /** Home's 8 (critic C6: Tap-to-cast moved in, it lives on Home) and Map & chat's 3 */
-    val HOME_TILES = listOf(REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR)
+    /** Home's 12 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar
+     *  before it) and Map & chat's 3 */
+    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK, XP, HOME_RESET)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
@@ -71,9 +83,9 @@ object BottomTiles {
     }
 
     /** a tile's name (display words, Tr.t'd by the drawer) */
-    val NAMES: Map<String, String> = mapOf(REST to "Rest controller", COMBAT to "Combat layout", SWING to "Swing timer",
+    val NAMES: Map<String, String> = mapOf(LAYOUT to "Edit Home", HOME_RESET to "Reset Home", REST to "Rest controller", COMBAT to "In fights", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
-        ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
+        RANK to "Spell rank badges", XP to "XP bar", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
     /** the clock band's lines: key, label, its icons.pak icon */
     val CLOCK_LINES = listOf(Triple("hearth", "Hearthstone", ItemCd.HEARTH_ICON), Triple("teleport", "Class teleport", 136010),
@@ -85,6 +97,7 @@ object BottomTiles {
                val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false)
 
     private val ONOFF = listOf("On", "Off")
+    private val SHOW_HIDE = listOf("Show", "Hide")
     private val ONOFF_MODES = listOf(UiMode.ON, UiMode.OFF)
     private fun onOff(key: String, on: Boolean, label: String? = null, icon: Int? = null, enabled: Boolean = true) =
         Line(key, label, ONOFF, if (on) 0 else 1, ONOFF_MODES, icon = icon, enabled = enabled)
@@ -96,10 +109,15 @@ object BottomTiles {
 
     /** [id]'s band: its choices, then its lines that can act now */
     fun lines(id: String, env: Env): List<Line> = when (id) {
+        LAYOUT -> emptyList()
+        HOME_RESET -> resetLines()
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
-        COMBAT -> listOf(Line(COMBAT, null, listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1))
+        // movable Home phase 3 (SPEC section 11, final_11; the user's D1: Grow the default, Top screen opt-in): the old Combat layout tile
+        COMBAT -> listOf(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)))
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
-        QUEST -> listOf(Line(QUEST, null, listOf("Above Chat", "Above Minimap"), if (HomeSettings.questOverMap) 1 else 0))
+        RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
+        XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
+        QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
         TALK -> {
@@ -110,11 +128,16 @@ object BottomTiles {
             out
         }
         CASTBAR -> {
-            val sides = CastStripModel.Side.values()
-            val out = arrayListOf(Line(CASTBAR, null, sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide)))
+            // movable Home: the place in words that follow the widgets (SPEC P4 "meaning follows the widget"), and its slot size
+            val cast = HomeLayoutRules.shown(HomeSettings.layout).cast
+            val out = arrayListOf(Line(CASTBAR, null, CAST_WORDS, CAST_DOCKS.indexOf(cast.withTop(false))))
+            // a column's bar: above or below that column (Across and Split stay at the foot)
+            cast.column?.let { c -> out += Line(CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", HomeWidgetMenus.EDGE_WORDS, if (cast.top) 0 else 1) }
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
+                out += Line("castsize", "Size", SIZE_WORDS, HomeLayout.SlotSize.values().indexOf(HomeSettings.layout.castSize))
                 val m = CastStripModel.Combat.values()
-                out += Line("castcombat", "In combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
+                // cb14 (D5b): the same setting as the Controller room's In combat > "Show tap-to-cast" check box (D4), its mirror here
+                out += Line("castcombat", "Show in combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
             }
             out
         }
@@ -129,19 +152,23 @@ object BottomTiles {
     fun status(id: String, env: Env): String? = when {
         id == TOOLBAR && env.dpad?.colOn == null -> "Needs the newer Spells add-on"
         id == TALK && env.who == null -> "Waiting for the game"
+        id == COMBAT -> TopCombatBar.status(HomeSettings.layout, env.dpad?.ct,
+            env.dpad?.let { CharKey.of(it.name, it.realm) != null } == true)     // the 1514 merge: no key = PadMap m181 sends no `ct` (not an older add-on)
         else -> null
     }
 
     /** the tile's value word */
     fun value(id: String, env: Env): String = when (id) {
         REST -> if (HomeSettings.rest == HomeRest.DIAMONDS) "Diamonds" else "Thin row"
-        COMBAT -> if (HomeSettings.combatGrow) "Grow" else "Same size"
+        COMBAT -> FIGHT_WORDS[HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)]
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
-        QUEST -> if (HomeSettings.questOverMap) "Above Minimap" else "Above Chat"
+        RANK -> if (HomeSettings.rankBadges) "On" else "Off"
+        XP -> if (HomeSettings.layout.xpBar) "Show" else "Hide"
+        QUEST -> CARD_WORDS[CARD_DOCKS.indexOf(HomeSettings.layout.card).coerceAtLeast(0)]
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
         TALK -> if (HomeSettings.holdTalk(env.who)) "On" else "Off"
-        CASTBAR -> HomeSettings.castBarSide.label
+        CASTBAR -> castWord(HomeLayoutRules.shown(HomeSettings.layout).cast)
         ZOOM -> "${Settings.minimapYd} · ${Settings.minimapIndoorYd} yd"
         WORLD -> if (Settings.worldMapFog == "all") "Show all" else "Explored only"
         INPUT -> if (Settings.chatDefaultInput == "quick") "Quick chat" else "Keyboard"
@@ -150,13 +177,16 @@ object BottomTiles {
 
     /** the 36 px badge: Top's eye for the On / Off tiles, none for the others (their value word says it) */
     fun badge(id: String, env: Env): GameUiTiles.Badge? = when (id) {
-        SWING, TOOLBAR, TALK -> if (value(id, env) == "On") GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
+        SWING, TOOLBAR, TALK, RANK -> if (value(id, env) == "On") GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
+        XP -> if (HomeSettings.layout.xpBar) GameUiTiles.Badge.ON else GameUiTiles.Badge.OFF
         else -> null
     }
 
     /** the picture dimmed: the choice is Off (or the add-on cannot do it yet) */
     fun dimmed(id: String, env: Env): Boolean = when (id) {
         SWING -> !HomeSettings.swingTimer
+        RANK -> !HomeSettings.rankBadges
+        XP -> !HomeSettings.layout.xpBar
         TOOLBAR -> env.dpad?.want != true || env.dpad.colOn == null
         TALK -> !HomeSettings.holdTalk(env.who)
         CASTBAR -> HomeSettings.castBarSide == CastStripModel.Side.OFF
@@ -164,16 +194,59 @@ object BottomTiles {
         else -> false
     }
 
+    // ---------------------------------------------------------------- movable Home: the layout's words
+
+    /** the card's docks in the tile's order, and their words (they follow the widgets: "On map", never "Right") */
+    val CARD_DOCKS = listOf(HomeLayout.CardDock.ON_MAP, HomeLayout.CardDock.ABOVE_CHAT, HomeLayout.CardDock.OFF)
+    val CARD_WORDS = listOf("On map", "Above chat", "Off")
+    /** the bar's places offered in this build (Split is phase 3's) and their words */
+    val CAST_DOCKS = listOf(HomeLayout.CastDock.OFF, HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ACROSS,
+        HomeLayout.CastDock.SPLIT)
+    val CAST_WORDS = listOf("Off", "Chat", "Map", "Across", "Split")
+    /** the bar's edge line (column docks only): Above / Below its column */
+    const val CAST_EDGE = "castedge"
+    /** the tile's value word for a dock */
+    fun castWord(c: HomeLayout.CastDock): String = when (c) {
+        HomeLayout.CastDock.OFF -> "Off"; HomeLayout.CastDock.UNDER_CHAT -> "Under chat"; HomeLayout.CastDock.UNDER_MAP -> "Under map"
+        HomeLayout.CastDock.ABOVE_CHAT -> "Above chat"; HomeLayout.CastDock.ABOVE_MAP -> "Above map"
+        HomeLayout.CastDock.ACROSS -> "Across"; HomeLayout.CastDock.SPLIT -> "Split"
+    }
+
+    /**
+     * MOVABLE HOME P2 (SPEC section 3 way 2, final_11; the user's D4): A (or a finger) on the FIRST tile, "Edit Home", opens EDIT MODE
+     * on Home (the host: Settings slides to Home with the room slide, the cursor on Chat). Null (the off-device renders, an older host) =
+     * the tile opens its (empty) band. The tile wears the A glyph while it does.
+     */
+    @JvmStatic var editHome: (() -> Unit)? = null
+    val SIZE_WORDS = listOf("S", "M", "L")
+    /** "In fights" in [HomeLayout.FightBand]'s order */
+    val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
+
+    /** the Reset Home band's buttons (1518): this character's Home back to Classic; this character's Home for every character. BOTH
+     *  only once a WHOLE character key is known: the store writes no pending name's record (a reset held against the pending view
+     *  would lay nothing on the real record when the key arrives - the review's finding), and "all" would skip this very character */
+    const val HOME_CLASSIC = "homeclassic"
+    const val ALL_CHARS = "allchars"
+    fun resetLines(): List<Line> = listOf(
+        Line(HOME_CLASSIC, null, listOf("Reset Home to Classic"), -1, enabled = HomeLayoutStore.who != null),
+        Line(ALL_CHARS, null, listOf("Use this Home for all characters"), -1, enabled = HomeLayoutStore.who != null),
+    )
+
     /** the band's picture moves (the open band only, up to 30 fps) */
     fun animated(id: String): Boolean = id == COMBAT || id == SWING || id == TALK || id == CASTBAR
 
     /** button [k] of line [key] of tile [id]: ONE player-pressed write, the rows' own setters; [onDpad] = the DS WoW toolbar's switch */
     fun press(id: String, key: String, k: Int, env: Env, onDpad: (Boolean) -> Unit) {
         when (key) {
+            HOME_CLASSIC -> if (HomeLayoutStore.who != null) HomeSettings.resetHomeToClassic()
+            ALL_CHARS -> if (HomeLayoutStore.who != null) HomeLayoutStore.set(HomeSettings.layout, all = true)
+            "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
-            COMBAT -> HomeSettings.combatGrow = k == 0
+            COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
             SWING -> HomeSettings.swingTimer = k == 0
-            QUEST -> HomeSettings.questOverMap = k == 1
+            RANK -> HomeSettings.rankBadges = k == 0
+            XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }
+            QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0
             "gold" -> HomeSettings.clockGold = k == 0
@@ -182,7 +255,9 @@ object BottomTiles {
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }
-            CASTBAR -> HomeSettings.castBarSide = CastStripModel.Side.values()[k]
+            // Chat / Map keep the bar's edge; the edge line moves it above / below its column
+            CASTBAR -> CAST_DOCKS.getOrNull(k)?.let { d -> HomeSettings.castDock = d.column?.let { HomeSettings.castDock.withColumn(it) } ?: d }
+            CAST_EDGE -> HomeSettings.castDock = HomeSettings.castDock.withTop(k == 0)
             "castcombat" -> HomeSettings.castBarCombat = CastStripModel.Combat.values()[k]
             "out" -> Settings.minimapYd = Settings.stepYd(Settings.minimapYd, if (k == 0) -1 else 1)
             "in" -> Settings.minimapIndoorYd = Settings.stepYd(Settings.minimapIndoorYd, if (k == 0) -1 else 1)
@@ -325,6 +400,8 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                 val i = l.grid.tiles.indexOfFirst { it.contains(e.x, e.y) }
                 if (i >= 0) {
                     val id = l.slots[i]
+                    // P2: the Edit Home tile's A = edit mode (no band)
+                    if (id == BottomTiles.LAYOUT) BottomTiles.editHome?.let { go -> focusIdx = i; selected = null; go(); return true }
                     focusIdx = i
                     selected = if (selected == id) null else id
                     lineFocus = null
@@ -379,11 +456,15 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         c.drawRoundRect(rect, 10f, 10f, pFill)
         picture(c, id, GameUiTiles.well(box).rect(), e, look, null, prio)
         BottomTiles.badge(id, e)?.let { TilePictures.badge(c, GameUiTiles.badgeBox(box).rect(), it) }
+        // P2 (final_11): the Edit Home tile's A glyph - A here opens edit mode
+        if (id == BottomTiles.LAYOUT && BottomTiles.editHome != null)
+            UiKit.pad(c, UiKit.okGlyph(), box.r - GameUiTiles.WELL_PAD - 22f, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 24f, 42f)
         edge(c, rect, open)
         val x = box.l + GameUiTiles.WELL_PAD + 2f
         val maxW = box.w - 2f * GameUiTiles.WELL_PAD - 4f
         pName.color = Theme.text
-        c.drawText(fitText(pName, Tr.t(BottomTiles.NAMES[id] ?: id), maxW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
+        val nameW = if (id == BottomTiles.LAYOUT && BottomTiles.editHome != null) maxW - 48f else maxW
+        c.drawText(fitText(pName, Tr.t(BottomTiles.NAMES[id] ?: id), nameW, NAME_SIZE, NAME_MIN), x, box.t + GameUiTiles.WELL_PAD + GameUiTiles.WELL_H + 34f, pName)
         pValue.color = if (BottomTiles.dimmed(id, e)) Theme.textDim else Theme.gold
         c.drawText(fitText(pValue, Tr.t(BottomTiles.value(id, e)), maxW, 22f, 16f), x, box.b - 12f, pValue)
     }

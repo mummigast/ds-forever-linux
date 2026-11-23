@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.SystemClock
 import android.graphics.Path
 import android.graphics.RectF
 import android.util.Log
@@ -71,7 +72,7 @@ class HomeView(
     /** the controller layout has come at least once: until then the Cast view says "Waiting" where the clock would stand */
     private var barsSeen = false
 
-    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL }
+    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2 }
 
     private val questPane = QuestPane(context)
     private val chatPane = ChatPane(context)
@@ -98,10 +99,14 @@ class HomeView(
      *  Settings > Bottom screen > Tap-to-cast bar (Off by default); a tap = ONE pad tap on the add-on's "castbar" row (the scroll never
      *  moves the bar). cb7: Hide in combat slides it down behind Home's bottom bar and gives its room back to the column(s) */
     private val castStrip = CastStripView(context) { i -> castStripTap(i) }
+    /** MOVABLE HOME P2: Split's second half (slots 5-8 under the right column; the first half is [castStrip] with slots 1-4). The same
+     *  castbar cells 1-8: no new cell, nothing new in the add-on */
+    private val castStrip2 = CastStripView(context) { i -> castStripTap(i) }.apply { splitHalf = 2 }
+    private val strips get() = listOf(castStrip, castStrip2)
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
-        Part.AURAS to auraPane, Part.STRIP to castStrip, Part.CHAT_FULL to chatSlot,
+        Part.AURAS to auraPane, Part.STRIP to castStrip, Part.CAST2 to castStrip2, Part.CHAT_FULL to chatSlot,
     )
 
     /** where each part is now, in px of the frame; animated towards the state's places */
@@ -117,10 +122,16 @@ class HomeView(
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
+        // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
+        HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
+        partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
         HomeSettings.onChange { post {
-            if (flow.setRest(HomeSettings.rest)) changed()
+            if (flow.setRest(restWanted())) changed()
+            // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
+            // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
+            else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
             // the focused quest moved (Settings > Home): the parts go to their new places
-            else if (laidOverMap != HomeSettings.questOverMap) shown?.let { apply(it, animate = isShown) }
+            else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
             // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
             else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
                 castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
@@ -184,7 +195,7 @@ class HomeView(
             val f = a[p.name] ?: continue; val t = b[p.name] ?: f
             now[p] = RectF(f.left + (t.left - f.left) * k, f.top + (t.top - f.top) * k, f.right + (t.right - f.right) * k, f.bottom + (t.bottom - f.bottom) * k)
         }
-        castStrip.sliding = k > 0f && k < 1f
+        for (st in strips) st.sliding = k > 0f && k < 1f
         placeFrame()
     }
 
@@ -229,7 +240,15 @@ class HomeView(
 
     /** Home is about to show: take the map and the bars. MainActivity calls this after its room loop. */
     fun borrow() {
+        // fix round 3: the session's draft is laid AT ONCE (the Chat room's closing glide reads chatPaneBox in this same call), the rest
+        // of the resume (the guest, the chrome) on the next loop as before
+        if (edit?.parked == true && editAway) {
+            editBackDue = !fightShown() && editOwner?.let { HomeLayoutStore.editSaveFor(it) } != HomeLayoutStore.EditSave.NONE
+            if (editBackDue) editRestSync()
+            editUi.post { editAwayBack() }
+        }
         lend(mapView, mapSlot)
+        mapView.sticksClaim = { mapSticksLive() }                              // #584: the sticks only while the module holds
         mapView.onFieldTouch = { mapFieldTouched() }                          // 2026-11-17: a touch on the open map = its map controls
         // an untracked quest's disc (the user, 2026-11-17: "when clicking on one, it does not open to the quest in the left menu"): the
         // map shows it in the list, so the module goes to the Quests page (from the controls or the buffs; the list full again)
@@ -252,6 +271,8 @@ class HomeView(
 
     /** another room opens: everything borrowed goes back where it came from, last lent first */
     fun giveBack() {
+        holdCancel()                                                      // a hold under way never opens edit mode on a hidden Home
+        editAwayPark()
         watchB(false)
         setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()                 // 2026-11-17: the map controls' sticks, the world's art
         mailCard(false)                                                   // another room: the mail card closes
@@ -267,6 +288,7 @@ class HomeView(
             mapView.showHeader = true
         }
         if (lent(castView)) {
+            castView.away = false                                        // (Top screen's fight: the Cast room draws it again)
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.onTriggers = null; trigHold(false)
@@ -454,13 +476,13 @@ class HomeView(
         if (classLayer.parent == null) { if (!open) return; addView(classLayer) }   // added on first use: over everything
         val hint = classHint != null
         if (hint || !open) {
-            if (open) { classRect.set(0, 0, width, height); classLayer.animate().cancel(); classLayer.alpha = 1f
+            if (open) { classRect.set(0, 0, width, frameHi); classLayer.animate().cancel(); classLayer.alpha = 1f
                 classLayer.scaleX = 1f; classLayer.scaleY = 1f; classLayer.visibility = View.VISIBLE; requestLayout(); classLayer.invalidate(); return }
             if (!classOpen) { classLayer.visibility = View.GONE; return }
         }
         if (open == classOpen) { classLayer.invalidate(); return }
         classOpen = open
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         // 1.0.9 (the user: "make them appear on the right or left sides of the screen, and slide the whole chat away or back over top
         // when releasing, or the map if its the right rigger"): LB + LT takes the LEFT column's place (the chat slides off the left edge),
@@ -475,7 +497,7 @@ class HomeView(
             if (halfOf(p, r, w) == half) col += v to r
         }
         val area = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
-            now[Part.BARS]?.bottom ?: 0f, h, g, left, w)
+            (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f), h, g, left, w)
         val slot = ClassSlot.inColumn(area)
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
         // the wheel lies UNDER its column (raised while it shows) and is uncovered as the column slides away; on release the column
@@ -524,13 +546,15 @@ class HomeView(
     private var classLeft = true
     /** fix/castbar-slides: the half a laid part belongs to for a side slide: the cast bar by its side (Both = neither), any other part by
      *  its centre ([HomeSlide.half]) */
-    private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half = HomeSlide.half(p == Part.STRIP, laidSide, laidHidden, r.centerX(), w)
+    private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half =
+        HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
 
     /**
      * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
      * class bars used to, like a mixture of what it is now and what those were sort of"): the item / spell wheel (HomeRadialView) asks
-     * for its slot here. [open] true: a square under the bars between the columns (ClassSlot.middle, never wider than the chat column);
-     * the columns part outwards by half of it (the class wheel's 1.0.8 motion), the slot is returned in Home's coordinates; null =
+     * for its slot here. [open] true: a square under the bars on the line between the columns (ClassSlot.middle; fix/menus-fit: at any
+     * share, either side); each column parts outwards as far as it needs to clear it (the class wheel's 1.0.8 motion), the slot is
+     * returned in Home's coordinates; null =
      * Home is not on show or a module is full screen (the wheel then stays the full-screen one). false: the columns come back.
      */
     fun wheelSlot(open: Boolean): RectF? {
@@ -548,12 +572,13 @@ class HomeView(
      * neither column's), so the wheel sits above it
      */
     private fun wheelFit(places: Map<Part, RectF>) {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
-        val s = ClassSlot.middle(w, h, places[Part.BARS]?.bottom ?: 0f, g, w * WHEEL_SLOT_MAX,
-            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g))
+        val line = columnsLine(w)
+        val s = ClassSlot.middle(w, h, (places[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f), g, w * WHEEL_SLOT_MAX,
+            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g), mid = (line.first + line.second) / 2f)
         wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
-        wheelPush = s.push
+        wheelPush = s.push; wheelPushR = s.pushRight
     }
     /**
      * fix/radials-clip-castbar (the user on 1.0.32-1469: "The spells and ds tool bar radials both also clip that bar"): the page laid
@@ -578,7 +603,7 @@ class HomeView(
             if (p == Part.BARS) continue
             if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
             val r = places[p] ?: continue
-            val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush)
+            val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush, wheelPushR)
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
@@ -602,8 +627,8 @@ class HomeView(
             }.also { wheelLayer = it; addView(it, 1) }                     // right over the bars (child 0), under every column
             l.visibility = if (v != null) View.VISIBLE else View.GONE
             if (v != null) {
-                l.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
-                l.layout(0, 0, width, height)
+                l.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(frameHi, MeasureSpec.EXACTLY))
+                l.layout(0, 0, width, frameHi)
                 l.invalidate()
             }
         }
@@ -612,6 +637,41 @@ class HomeView(
     private var wheelOpen = false
     private val wheelRect = RectF()
     private var wheelPush = 0f
+    private var wheelPushR = 0f
+    /**
+     * fix/menus-fit: the line between Home's two columns as laid (the left column's right edge, the right column's left edge;
+     * HomeLayoutSolver.columns): the middle wheel and the LB picture stand on its middle, not the page's (Classic's is the page's)
+     */
+    private fun columnsLine(w: Float = width.toFloat()): Pair<Float, Float> {
+        val c = HomeLayoutSolver.columns(laidLayout ?: layoutNow(), w, UiKit.MODULE_GAP)
+        return c.first.second to c.second.first
+    }
+    /** fix/menus-fit: the laid record is Classic's ([HomeLayout.classicPlace]): the LB picture keeps 1516's place at rest (LbFit:
+     *  under a grown band it is fitted like every layout, the user's pick 2026-11-21 "Fix in Classic too", as the map's paint during the
+     *  LB / pause slides), the D-pad toast its spot on the grown diamonds' foot (not yet ruled on).
+     *  The player's OWN record decides: a Top screen record laid as Grow while the add-on's Wings are not confirmed
+     *  (TopCombatBar.honoured) is not Classic, so it keeps the fitted looks whatever the add-on's flag */
+    private fun classicLook(): Boolean {
+        if (!(laidLayout ?: layoutNow()).classicPlace) return false
+        if (renderLook != null) return true
+        return HomeLayoutRules.shown(editDraft() ?: HomeSettings.layout).fight != HomeLayout.FightBand.TOP
+    }
+    /**
+     * fix/menus-fit: THE LB PICTURE's place on the page as laid (LbFit): under the band as it is now, on the line between the columns,
+     * scaled to fit above a bar that stays (Both), and how far each side moves to clear it. Home's own coordinates.
+     */
+    fun lbPlace(): LbFit.Place {
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val line = columnsLine(w)
+        var bottom = frameH - g
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val r = now[p] ?: continue
+            // slid away: below the page, or (a top bar) up behind the band - no limit
+            if (views[p]?.visibility != View.VISIBLE || r.top >= frameH || r.bottom <= barsBottom() + 0.5f) continue
+            if (halfOf(p, r, w) == HomeSlide.Half.NONE) bottom = minOf(bottom, r.top - g)
+        }
+        return LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+    }
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -628,6 +688,7 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        if (editLive()) return                                            // P2: edit mode's B comes through the guest "home" (its B ladder)
         // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
         // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
         if (HomeOverlayB.owns(classOpen || overlayOpen?.invoke() == true, overlayClosedAt, android.os.SystemClock.uptimeMillis())) return
@@ -648,6 +709,9 @@ class HomeView(
             // controller (the user's own design), but B is a fight button too. Not in the first GROW_B_GRACE_MS after it grew (the
             // pull's opening presses), and never with ZL / ZR held (that B is a layer's ability)
             if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
+            // movable Home phase 3 (SPEC section 11): In fights = Top screen grew nothing - B in the fight has no new meaning (no shrink,
+            // no red reminder); out of a fight (an attack armed) it still gives the faces back, as today
+            if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
@@ -712,7 +776,11 @@ class HomeView(
 
     /** every padmap (MainActivity's route): Cast's fight faces and their switch (the host's, never a constant), and the map kept */
     fun onPadMap(map: PadMapModel.Map) {
+        val ctWas = padMap?.dpad?.ct
         padMap = map
+        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it
+        if (map.dpad?.ct != ctWas && laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true)
+            shown?.let { apply(it, animate = isShown) }
         HomeAttackSwitch.note(map)                      // Spells' start-attack switch, drawn in Home's Settings section
         castView.fightFace = HomeFightFace.icons(map)
         castView.fightFaceOn = HomeFightFace.on(map)
@@ -734,14 +802,18 @@ class HomeView(
 
     private fun applyDpad() {
         val map = padMap ?: return
-        val d = HomeFightFace.dpadIcons(map, fightNow)
+        // P4: edit mode's fight preview shows the In-combat pictures too (display only: nothing is sent)
+        val fight = fightNow || editFightLook()
+        val d = HomeFightFace.dpadIcons(map, fight)
         castView.fightDpad = d
-        castView.fightIds = HomeFightFace.ids(map, fightNow)            // b-combat-bar-states: their state by spell id
-        castView.fightItems = HomeFightFace.items(map, fightNow)        // PadMap m165: a macro using an item: the item's cooldown
-        castView.trigFights = HomeFightFace.trigFights(map, fightNow)   // the LT / RT / LT+RT In-combat spells, in fights only
+        castView.fightIds = HomeFightFace.ids(map, fight)               // b-combat-bar-states: their state by spell id
+        castView.fightItems = HomeFightFace.items(map, fight)           // PadMap m165: a macro using an item: the item's cooldown
+        castView.trigFights = HomeFightFace.trigFights(map, fight)      // the LT / RT / LT+RT In-combat spells, in fights only
+        castView.fightRanks = HomeFightFace.rankIds(map, fight)         // #471: the fight pictures' rank badges (spells only)
+        castView.trigRanks = HomeFightFace.trigRankIds(map, fight)
         // test22 (the user: "I actually hate the form mark. Remove that."): no form mark on the bars, in a fight or otherwise
         // ONE line per change, so one approved log read proves what the toolbar's D-pad was given (Tracking's ask after test18)
-        if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fightNow dpad=$d") }
+        if (d != dpadSaid) { dpadSaid = d; Log.i("WCLOG", "dpad draw: fight=$fight dpad=$d") }
     }
 
     /** every CURRENT `facecd` (Spells' PadMap m12, the whole state): each fight face's cooldown onto Cast's sweep, on the app's clock */
@@ -801,6 +873,7 @@ class HomeView(
 
     fun auraPad(msg: JSONObject) {
         if (typeWanted) return                                            // the tool holds its own guest ("tool")
+        if (editLive()) { editPad(msg); return }                          // P2: edit mode holds the guest "home" while it runs
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -809,7 +882,12 @@ class HomeView(
 
     /** one press for the full map module: the MapView's host keys; B with nothing open leaves the module (Home's rest) */
     private fun mapPad(msg: JSONObject) {
-        if (msg.has("lost")) { mapHeld = false; mapView.padHints = false; return }
+        if (msg.has("lost")) {
+            mapHeld = false; mapView.padHints = false
+            // #584: asked again at once (a drop the capture did not explain), else the watch: Home's reader for B, the ask after the fight
+            if (mapClaim.lost(msg.optString("lost"))) mapAsk() else { removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L) }
+            return
+        }
         val n = msg.optInt("n", -1)
         if (n == homePadN) return
         homePadN = n
@@ -868,18 +946,60 @@ class HomeView(
     /** the map controls hold the sticks in the game (Map.lua mr8's catch: the character does not walk while they move the map) */
     private var sticksOn = false
     private fun sticksCatch(on: Boolean) {
-        removeCallbacks(sticksKeep)
+        removeCallbacks(sticksKeep); removeCallbacks(sticksCheck)
         if (on == sticksOn && !on) return
+        val was = mapSticksLive()
         sticksOn = on
+        if (on) sticksAsks++ else sticksAsks = 0
         val cells = MapRoomPad.homeSticksCells(pad, on)
-        if (cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)) {
+        sticksRow = cells != null
+        val sent = cells != null && pad != null && TapBridge.tapsSpaced(context, pad, cells, MapRoomPad.GAP_MS)
+        if (sent) {
             if (on != sticksSaid) Log.i(TAG, "map controls: sticks ${if (on) "held" else "let go"}")
             sticksSaid = on
         }
-        if (on) postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS)
+        // #584: every ask of the catch (not the 4 s keep-alive once it shows) and why one could not go
+        if (on && !mapClaim.caught) Log.i("WCMAP", "map controls: stick catch ask $sticksAsks ${if (sent) "sent" else "not sent (${if (cells == null) "no map row" else "no pad document"})"}" +
+            if (mapHeld) "" else " (the module not held yet: the cursor waits)")
+        if (on) postDelayed(if (sent && !mapClaim.caught) sticksCheck else sticksKeep, if (sent && !mapClaim.caught) STICKS_ANSWER_MS else MapRoomPad.HOME_STICKS_KEEP_MS)
+        if (mapSticksLive() != was) { if (!was) mapView.sticksResume(); mapView.invalidate() }
     }
     private var sticksSaid: Boolean? = null
     private val sticksKeep = Runnable { if (sticksOn && mapPage == HomeMapPages.Page.CONTROLS && mapWanted) sticksCatch(true) }
+    /** #584: the catch's answer did not come in [STICKS_ANSWER_MS]: asked again ([STICKS_ASKS] at most, then the 4 s keep-alive) */
+    private val sticksCheck = Runnable {
+        if (!sticksOn || mapPage != HomeMapPages.Page.CONTROLS || !mapWanted) return@Runnable
+        if (mapClaim.caught || sticksAsks >= STICKS_ASKS) {
+            if (!mapClaim.caught) Log.i("WCMAP", "map controls: no stick catch after $sticksAsks asks: the stick stays the game's, the cursor waits")
+            postDelayed(sticksKeep, MapRoomPad.HOME_STICKS_KEEP_MS); return@Runnable
+        }
+        sticksCatch(true)
+    }
+    private var sticksAsks = 0
+    /** the map row is published (Map.lua mr8): the catch is asked for, so the cursor waits for it */
+    private var sticksRow = false
+
+    // ---- #584 THE MODULE'S CLAIM (MapHoldClaim; the Map room's rule): the cursor and the zoom move only while the module holds the
+    // controller (mapHeld) AND, on the controls page, the game's stick catch shows (once Home's has shown at all: an older add-on
+    // without it keeps the hold alone). Else the stick is the game's: the character walks, the cursor stays. WCMAP lines.
+    private val mapClaim = MapHoldClaim("map module") { Log.i("WCMAP", it) }
+    /** the tests: the claim, and whether the sticks are the map's now */
+    fun mapClaimState(): MapHoldClaim.St = mapClaim.st
+    fun mapSticksLive(): Boolean = mapWanted && mapHeld && mapClaim.catchOk(needCatch = sticksOn && sticksRow)
+    /** Map.lua's mapwin `stick` (the host, every document): the game's stick catch shows or not */
+    fun onMapStick(on: Boolean) {
+        val was = mapSticksLive()
+        val before = mapClaim.caught
+        mapClaim.stick(on)
+        if (mapClaim.caught == before) return
+        // it dropped while the controls hold the sticks: asked again (the add-on lets it go by itself when Home stops holding, or 10 s on)
+        if (!on && mapWanted && sticksOn && mapPage == HomeMapPages.Page.CONTROLS) {
+            Log.i("WCMAP", "map controls: the stick catch dropped: asked again"); sticksAsks = 0; sticksCatch(true)
+        }
+        val now = mapSticksLive()
+        if (now && !was) mapView.sticksResume()
+        if (now != was) mapView.invalidate()
+    }
     /** a touch on the open map's field: the map controls (the user: "tapping in the map area should also change it to the map controls") */
     private fun mapFieldTouched() {
         if (!mapWanted) return
@@ -903,7 +1023,7 @@ class HomeView(
             when (msg.optString("op")) {
                 // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
                 // meanwhile; the first press that arrives (mapPad) makes it held
-                "hold" -> if (MapExitGuard.ackHeld(msg.optBoolean("ok"), msg.optString("why"))) mapHeldNow()
+                "hold" -> if (mapAnswer(msg)) mapHeldNow()
                     else if (MapExitGuard.ackPending(msg.optBoolean("ok"), msg.optString("why"))) {
                         Log.i(TAG, "map module: hold pending (the fight's ENTER)")
                         mapHeld = false; mapRefused = false; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
@@ -913,7 +1033,7 @@ class HomeView(
                         // never a module the player cannot leave: B read by Home closes it (MapExitGuard), the hold asked again after the fight
                         mapRefused = true; mapFallbackOn(); removeCallbacks(mapWatch); postDelayed(mapWatch, 1000L)
                     }
-                "free", "leave" -> { mapHeld = false; mapView.padHints = false }
+                "free", "leave" -> { mapClaim.freed(); mapHeld = false; mapView.padHints = false }
             }
             return
         }
@@ -934,7 +1054,7 @@ class HomeView(
     /** Home is busy with a controller layer of its own: its guest "home" (chat / map / aura list) or the tool's "tool" */
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
-    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null
+    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
     /** B: pet recall's rest-layout B (PetRecall; was Smart pet / B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
@@ -954,23 +1074,51 @@ class HomeView(
     private val mapWatch = Runnable { mapWatchStep() }
     private fun mapAsk() {
         mapAskAt = android.os.SystemClock.uptimeMillis(); mapRefused = false
-        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i(TAG, "map module: hold")
+        if (!mapClaim.shown) mapClaim.shown() else if (!mapClaim.held) mapClaim.again("the module")
+        val cells = GuestPad.cells(pad, GUEST_ID, hold = true)
+        val sent = homeGuestTap(cells)
+        if (sent) Log.i(TAG, "map module: hold")
+        mapClaim.asked(++mapAsks, 0, sent, if (sent) "the guest home" else if (pad == null) "no pad document yet" else "no guest cell")
         removeCallbacks(mapWatch); postDelayed(mapWatch, MapExitGuard.ANSWER_MS)
     }
+    private var mapAsks = 0
+    /** a hold answer for the module: the claim logs it; true = it holds (MapExitGuard.ackHeld: "pending" does not) */
+    private fun mapAnswer(msg: JSONObject): Boolean {
+        mapClaim.answer(msg.optBoolean("ok"), msg.optString("why"))
+        return MapExitGuard.ackHeld(msg.optBoolean("ok"), msg.optString("why"))
+    }
+    /** the host's capture holder (null = not known): Home asks again after a loss that names a holder only once nobody holds */
+    var capHolderNow: () -> String? = { null }
     /** once a second while the module is open without the controller: the fallback reader, and the hold asked again after the fight */
     private fun mapWatchStep() {
         if (!mapWanted) { mapFallbackOff(); return }
         val since = android.os.SystemClock.uptimeMillis() - mapAskAt
-        if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
-        if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since)) { Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return }
+        // #584: a loss that names a holder or a choice (taken, npc, B ...) waits until the capture names nobody (no ping-pong in its queue)
+        val waitLoss = mapClaim.st == MapHoldClaim.St.LOST && mapClaim.why in MapHoldClaim.WAIT_WHYS
+        val nobody = capHolderNow().let { it == null || it.isEmpty() }
+        // #584's review: while that other holder (an NPC window, a room) drives the pad, Home reads no B of its own - the holder's B (the
+        // loot / vendor window's close) would close the map module too. The reader starts once nobody holds and no hold came back
+        if (waitLoss && !nobody) mapFallbackOff(keepWatch = true)
+        else if (MapExitGuard.fallback(mapWanted, mapHeld, mapRefused, since)) mapFallbackOn()
+        if (MapExitGuard.retry(mapWanted, mapHeld, inFight(), since) && (!waitLoss || nobody)) {
+            Log.i("WCLOG", "map module: the hold asked again (out of the fight)"); mapAsk(); return
+        }
         if (!mapHeld) postDelayed(mapWatch, 1000L)
     }
     /** the map module holds the controller now (a "held" answer, or the first press after "pending"): the guard off */
-    private fun mapHeldNow() { mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff() }
+    private fun mapHeldNow() {
+        val was = mapSticksLive()
+        mapClaim.press()
+        mapHeld = true; mapBSaid = null; mapView.padHints = true; mapView.hostStart(); syncMapB(); mapFallbackOff()
+        if (mapSticksLive() && !was) mapView.sticksResume()
+    }
     private fun mapFallbackOn() {
         if (mapFallbackReader != null) return
         Log.i("WCLOG", "map module: no controller hold (${if (mapRefused) "refused: a fight" else "no answer"}): B closes it")
-        auraPane.note("In a fight the game keeps the controller: press B to close the map")
+        // the note fits the case: a fight's refusal / pending ENTER, or (out of one) a hold that did not come back
+        val fight = inFight() || mapClaim.why == "combat" || mapClaim.st == MapHoldClaim.St.PENDING
+        mapNoteSaid = if (fight) FIGHT_MAP_NOTE else KEPT_MAP_NOTE
+        auraPane.note(mapNoteSaid!!)
         mapFallbackHeld = 0
         mapFallbackReader = PadInput(onPad = { _, _, _, _ -> }, onStatus = { _, _ -> }, onButtons = { h ->
             post {
@@ -982,6 +1130,10 @@ class HomeView(
             }
         }).also { it.start() }
     }
+    /** the tests: Home's own B reader for the module runs, and the last note it said */
+    fun mapFallbackReading(): Boolean = mapFallbackReader != null
+    var mapNoteSaid: String? = null
+        private set
     /** ExitGuard (the host's): the map module guards itself */
     fun mapGuarding(): Boolean = mapWanted
     /** fix/polestar-b-home: the module believes it holds the controller (its B then comes through the guest, never Home's own reader) */
@@ -995,6 +1147,7 @@ class HomeView(
     fun mapHoldGone() {
         if (!mapHolds()) return
         Log.i("WCLOG", "map module: the capture names nobody: not held, B read by Home, the hold asked again")
+        mapClaim.nobody()
         mapHeld = false; mapBSaid = null; mapView.padHints = false
         mapFallbackOn()
         mapAsk()
@@ -1011,9 +1164,11 @@ class HomeView(
         if (typeWanted) return                                         // the tool asks for its own hold when it opens again
         if (homeOwnGuestWanted() && homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = true))) Log.i("WCLOG", "exit guard: Home's hold asked again")
     }
-    private fun mapFallbackOff() {
+    /** Home's B reader off; [keepWatch] = the once-a-second watch goes on (another holder has the pad for now) */
+    private fun mapFallbackOff(keepWatch: Boolean = false) {
+        if (keepWatch && mapFallbackReader != null) Log.i("WCLOG", "map module: another holder has the controller: Home's B reader off meanwhile")
         mapFallbackReader?.stop(); mapFallbackReader = null; mapFallbackHeld = 0
-        removeCallbacks(mapWatch)
+        if (!keepWatch) removeCallbacks(mapWatch)
     }
     private var mapBSaid: String? = null
     private var homePadN = -1
@@ -1149,22 +1304,61 @@ class HomeView(
         val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
         val bags = HomeSettings.clockBags && bagCount != null
         val am = ammo.takeIf { HomeSettings.clockAmmo }
-        return ClockBand.kinds(hs, tp != null, bags, am != null).map { k ->
-            when (k) {
-                ClockBand.Kind.HEARTH -> {
-                    val l = ItemCd.left(ItemCd.HEARTH); val dim = ItemCd.dim(ItemCd.HEARTH)
-                    UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || dim,
-                        glow = ClockBand.hearthGlow(ItemCd.hearthHave, l, dim))
-                }
-                ClockBand.Kind.TELEPORT -> {
-                    val l = ItemCd.teleportLeft()
-                    UiKit.BandItem.Icon(Icons.get(tp!!.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
-                }
-                ClockBand.Kind.BAGS -> bagCount!!.let { b ->                                             // the backpack's icon, used / total
-                    UiKit.BandItem.Icon(Icons.get(VendorSlots.BAG_ICON), ClockBand.outOf(b.used, b.total), out = b.full) }
-                ClockBand.Kind.AMMO -> UiKit.BandItem.Icon(Icons.get(am!!.icon), ClockBand.outOf(am.count, am.of), cooling = am.empty, out = am.empty)
-            }
+        return ClockBand.kinds(hs, tp != null, bags, am != null).mapNotNull { k -> bandItem(k) }      // ItemCd is written off the main thread
+    }
+    /** one extra as the row draws it from its data now (null = no data: the row leaves it out) */
+    private fun bandItem(k: ClockBand.Kind): UiKit.BandItem? = when (k) {
+        ClockBand.Kind.HEARTH -> if (ItemCd.hearthHave == false) null else {
+            val l = ItemCd.left(ItemCd.HEARTH); val dim = ItemCd.dim(ItemCd.HEARTH)
+            UiKit.BandItem.Icon(Icons.get(ItemCd.hearthIcon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || dim,
+                glow = ClockBand.hearthGlow(ItemCd.hearthHave, l, dim))
         }
+        ClockBand.Kind.TELEPORT -> ItemCd.teleport?.let { tp ->
+            val l = ItemCd.teleportLeft()
+            UiKit.BandItem.Icon(Icons.get(tp.icon), if (l > 0.0) ItemCd.mmss(l) else "", cooling = l > 0.0 || ItemCd.teleportDim())
+        }
+        ClockBand.Kind.BAGS -> bagCount?.let { b ->                                              // the backpack's icon, used / total
+            UiKit.BandItem.Icon(Icons.get(VendorSlots.BAG_ICON), ClockBand.outOf(b.used, b.total), out = b.full) }
+        ClockBand.Kind.AMMO -> ammo?.let { am -> UiKit.BandItem.Icon(Icons.get(am.icon), ClockBand.outOf(am.count, am.of), cooling = am.empty, out = am.empty) }
+    }
+
+    /**
+     * P2 (the user's ruling 2026-11-22: the clock's extras as apps): edit mode's row - EVERY extra turned on (its own picture, dimmed,
+     * while it has no data today: it still wiggles and hides), then the "+" spot while one is hidden ([EDIT_PLUS], a blank cell the
+     * chrome draws its "+" on); [editRowKeys] their keys in the same order. Outside edit mode the row is [bandItems]' (unchanged)
+     */
+    private fun editRowKeys(): List<String> = buildList {
+        for (k in HomeEditModel.EXTRA_KEYS) if (k != "gold" && BottomTiles.clockOn(k)) add(k)
+        if (HomeEditModel.EXTRA_KEYS.any { !BottomTiles.clockOn(it) }) add(EDIT_PLUS)
+    }
+    private fun editBandItems(keys: List<String>): List<UiKit.BandItem> = keys.map { k ->
+        val kind = when (k) { "hearth" -> ClockBand.Kind.HEARTH; "teleport" -> ClockBand.Kind.TELEPORT; "bags" -> ClockBand.Kind.BAGS; "ammo" -> ClockBand.Kind.AMMO; else -> null }
+        kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }?.let { Icons.get(it.third) },
+            "", cooling = true)
+    }
+    /** edit mode's gold line: the purse while Gold is on (0 until the bags say it: the line still shows, wiggles and hides) */
+    private fun editChipGold(): Long? = if (HomeSettings.clockGold) (goldCopper ?: 0L) else null
+    /** the clock block is edit mode's now (live, not parked): its extras as apps. P4 fix round (the review): not while the fight preview
+     *  shows - the block is then drawn exactly as a fight draws it (the extras with data only, no "+" cell, nothing wiggling) */
+    private fun editClock(): Boolean = edit?.let { !it.parked && !it.fightPreview } == true
+    /** the row's keys the last edit-mode clock block drew (its cells' poses: [extraPoser]) */
+    private var editRowDrawn: List<String> = emptyList()
+    /** P2: each extra's wiggle on its own key (the gold line -1), about its cell's centre; nothing outside edit mode */
+    private val extraPoseBuf = HomeEditMotion.Pose()
+    private val extraPoser = object : UiKit.CellPose {
+        override fun apply(c: Canvas, i: Int, cx: Float, cy: Float) {
+            val k = if (i < 0) "gold" else editRowDrawn.getOrNull(i) ?: return
+            if (!extraPoseAt(k)) return
+            val p = extraPoseBuf
+            c.translate(p.dx, p.dy); c.rotate(p.rot, cx, cy); c.scale(p.scale, p.scale, cx, cy)
+        }
+    }
+    /** extra [k]'s pose now into [extraPoseBuf]; false = none */
+    private fun extraPoseAt(k: String): Boolean {
+        if (!motion.on || !editPaintPosed() || !editClock()) return false          // the fight preview: nothing wiggles
+        val key = if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
+        motion.pose(key, motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
+        return !extraPoseBuf.isIdentity
     }
 
     /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
@@ -1297,6 +1491,7 @@ class HomeView(
         // a fight began / ended with Party mode on (only where the module is placed: not under a full-screen module)
         else if (party.party != null && (flow.full == null || flow.takeover) && partyModeNow(flow.screen) != laidPartyMode) changed()
         castStripFight()                                                  // the tap-to-cast bar's Hide in combat follows the fight
+        editFightCheck(relay = true)                                      // P2: a fight parks edit mode's draft, its end brings it back
         val red = grow.red(now) && !flow.takeover && flow.full == null
         if (red != redShown) {
             redShown = red
@@ -1479,7 +1674,16 @@ class HomeView(
 
     // ================================================================ states -> places (spec parts 1, 2, 3, 6)
 
-    private fun changed() { apply(flow.screen, animate = isShown); onStateChanged?.invoke() }
+    private fun changed() {
+        editFightCheck()
+        // In fights = Top screen: a module opened in the fight closes (its every route ends here) - the takeover is back at once, so the
+        // band goes straight back above the page (HomeTouch.open kept the grow) rather than landing at its rest box for up to a tick
+        if (flow.full == null && !flow.takeover && TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct)) {
+            val now = System.currentTimeMillis()
+            if (flow.combat(takeoverWanted(now))) grewAt = now
+        }
+        apply(flow.screen, animate = isShown); onStateChanged?.invoke()
+    }
 
     /** the D-pad layout's RIGHT (the user, 2026-10-05: "I want right to open that home map module"): the map module opens as a tap on
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
@@ -1496,7 +1700,9 @@ class HomeView(
     private fun touchOpen(m: HomeModule): Boolean {
         val now = System.currentTimeMillis()
         val fighting = flow.takeover || grow.fighting(now)
-        if (!HomeTouch.open(flow, grow, m, now)) return false
+        // In fights = Top screen in the fight: the grow stays (the Wings stay up top); closing the module brings the takeover back
+        val keepGrow = !TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)
+        if (!HomeTouch.open(flow, grow, m, now, keepGrow)) return false
         if (fighting && flow.full != null) openedInFight = true
         Log.i("WCLOG", "home: $m opened by touch${if (fighting) " (in a fight)" else ""}")
         changed()
@@ -1519,16 +1725,22 @@ class HomeView(
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
-    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted
+    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted && !editLive()
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
-    /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 150 px rows; else at rest */
+    /** the module's mode for [s]: the takeover = the fight with Party mode off; a fight with it on = 88 px rows, or - In fights = Top
+     *  screen (the layout as the page lays it: TopCombatBar.honoured keeps TOP only while the add-on's Wings are on) - the rows filling
+     *  the band's freed strip (the user's ruling C, 11-22: HomeLayoutSolver.away, PartyLayout.Mode.FIGHT_TOP); else at rest. The Fight
+     *  preview lays each as its fight does (the 1519 audit: the solo preview hands the solver the takeover, so the takeover's rows) */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
-        s.takeover -> PartyLayout.Mode.FIGHT_OFF
-        partyOnHere() && grow.fighting(System.currentTimeMillis()) -> PartyLayout.Mode.FIGHT_ON
+        s.takeover || previewTakeover() -> PartyLayout.Mode.FIGHT_OFF
+        partyFightNow() || previewPartyFight() ->
+            if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
         else -> PartyLayout.Mode.REST
     }
+    /** Party mode on in a fight (the add-on's fight word: never an attack armed before the pull - no takeover in Party mode) */
+    private fun partyFightNow(): Boolean = partyOnHere() && grow.fighting(System.currentTimeMillis())
     private var laidPartyMode = PartyLayout.Mode.REST
     private var laidPartyN = 0
     /** m131: a pet in place of a party member at the same n changes the cells' widths */
@@ -1554,6 +1766,7 @@ class HomeView(
                 || PARTY_MODULE != laidPartyModule))) changed()
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
+        castStripFight()                                                  // cb15: Party mode on / off: the bar's Party layer and its fight rule
         onStateChanged?.invoke()                                          // the disc's red B follows
     }
 
@@ -1587,7 +1800,7 @@ class HomeView(
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || (lent(castView) && castView.classRadialOpen())) return
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
@@ -1598,31 +1811,116 @@ class HomeView(
     /** a Home module went full screen (Home's rest page left): the host taps Party mode off (PartyModel.OFF_ON_LEAVE) */
     var onPartyLeaveRest: (() -> Unit)? = null
 
-    /** places [base] with the party module: it takes the top of the chat's place (under the card when the card is above chat) */
-    private fun withParty(base: Map<Part, RectF>, s: HomeScreen, w: Float): Map<Part, RectF> {
-        // 2026-11-05 (the user: "scrap the party mode showing from the bottom screen but keep the party mode toolbar settings for when
-        // party is being targeted on the top screen"; the game hides every health number, so the module could only guess): no module
-        laidPartyModule = PARTY_MODULE
-        if (!laidPartyModule) return base
-        val p = party.party ?: return base
-        val chat = base[Part.CHAT] ?: return base
-        val mode = partyModeNow(s)
-        laidPartyMode = mode; laidPartyN = p.view.size; laidPartyOn = p.onLive; laidPartyPet = p.viewPet
-        val right = w / 2f - 5f
-        // m134 (the user, 2026-11-11: the Select tab "attached to the side of the screen"): the module's view starts at the screen's
-        // left edge, where the tab stands; the member band (the well) starts right of it
-        val m = PartyLayout.module(mode, p.view.size, pet = p.viewPet, top = chat.top, left = PartyLayout.EDGE, right = right)
-        partyView.mode = mode
-        val out = LinkedHashMap(base)
-        out[Part.PARTY] = RectF(PartyLayout.EDGE, chat.top - PartyModuleView.RISE, right, m.well.b)
-        out[Part.CHAT] = RectF(chat.left, minOf(m.chatTop, chat.bottom - 1f), chat.right, chat.bottom)
+    /**
+     * MOVABLE HOME (SPEC.txt section 6 item 1): every part's box for [s] from the layout record ([HomeLayoutSolver]); it replaces
+     * placesBase / withParty / withStrip with the same arithmetic (Classic = today: HomePlacesGoldenTest). The bookkeeping of what was laid
+     * (the party module's mode and rows, the bar's side and slide, the card's dock and height) stays here.
+     */
+    private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
+        val l = layoutNow(s)
+        val full = s.full != null && !s.takeover
+        var partyIn: HomeLayoutSolver.Party? = null
+        if (!full) {
+            laidCardH = cardHeight()
+            laidOverMap = cardOverMap()
+            // 2026-11-05 / m129: the party module only with Party mode's switch on and a party document
+            laidPartyModule = PARTY_MODULE
+            val p = party.party
+            if (laidPartyModule && p != null) {
+                val mode = partyModeNow(s)
+                laidPartyMode = mode; laidPartyN = p.view.size; laidPartyOn = p.onLive; laidPartyPet = p.viewPet
+                partyView.mode = mode
+                partyIn = HomeLayoutSolver.Party(mode, p.view.size, p.viewPet)
+            }
+        }
+        // P4: edit mode's fight preview lays the band's combat look (the real fight state stays as it is: nothing parks, nothing is sent):
+        // the takeover's, or with Party mode on the Party-mode fight's (no takeover, R0) - so Top screen's preview lays the band above the
+        // page as its fight does, the party list filling the strip (the 1519 integration)
+        val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover || previewTakeover(),
+            card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
+            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
+        placedAway = !full && r.away
+        if (full) laidSide = CastStripModel.Side.OFF
+        else {
+            laidLayout = l
+            laidSide = r.castSide
+            laidHidden = r.castHidden && r.castSide != CastStripModel.Side.OFF
+            // P2: Split = the first view on slots 1-4 under the left column, the second on 5-8 under the right (no scroll)
+            laidSplit = l.cast == HomeLayout.CastDock.SPLIT
+            laidTop = r.castTop
+            castStrip.splitHalf = if (laidSplit) 1 else 0
+            if (laidSplit) { castStrip.side = CastStripModel.Side.LEFT; castStrip2.side = CastStripModel.Side.RIGHT }
+            else if (r.castSide != CastStripModel.Side.OFF) castStrip.side = r.castSide
+            partyView.tabRight = r.partyTabRight
+            laidChatRight = r.partyTabRight
+            laidPartyInMap = l.party.column == HomeModule.MAP
+        }
+        val out = LinkedHashMap<Part, RectF>()
+        for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
         return out
     }
+    /** the layout record the page was last laid with (a change of it glides the page there) */
+    private var laidLayout: HomeLayout? = null
+    /** In fights = Top screen: the page [apply] laid last has the band above the page (the fight's takeover with the Wings on: TopSlide);
+     *  [placedAway] the last [places]' answer (chatPaneBox asks places too: only apply moves [laidAway]) */
+    private var laidAway = false
+    private var placedAway = false
+    /** the overall fraction (0..1) a Top-screen slide had reached when the next apply cancelled it, and its way; -1 = none */
+    private var slideCutAt = -1f
+    private var slideCutUp = false
+    /** the down-slide's hold left (ms) when the next apply cut it inside it (TopSlide.holdMs: a re-lay then waits only what was left) */
+    private var slideCutHold = 0L
+    /** THE HOLD ON THE WALL CLOCK (the 11-22 review: folded into the ValueAnimator's duration, the system's animator duration scale cut
+     *  it - 0.5x halved it, "Animations off" dropped it - while the add-on's Wings leave in real time): a held slide's animator is started
+     *  by [holdRun] after the hold, posted on the main looper; [holdUntil] / [holdFrom] / [holdUp] say where a cut finds it ([holdCut]) */
+    private val holdHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var holdRun: Runnable? = null
+    private var holdUntil = 0L
+    private var holdFrom = 0f
+    private var holdUp = false
+    /** the wall-clock start of the last up-slide (TopSlide.reversalHoldMs: how far in the Wings had got when the fight's end cut it); -1 = none */
+    private var upSlideAt = -1L
+    /** a held slide this apply cuts inside its hold: never started (a cancel would tell its listeners nothing), it is ended as a
+     *  running one is - its cancel and end run (the motion's clean-up), then the hold it had left is noted for the next motion */
+    private fun holdCut() {
+        val r = holdRun ?: return
+        holdHandler.removeCallbacks(r); holdRun = null
+        val a = anim; anim = null
+        a?.listeners?.toList()?.forEach { it.onAnimationCancel(a); it.onAnimationEnd(a) }
+        slideCutAt = holdFrom; slideCutUp = holdUp
+        slideCutHold = (holdUntil - SystemClock.uptimeMillis()).coerceAtLeast(1L)
+    }
+    /** P2: the last [places] laid the tap-to-cast bar split in two halves */
+    private var laidSplit = false
+    /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
+    private var laidTop = false
+    /** the party list's column on the right (the party menus mirror with it: the chat's for Classic's dock) */
+    private var laidChatRight = false
+    /** after 1518: the party list laid in the map's column (the party menus open over that column) */
+    private var laidPartyInMap = false
+    private val PART_OF: Map<HomePart, Part> = HomePart.values().mapNotNull { hp -> Part.values().firstOrNull { it.name == hp.name }?.let { hp to it } }.toMap()
 
-    private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
-        val base = placesBase(s, w, h)
-        if (s.full != null && !s.takeover) { laidSide = CastStripModel.Side.OFF; return base }
-        return withStrip(withParty(base, s, w), w, h)
+    /**
+     * the record this page lays now: the player's active layout (the current character's), or a preview look's; its rest is the page's
+     * (HomeFlow keeps it), a look's grow / card / bar override (the Settings pictures)
+     */
+    private fun layoutNow(s: HomeScreen? = shown): HomeLayout {
+        val look = renderLook
+        // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there
+        var l = HomeLayoutRules.shown(look?.layout ?: editDraft() ?: HomeSettings.layout)
+            // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
+            .copy(rooms = RoomBar.DEFAULT, xpBar = true, hidden = emptyList())
+        if (s != null) l = l.copy(rest = s.rest)
+        // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow. The
+        // Fight preview (the 1519 audit) lays what the first fight after Done lays: Top screen whenever the add-on has the flag
+        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)
+        if (look != null) {
+            l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
+                else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
+            if (look.layout == null) l = l.copy(card = if (look.overMap) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT)
+            look.castSide?.let { l = l.copy(cast = HomeLayout.dockOf(it, l.chatSide)) }
+        }
+        return l
     }
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
@@ -1630,52 +1928,21 @@ class HomeView(
     /** cb7: the last [places] laid the bar slid away (Hide in combat, a fight shown); a change lays the page again with the one motion */
     private var laidHidden = false
 
-    /**
-     * GitHub #43 cb3: THE TAP-TO-CAST BAR's place, at rest and in a fight alike (the bar is most use in one), above the page's foot:
-     * LEFT under the chat (the chat, the quest card above it and the party module end a gap above it), RIGHT under the minimap (the map,
-     * its auras and the card over it end above it), BOTH one bar under both columns ([CastStripModel.place]). A module full screen has
-     * no bar (its own page). cb7 (the user, 2026-11-13: "it should slide down behind the home bar out of view, not fade out and give
-     * that space back to the map or chat"): with Hide in combat and a fight shown, the bar's box lies below the page (behind Home's
-     * bottom bar, [CastStripModel.hiddenBox]) and no column is cut; [apply]'s one motion carries the bar and the columns together.
-     */
-    private fun withStrip(base: Map<Part, RectF>, w: Float, h: Float): Map<Part, RectF> {
-        val side = castSideNow()
-        laidSide = side
-        val b0 = CastStripModel.place(side, w, h, UiKit.MODULE_GAP) ?: return base.also { laidHidden = false }
-        castStrip.side = side
-        val hidden = castHiddenNow()
-        laidHidden = hidden
-        val b = if (hidden) CastStripModel.hiddenBox(b0, h) else b0
-        val g = UiKit.MODULE_GAP
-        val top = b0.t
-        val out = LinkedHashMap(base)
-        out[Part.STRIP] = RectF(b.l, b.t, b.r, b.b)
-        fun cut(p: Part) { base[p]?.let { r -> if (r.bottom > top - g)
-            out[p] = RectF(r.left, r.top, r.right, CastStripModel.columnBottom(maxOf(r.top + 1f, top - g), r.bottom, hidden)) } }
-        val c = w / 2f
-        for (p in listOf(Part.CHAT, Part.QUESTS, Part.PARTY, Part.MAP, Part.AURAS)) {
-            val r = out[p] ?: continue
-            val leftCol = r.centerX() < c
-            if ((leftCol && CastStripModel.cutsLeft(side)) || (!leftCol && CastStripModel.cutsRight(side))) cut(p)
-        }
-        return out
-    }
-
     /** a finger on slot [i]: the slot's cell on the "castbar" row (nothing for an empty / waiting slot) */
     private fun castStripTap(i: Int) {
-        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i) ?: return
+        val cell = CastStripModel.tapCell(CastStripModel.Live.bar, i, castStrip.fightNow, castStrip.partyNow) ?: return   // cb14 / cb15: the layer's cell
         val sent = pad != null && TapBridge.tap(context, pad, cell.first, cell.second) { }
         Log.i(TAG, "cast bar: slot ${i + 1} -> ${cell.first} ${cell.second} ${if (sent) "tapped" else "not sent"}")
     }
 
     /** every `castbar` document (the host keeps [CastStripModel.Live]): the slots, and the page again when the strip comes or goes */
     fun onCastBar(b: CastStripModel.Bar) {
-        castStrip.update(b)
+        for (st in strips) st.update(b)
         castStripRelay()
     }
 
     /** every CURRENT `castcd` (ActionBar cb1, the whole state): the slots' sweeps on the app's clock */
-    fun onCastCd(m: Map<Int, PadMapModel.FaceCd>) = castStrip.onCd(m)
+    fun onCastCd(m: Map<Int, PadMapModel.FaceCd>) { for (st in strips) st.onCd(m) }
 
     /**
      * THE BAR IN A FIGHT (Settings > Tap-to-cast bar > In combat; the user 2026-11-13: "a settings toggle to make them Hide/stay in
@@ -1693,98 +1960,39 @@ class HomeView(
     }
 
     /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
-    private fun castStripGate() { castStrip.fight(castCombatNow(), fightShown()) }
+    private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }
+    /** cb15 (Option C, Bar in Party mode): Party mode on and its bar setting on: the bar stays in fights and its Party layer shows */
+    private fun castPartyKeep(): Boolean = renderLook?.castSide == null && party.party?.onLive == true && HomeSettings.castBarPartyShow
 
     /** the bar's side and its fight rule now: the player's, or a preview look's (Hide with it) */
-    private fun castSideNow(): CastStripModel.Side = renderLook?.castSide ?: HomeSettings.castBarSide
-    private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE else HomeSettings.castBarCombat
+    private fun castSideNow(): CastStripModel.Side = layoutNow().castSide
+    // In fights = Top screen (TopCombatBar.stripStays): the band leaves the bottom screen in the fight (Party mode's too, ruling C), the
+    // bar stays whatever Show in combat says (its touches, its dock; its In-combat layer only when Show in combat armed it, else its own slots); the cast bar question's
+    // picture keeps its own Hide
+    private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
+        else TopCombatBar.stripCombat(layoutNow(), HomeSettings.castBarCombat)
 
     /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
-    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown())
+    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+
+    /** the layout record changed in more than the bar since the page was laid */
+    private fun layoutMoved(): Boolean {
+        val was = laidLayout ?: return false
+        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, castSize = HomeLayout.SlotSize.L, name = "")
+        return core(was) != core(layoutNow())
+    }
 
     private fun castStripRelay() {
         val s = shown ?: return
         if (s.full != null && !s.takeover) return
         val side = castSideNow()
-        if (side == laidSide) return
-        // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once
+        if (side == laidSide && (layoutNow().cast == HomeLayout.CastDock.SPLIT) == laidSplit && layoutNow().cast.top == laidTop) return
+        // cb3: Left <-> Right slides the bar over with the page's one motion (the columns make room); coming or going is laid at once.
+        // Movable Home: a new layout (a preset, a swap) moving more than the bar glides the whole page there
+        // (Above <-> Under on one side glides too: the bar moves up or down its column)
         val slide = (side == CastStripModel.Side.LEFT || side == CastStripModel.Side.RIGHT) &&
-            (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT)
+            (laidSide == CastStripModel.Side.LEFT || laidSide == CastStripModel.Side.RIGHT) || layoutMoved()
         apply(s, animate = slide && isShown)
-    }
-
-    private fun placesBase(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
-        val c = w / 2f
-        if (!s.takeover) s.full?.let { m ->
-            // NO bar and no close button on top (user, 2026-09-29 15:08: "get rid of the ugly top bars and use the B
-            // glyph on the home button to go back to home"): the module fills the frame; the strip's Home button
-            // shows B ([bGoesHome]) and takes the player back
-            return when (m) {
-                HomeModule.CHAT -> mapOf(Part.CHAT_FULL to RectF(0f, 0f, w, h))
-                // b129 (the user, b128: "I also want the buffs and debuffs to be in the open map module in the top right- pressing right on the d-pad should take you over to them to open with A- below the buffs should be the debuffs"): the aura pane over the open map, its rows in the top right
-                HomeModule.MAP -> mapOf(Part.MAP to RectF(0f, 0f, w, h), Part.AURAS to RectF(0f, 0f, w, h))
-                HomeModule.BARS -> mapOf(Part.BARS to RectF(0f, 0f, w, h))
-            }
-        }
-        // AT REST: the bars (thin row, or the diamonds), and under them the left column split EQUALLY between the tracked
-        // quests and the chat (user, 15:15), the minimap on the right. The diamonds at rest are SMALL, fitted into the top (user,
-        // 16:37: "the controller daimonds should still kind of shrink in size to fit on the top until going into combat").
-        // WHILE THE CONTROLLER IS BIG (auto-attack or combat, [HomeGrow]) the same page under a BIGGER band (16:37: "once in
-        // combat they should grow just a bit bigger than they are now"): the quests keep their place in the left column instead
-        // of moving to a line of their own (user, 16:35 report: "when entering combat, lets not move the quests anymore")
-        // THE HARMONY PASS (LATER 18, UI Art's HARMONY_SPEC section 2; the user: "Yes, build it as drawn"): every module is a well
-        // MODULE_GAP apart and from the frame's edges; the quest module is the focused quest's card only (its own height), the chat
-        // well takes the rest of the left column, the map well the right half
-        val g = UiKit.MODULE_GAP
-        val barsBottom = barsBottom(s)
-        val top = barsBottom + g
-        val cardBottom = top + cardHeight().also { laidCardH = it }
-        // THE TEST (the user 2026-10-07 16:02: "I want to test seeing the focused quest above the mini-map on the home screen to see
-        // that that looks like"): the card on top of the right column, the map under it, the chat the whole left column.
-        // Today's layout = QUEST_ABOVE_MAP false (one line)
-        // b121 (the user on b120: "I want to move the map name back to being above the quest, I also want to give the quest a see
-        // through background so that I can still see the map"): the map takes the whole right column again, its zone band on top;
-        // the card lies OVER the map under the band (inset as the band), see-through; the buffs row under the card
-        laidOverMap = cardOverMap()
-        if (cardOverMap()) {
-            val qTop = top + ZONE_BAND_BOTTOM + 4f
-            val qBottom = qTop + laidCardH
-            // b125 (the user: "if there is no focused quest, I doesnt have to say that, it should just not show anything"): no card.
-            // b128 (the user: "when opening buffs or debuffs the quest should hide to give that menu that opens more space"): no card
-            // while the buffs' or the debuffs' list is open. The aura pane lies over the WHOLE map again (its coordinates are the map's:
-            // the rim keep-out); its buff row stands flush under the card ([AuraPane.buffTop]: "the buffs need to be moved up to be
-            // flush with the quest")
-            val noCard = homeCard() == null || auraPane.open != null
-            return if (noCard) mapOf(
-                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-                Part.CHAT to RectF(g, top, c - 4f, h - g),
-                Part.MAP to RectF(c + 4f, top, w - g, h - g),
-                Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-            ) else mapOf(
-                Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-                Part.QUESTS to RectF(c + 12f, qTop, w - g - 8f, qBottom),
-                Part.CHAT to RectF(g, top, c - 4f, h - g),
-                Part.MAP to RectF(c + 4f, top, w - g, h - g),
-                Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-            )
-        }
-        // ABOVE CHAT (the user 2026-10-09, Settings > Home): the card on top of the left column, the chat under it, the map the whole
-        // right column (no cover: the player and the arrows keep their places). No focused quest = no card, the chat from the top. The
-        // world notice stays at the top of the chat's well, so it stands right under the card, never on it
-        if (homeCard() == null) return mapOf(
-            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-            Part.CHAT to RectF(g, top, c - 4f, h - g),
-            Part.MAP to RectF(c + 4f, top, w - g, h - g),
-            Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-        )
-        return mapOf(
-            Part.BARS to RectF(0f, if (big(s)) 10f else 8f, w, barsBottom),
-            Part.QUESTS to RectF(g, top, c - 4f, cardBottom),
-            Part.CHAT to RectF(g, cardBottom + g, c - 4f, h - g),
-            Part.MAP to RectF(c + 4f, top, w - g, h - g),
-            // the buff / debuff buttons and their list, over the small map (user 17:30 / 17:49)
-            Part.AURAS to RectF(c + 4f, top, w - g, h - g),
-        )
     }
 
     private fun apply(s: HomeScreen, animate: Boolean) {
@@ -1817,9 +2025,10 @@ class HomeView(
         val mapFull = s.full == HomeModule.MAP && !s.takeover && lent(mapView)
         if (mapFull != mapWanted) {
             mapWanted = mapFull
-            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsk() }
+            if (mapFull) { auraPane.close(); homePadN = -1; setMapPage(HomeMapPages.Page.QUESTS); mapAsks = 0; mapAsk() }
             else {
                 setMapPage(HomeMapPages.Page.QUESTS); mapView.worldDone()          // 2026-11-17: the sticks and the world's art let go
+                mapClaim.hidden()
                 if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))) Log.i(TAG, "map module: free"); mapHeld = false; mapBSaid = null; mapView.padHints = false; auraPane.leaveFull(); mapFallbackOff()
             }
         }
@@ -1840,9 +2049,12 @@ class HomeView(
             castView.bottomLine = true
             castView.castTop = big(s)                                     // b-cast-bar-size: the top edge in a fight, the strip at rest
             // b-cast-any: at rest the line is the cast bar alone (every player cast, in or out of a fight); in combat the full line
-            castView.castOnly = !s.takeover
+            // (P4: edit mode's fight preview too)
+            castView.castOnly = !(s.takeover || editFightLook())
             // p-swing-timer, batch 12 ("they should be seperate"): Settings > Home turns the SWING off; the cast bar stays
             castView.swingOn = renderLook?.swing ?: HomeSettings.swingTimer
+            // P4: the preview's stand-in swing (no swing of the game's running); always false outside edit mode
+            castView.swingPreview = editFightLook()
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
@@ -1865,10 +2077,38 @@ class HomeView(
         // Home's own B reader only while a full-screen chat or map hides the bars (the Cast view's reader is stopped then);
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
+        slideCutAt = -1f; slideCutHold = 0L
+        holdCut()
         anim?.cancel()
+        // a slide THIS cancel just cut short (its overall fraction and way; -1 = none; the hold it had left)
+        val cutAt = slideCutAt; val cutUp = slideCutUp; val cutHold = slideCutHold; slideCutAt = -1f; slideCutHold = 0L
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
+        val wasAway = laidAway
         val to = places(s, w, h)
+        laidAway = placedAway
+        val away = laidAway
+        // IN FIGHTS = TOP SCREEN (TopSlide): the band leaving the page for the fight / coming back after it. Only the takeover's own change
+        // (no full module before or now): a module opened from a Top fight / closed back into one keeps the module's time and curve, the
+        // map's morph in step with its box (the 11-22 review)
+        val wasFull = before != null && before.full != null && !before.takeover
+        val slide = TopSlide.isSlide(wasAway, away) && !open && !wasFull
+        // the 11-22 review: a re-lay inside the slide's 240 ms that keeps the band's way (edit mode's park, a card, the cast bar's side,
+        // the XP track's inset) goes ON with the same slide from where it was cut - its time left, its curve - not a fresh MODULE_CLOSE
+        // glide on Motion.curve (the columns overtaking the band again)
+        val resumeAt = TopSlide.resumeAt(slide, wasAway, away, open || wasFull, cutAt, cutUp)
+        val sliding = slide || resumeAt >= 0f
+        val slideFrom = if (slide) 0f else resumeAt.coerceAtLeast(0f)      // the slide's fraction this motion starts at
+        // the way down waits for the Wings to be mostly off the top screen (TopSlide.DOWN_HOLD_MS; the band and the Wings never both
+        // show): a fresh way down from the band landed away, or what was left of that hold; an up-slide turned back by the fight's end
+        // as long as the Wings, reversed from as far in as they had got, need (its wall-clock age; an early cut: at once)
+        val clock = SystemClock.uptimeMillis()
+        val upMs = if (cutUp && cutAt >= 0f && upSlideAt >= 0L) clock - upSlideAt else -1L
+        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs) else 0L
+        if (slide) upSlideAt = if (away) clock else -1L
+        // the down-slide's start (or the band on the page); held, the band stays away above the page - its cast bar given to the rooms'
+        // bar - until the hold ends (below), so the player's cast never leaves the bottom screen
+        if (lent(castView) && !laidAway && hold == 0L) castView.away = false
         for ((p, v) in views) if (to.containsKey(p)) {
             // a part coming back after being GONE starts from rest: no left-over slide, its own depth (the card over the map)
             if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
@@ -1877,12 +2117,14 @@ class HomeView(
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
         if (!animate || before == null) {
+            if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
             now.clear(); for ((p, r) in to) now[p] = RectF(r)
             for ((p, v) in views) if (!to.containsKey(p)) v.visibility = View.GONE
-            castStrip.sliding = false
+            for (st in strips) st.sliding = false
+            mapScaleEnd()
             settled = true
             requestLayout(); invalidate(); return
         }
@@ -1895,7 +2137,8 @@ class HomeView(
         val wasMap = before.full == HomeModule.MAP && !before.takeover
         val isMap = s.full == HomeModule.MAP && !s.takeover
         val morphing = lent(mapView) && wasMap != isMap && now[Part.MAP] != null && to[Part.MAP] != null
-        val ms = when {
+        // the slide keeps its own pace whoever lays the page (a fight parking edit mode's draft too: editRelay's applyMs)
+        val ms = if (sliding) TopSlide.restMs(away, slideFrom) else applyMs ?: when {
             combat -> if (s.takeover) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK
             open && !(before.full != null && !before.takeover) -> Motion.MODULE_OPEN
             !open && before.full != null && !before.takeover -> Motion.MODULE_CLOSE
@@ -1904,6 +2147,11 @@ class HomeView(
         val fadeMs = if (combat) 60f else FADE_MS
         val from = HashMap<Part, RectF>()
         for ((p, r) in now) from[p] = RectF(r)
+        // THE HAND-BACK (ruling D): a way down from the band wholly above the page starts it from the page's top edge (moved there unseen),
+        // so its curve's first, small frames are on the page (TopSlide.edgeShift)
+        if (sliding && !away) from[Part.BARS]?.let { b -> b.offset(0f, TopSlide.edgeShift(b.bottom)) }
+        // ruling C: the party module's rows follow its box while the slide grows / shrinks it (no jump at either end)
+        if (sliding) partyView.stretch = true
         val coming = to.keys.filter { !now.containsKey(it) }
         for ((p, r) in to) if (!from.containsKey(p)) from[p] = shrunk(r)
         val gone = from.keys.filter { !to.containsKey(it) }
@@ -1933,23 +2181,53 @@ class HomeView(
         val moving = from.any { (p, f) -> to[p]?.let { t -> t != f } == true }
         // cb7: the bar on its way (slid down / up with the page's motion): no touch until it lands
         castStrip.sliding = from[Part.STRIP]?.let { f -> to[Part.STRIP]?.let { t -> t.top != f.top } } == true
+        castStrip2.sliding = from[Part.CAST2]?.let { f -> to[Part.CAST2]?.let { t -> t.top != f.top } } == true
+        // P2 (SPEC section 10): an edit glide that changes the map's size or side scales the map's picture along the motion (laid once at
+        // its new size, the viewport re-laid at the end), so the map is not drawn again at every frame's size
+        mapScaleEnd()
+        if (!morphing && !combat && editGlides() && mapView.parent === mapSlot) {
+            val mf = from[Part.MAP]; val mt = to[Part.MAP]
+            // laid once at the larger of the two sizes, cropped to the gliding box (scaled down only when both sides shrink): no map
+            // drawing per frame, no stretch; the viewport re-laid where it lands
+            if (mf != null && mt != null && (mf.width() != mt.width() || mf.height() != mt.height()))
+                mapScaleTo = RectF(mt.left, mt.top, mt.left + max(mf.width(), mt.width()), mt.top + max(mf.height(), mt.height()))
+        }
         questPane.cardHidden = card != null
         // the zone band and the clock fade with the page (Map's recording: they vanished at frame 0 on open, popped back at a close's end)
         overlayFrom = overlayOf(before); overlayTo = overlayOf(s); overlayOut = 1f; overlayIn = 0f
         // Map's call order: morph(0) BEFORE start (else one frame draws the new mode un-glided), morph(k) per frame, morph(1) at the end
         if (morphing) { flightClip(true); mapView.morph(0f, mFrom!!, mTo!!, isMap, card) }
+        // THE iPHONE-STYLE EDIT MODE: under edit mode every box glides on a spring (HomeEditMotion.glide: its centre a little past, its
+        // size never past its target), starting at the speed it had (a quick D-pad run never stops and starts again). Outside edit mode
+        // (Classic, every fight, a module opening) the one curve as before
+        val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
+        if (!springs) partVel.clear()
+        val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
+        val dur = if (springs) HomeEditMotion.glideMs(ms) else ms          // (a hold waits before start(), on the wall clock: below)
+        var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = ms
-            interpolator = Motion.curve()
+            duration = dur
+            // the slide: linear time, every part on the way's curve (TopSlide.partK: ease-in up / ease-out down; the columns ride the band's foot)
+            interpolator = if (springs || sliding) android.view.animation.LinearInterpolator() else Motion.curve()
             addUpdateListener { a ->
                 val k = a.animatedValue as Float
                 if (morphing) mapView.morph(k, mFrom!!, mTo!!, isMap, card)
-                for (p in from.keys) {
+                if (springs) springFrame(a.animatedFraction, dur, ms, from, to, v0)
+                else if (sliding) for (p in from.keys) {
+                    val f = from[p]!!
+                    val t = to[p] ?: f
+                    // (a hold ran before the animator started: every part stood where it was; now the slide's own time)
+                    // (the band on its own curve; every other part on the columns' - up: braking into the top gap, ruling D)
+                    val q = TopSlide.resumeK(a.animatedFraction, slideFrom, away, band = p == Part.BARS)
+                    if (hold > 0L && !away && q > 0f && lent(castView)) castView.away = false    // the hold over: the band draws again
+                    now[p] = RectF(lerp(f.left, t.left, q), lerp(f.top, t.top, q), lerp(f.right, t.right, q), lerp(f.bottom, t.bottom, q))
+                }
+                else for (p in from.keys) {
                     val f = from[p]!!
                     val t = to[p] ?: f
                     now[p] = RectF(lerp(f.left, t.left, k), lerp(f.top, t.top, k), lerp(f.right, t.right, k), lerp(f.bottom, t.bottom, k))
                 }
-                val t = a.animatedFraction * ms                       // the time in, linear
+                val t = a.animatedFraction * dur                      // the time in, linear (the slide's own, past its hold)
                 overlayOut = (1f - t / fadeMs).coerceIn(0f, 1f)
                 overlayIn = ((t - (ms - FADE_MS)) / FADE_MS).coerceIn(0f, 1f)
                 for (p in gone) if (!(gliding && p == Part.CHAT_FULL)) views[p]?.alpha = overlayOut
@@ -1964,7 +2242,22 @@ class HomeView(
                 if (moving) placeFrame()
             }
             addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationCancel(a: Animator) {
+                    cancelled = true
+                    // a slide cut short: the next apply goes on with it if it keeps the way ([TopSlide.resumeAt])
+                    if (sliding) {
+                        slideCutAt = TopSlide.overall((a as ValueAnimator).animatedFraction, slideFrom); slideCutUp = away
+                        slideCutHold = 0L                            // (past its hold: a cut inside it is [holdCut]'s)
+                    }
+                }
                 override fun onAnimationEnd(a: Animator) {
+                    // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
+                    if (!cancelled) partVel.clear()
+                    if (sliding) partyView.stretch = false                 // (landed or cut: the next motion sets it again)
+                    // the motion landed with the band laid above the page: it draws nothing more (CastView.away). Any motion that lands
+                    // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
+                    // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
+                    if (!cancelled && lent(castView)) castView.away = away
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }
@@ -1974,24 +2267,103 @@ class HomeView(
                     overlayFrom = overlayTo; overlayOut = 1f; overlayIn = 1f
                     for (p in coming) views[p]?.alpha = 1f
                     for (p in gone) { views[p]?.visibility = View.GONE; views[p]?.alpha = 1f; now.remove(p) }
-                    castStrip.sliding = false
+                    for (st in strips) st.sliding = false
+                    mapScaleEnd()
                     settled = true
                     requestLayout()                                  // one full pass where it lands
                     invalidate()
                 }
             })
-            start()
+            if (hold > 0L) {
+                // the hold on the WALL clock (the Wings run in real time; an animator's own delay would be scaled by the system's
+                // animator duration scale): every part stands where it is until the slide starts
+                val va = this
+                val r = object : Runnable { override fun run() { if (holdRun === this) { holdRun = null; va.start() } } }
+                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away
+                holdHandler.postDelayed(r, hold)
+            } else start()
         }
         invalidate()
     }
 
-    /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = s.takeover && (renderLook?.grow ?: HomeSettings.combatGrow)
+    /**
+     * One frame of an edit-mode spring glide at [fraction] of [dur] (the old glide [ms] sets the spring's pace): each part's centre and
+     * size from [from] (at its speed [v0]) to [to]; its speed kept ([partVel]); landed exactly at 1
+     */
+    private fun springFrame(fraction: Float, dur: Long, ms: Long, from: Map<Part, RectF>, to: Map<Part, RectF>,
+                            v0: Map<Part, FloatArray>) {
+        val tSec = fraction * dur / 1000f
+        for ((p, f) in from) {
+            val tt = to[p] ?: f
+            val r = now[p] ?: RectF().also { now[p] = it }
+            if (fraction >= 1f) { r.set(tt); partVel.remove(p); continue }
+            if (ridesIn(p, from, to)) continue                          // a rider inside its host: after the host (below)
+            val t = tSec
+            val v = v0[p] ?: ZERO4
+            val vel = partVel.getOrPut(p) { FloatArray(4) }
+            HomeEditMotion.glide(f.centerX(), tt.centerX(), v[0], ms, t, false, glideOut); val cx = glideOut[0]; vel[0] = glideOut[1]
+            HomeEditMotion.glide(f.centerY(), tt.centerY(), v[1], ms, t, false, glideOut); val cy = glideOut[0]; vel[1] = glideOut[1]
+            HomeEditMotion.glide(f.width(), tt.width(), v[2], ms, t, true, glideOut); val w = glideOut[0]; vel[2] = glideOut[1]
+            HomeEditMotion.glide(f.height(), tt.height(), v[3], ms, t, true, glideOut); val h = glideOut[0]; vel[3] = glideOut[1]
+            r.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
+        }
+        if (fraction >= 1f) return
+        // THE RIDERS (the card on the map, the buffs): their edges' offsets from the host glide (never past their ends: inside the host
+        // at both ends = inside it on every frame), laid on the host's gliding box
+        for ((p, f) in from) {
+            if (!ridesIn(p, from, to)) continue
+            val hp = RIDER_HOST[p] ?: continue
+            val hf = from.getValue(hp); val ht = to.getValue(hp); val hn = now[hp] ?: continue
+            val tt = to[p] ?: f
+            val r = now[p] ?: RectF().also { now[p] = it }
+            val t = tSec
+            HomeEditMotion.glide(f.left - hf.left, tt.left - ht.left, 0f, ms, t, true, glideOut); val l = glideOut[0]
+            HomeEditMotion.glide(f.top - hf.top, tt.top - ht.top, 0f, ms, t, true, glideOut); val tp = glideOut[0]
+            HomeEditMotion.glide(f.right - hf.right, tt.right - ht.right, 0f, ms, t, true, glideOut); val rr = glideOut[0]
+            HomeEditMotion.glide(f.bottom - hf.bottom, tt.bottom - ht.bottom, 0f, ms, t, true, glideOut); val b = glideOut[0]
+            r.set(hn.left + l, hn.top + tp, hn.right + rr, hn.bottom + b)
+            partVel.remove(p)
+        }
+    }
+    /** [p] is a rider ([RIDER_HOST]) inside its host at both ends of this glide: it glides as an offset from the host */
+    private fun ridesIn(p: Part, from: Map<Part, RectF>, to: Map<Part, RectF>): Boolean {
+        val hp = RIDER_HOST[p] ?: return false
+        val hf = from[hp] ?: return false; val ht = to[hp] ?: return false
+        val f = from[p] ?: return false; val t = to[p] ?: f
+        return within(f, hf) && within(t, ht)
+    }
+    private fun within(a: RectF, b: RectF) = a.left >= b.left - 0.5f && a.top >= b.top - 0.5f && a.right <= b.right + 0.5f && a.bottom <= b.bottom + 0.5f
+    /** the riders that lie inside their host (the card on the map, the buffs = the map's box) */
+    private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
-    private fun barsBottom(s: HomeScreen) = when {
-        big(s) -> 10f + COMBAT_BARS + CastBarPlace.TOP_STRIP          // b-cast-bar-size: the top-edge cast bar's room in a fight
-        s.rest == HomeRest.DIAMONDS -> 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP   // its strip under the buttons at rest
-        else -> 120f + CastBarPlace.REST_STRIP
+    /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
+    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || editFightLook(), partyOn = partyOnHere()))
+
+    /**
+     * P4 (the user's ruling 2026-11-22): edit mode's fight PREVIEW is on (the ribbon's Fight toggle; live, not parked): the band, its
+     * pictures and its swing line take the combat look the record's In fights gives (TopCombatBar.honoured: what a real fight would show).
+     * Display only: [fightShown], the bar's fight gate, Party mode and the add-on hear nothing of it
+     */
+    private fun editFightLook(): Boolean = edit?.let { !it.parked && it.fightPreview } == true
+    /** the preview's fight as the page lays it: the takeover with Party mode off; with it on the Party-mode fight (no takeover: R0 -
+     *  Top screen's band away and the party list filling the strip, the user's ruling C) */
+    private fun previewTakeover(): Boolean = editFightLook() && !partyOnHere()
+    private fun previewPartyFight(): Boolean = editFightLook() && partyOnHere()
+    /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
+    private var previewLaid = false
+    /**
+     * P4 fix round (the review: Done / Discard / a park / another room cleared the model's preview with no Fx.Preview, so the D-pad kept its
+     * In-combat pictures - and the bar's prediction read them as the D-pad's spells out of a fight - and a Discard that changed nothing kept
+     * the grown band and its looping stand-in swing on the Classic page): the preview ended by any other way than its toggle - the
+     * D-pad's own pictures again here; true = it was showing, so the caller lays the band again FORCED (the preview is no field of the
+     * record: an unforced relay finds the record unchanged and keeps the fight look)
+     */
+    private fun previewEnded(): Boolean {
+        if (!previewLaid || editFightLook()) return false
+        previewLaid = false
+        applyDpad()
+        Log.i(TAG, "home edit: fight preview ended (not by its toggle)")
+        return true
     }
 
     /**
@@ -2033,7 +2405,7 @@ class HomeView(
      * glide (CompanionHost.chatGlideStart) leaves from it when the pane's tap opens the room and lands on it when the room goes back Home.
      */
     fun chatPaneBox(): RectF? {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h = frameH
         if (w <= 0f || h <= 0f) return null
         return places(flow.screen, w, h)[Part.CHAT]?.let { RectF(it) }
     }
@@ -2068,21 +2440,48 @@ class HomeView(
         post { apply(shown ?: flow.screen, animate = false) }
     }
 
+    /**
+     * MOVABLE HOME P4, THE XP TRACK'S PLACE (SPEC section 8: "Hide gives Home 34 px (Home only; every other room keeps 935 by ruling)").
+     * The host makes Home's view the content's height, which reaches under the room bar's XP track, and keeps [bottomInset] = the track's
+     * height while the track shows: Home's FRAME ([frameH]) ends at the track's top, as always. The record's XP bar hidden (and Home on
+     * screen, not editing: the ribbon needs the track) the inset goes to 0 and every part glides into the 34 px on the one motion
+     * ([trackInset]), as the track slides away under the rooms' row (Strip.trackShown). Off the host (the tests, PreviewStage) it is 0.
+     */
+    private var bottomInset = 0
+    /** Home's frame now: the view's height less the track's place */
+    private val frameH: Float get() = (height - bottomInset).toFloat()
+    private val frameHi: Int get() = height - bottomInset
+    private fun frameOf(hSpec: Int): Int = (MeasureSpec.getSize(hSpec) - bottomInset).coerceAtLeast(0)
+    /** the inset now (the host's checks) */
+    val trackInsetNow: Int get() = bottomInset
+    /** the track's place is Home's ([px] 0) or the track's ([px] = Strip.TRACKS): every part glides there ([animate]) on [ms] */
+    fun trackInset(px: Int, animate: Boolean, ms: Long = Motion.MODULE_OPEN) {
+        if (px == bottomInset) return
+        bottomInset = px
+        val s = shown ?: flow.screen
+        if (width <= 0 || height <= 0) { requestLayout(); return }
+        applyMs = ms
+        try { apply(s, animate = animate && live) } finally { applyMs = null }
+        requestLayout()
+    }
+
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
         if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
-        val ch = if (classRect.isEmpty) MeasureSpec.getSize(hSpec) else classRect.height()
+        val ch = if (classRect.isEmpty) frameOf(hSpec) else classRect.height()
         classLayer.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
         wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(hSpec), MeasureSpec.EXACTLY))
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
-            val r = now[p] ?: continue
+            val r = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             v.measure(MeasureSpec.makeMeasureSpec(max(1, r.width().toInt()), MeasureSpec.EXACTLY),
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
         }
+        editView.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
     }
 
     /**
@@ -2093,7 +2492,7 @@ class HomeView(
     private fun placeFrame() {
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
-            val f = now[p] ?: continue
+            val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             val x1 = max(x0 + 1, f.right.toInt()); val y1 = max(y0 + 1, f.bottom.toInt())
             val resized = v.width != x1 - x0 || v.height != y1 - y0
@@ -2102,21 +2501,41 @@ class HomeView(
                 v.measure(MeasureSpec.makeMeasureSpec(x1 - x0, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(y1 - y0, MeasureSpec.EXACTLY))
             v.layout(x0, y0, x1, y1)
         }
+        topBarClip()
+        editDecor()
+    }
+
+    /** a top bar hidden or on its way (Hide in combat, F2): clipped at the band's foot, so it slides up BEHIND the band whatever the
+     *  band's paint (the views' order draws it over the band); laid, lifted or dragged in edit mode it is never clipped */
+    private fun topBarClip() {
+        val v = castStrip                                                   // a top bar is never Split: only the one bar
+        val bars = now[Part.BARS]
+        v.clipBounds = if (bars == null || !laidTop || !(laidHidden || v.sliding) || editLive()) null
+            else android.graphics.Rect(0, (bars.bottom + UiKit.MODULE_GAP - v.top).toInt().coerceIn(0, max(0, v.height)), max(1, v.width), max(1, v.height))
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        if (typeWanted) typeTool.layout(0, 0, r - l, b - t)                  // f-trackpad-keyboard: the whole page
+        if (typeWanted) typeTool.layout(0, 0, r - l, b - t - bottomInset)                  // f-trackpad-keyboard: the whole page
         // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
-        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
-        wheelLayer?.layout(0, 0, r - l, b - t)                              // f-radial-behind: the whole page, under the columns
-        PartyMenuView.PLACE.let { m -> partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
-        PartyMenuView.PLACE.let { m -> targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt()) }
+        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
+        // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
+        // map's when it sits there), under the band as it is now
+        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
+        PartyMenuView.place(partyCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
+            partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
+            targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
+        }
         for ((p, v) in views) {
             if (v.visibility == View.GONE) continue
-            val f = now[p] ?: continue
+            val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
         }
+        topBarClip()
+        editView.layout(0, 0, r - l, b - t - bottomInset)
+        editDecor()
+        if (motion.on) editKick()                                         // Home laid again (back on screen): the edit motion goes on
     }
 
     /**
@@ -2170,7 +2589,7 @@ class HomeView(
     /** f-pause-bars: the controller's alpha under the open pause menu (the user's pick B: 40 %, "so the menu reads as on top") */
     var pauseBarsDim = 0.4f
     /** f-pause-bars: the bottom of the controller (the bars) in Home's px, 0 = none laid out */
-    fun barsBottom(): Float = now[Part.BARS]?.bottom ?: 0f
+    fun barsBottom(): Float = (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)     // (Top screen's fight: the band above the page)
     private var pauseMap = floatArrayOf(0f, 0f, 1f)
 
     /**
@@ -2188,7 +2607,7 @@ class HomeView(
     fun pauseSlide(t: Float, sidePx: Float = 0f, barsUp: Boolean = false) {
         if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
-        val screen = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
         // only stepping back to [pauseBarsDim] (the title row lies over its lower half); elsewhere its old slide. The pause menu itself
         // pushes it up since feat/pause-power ([barsUp]); the target radial keeps the f-pause-bars rule
@@ -2196,13 +2615,23 @@ class HomeView(
             else UiKit.pauseOut(UiKit.PAUSE_TOP, t, screen)
         val left = UiKit.pauseOut(UiKit.PAUSE_LEFT, t, screen)
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)
+        val half = width / 2f
+        // fix/menus-fit: the LB picture's place on the page as laid: each side moves only as far as it needs to clear it
+        val lb = if (sidePx > 0f) lbPlace() else null
         for ((p, v) in views) {
-            val o = when (p) {
-                Part.BARS -> pauseTop
-                Part.CHAT, Part.CHAT_FULL, Part.PARTY -> left
-                Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
-                Part.QUESTS -> if (cardOverMap()) pauseMap else left
-                Part.MAP, Part.AURAS -> pauseMap
+            // MOVABLE HOME (SPEC section 6 item 2): the side is the part's HALF, not its name: the left column slides left whatever it
+            // holds (the map after a swap). A part across the whole page (a full-screen module) keeps its own side. fix/menus-fit: a
+            // 1/3 or 2/3 column straddles the middle but is NOT across: it goes by its centre (the swapped Big map's map flew right,
+            // across the open wheel and under the LB picture)
+            val r = now[p]
+            val across = r == null || HomeSlide.fullWidth(r.left, r.right, width.toFloat(), UiKit.MODULE_GAP)
+            val o = when {
+                p == Part.BARS -> pauseTop
+                p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
+                !across -> if (r!!.centerX() < half) left else pauseMap
+                p == Part.QUESTS -> if (cardOverMap()) pauseMap else left
+                p == Part.MAP || p == Part.AURAS -> pauseMap
+                else -> left                                                                         // the chat, the party module
             }
             // FULLY OFF, whatever the part's size (the user 2026-10-09: the FULL-SCREEN map "only slide[s] ... half way out"): the kit's
             // distance is for the compact parts; a bigger one goes as far as it needs to leave the screen, on the same curve
@@ -2210,7 +2639,8 @@ class HomeView(
                 UiKit.PAUSE_OPEN_MS, screen)
             val kx = when {
                 endX[0] > 0f -> ((width - v.left) / endX[0]).coerceAtLeast(1f)
-                endX[0] < 0f -> (v.right / -endX[0]).coerceAtLeast(1f)
+                // (fix/menus-fit: a 1/3 or 2/3 column's laid right edge is fractional: the whole of it goes)
+                endX[0] < 0f -> (maxOf(v.right.toFloat(), r?.right ?: 0f) / -endX[0]).coerceAtLeast(1f)
                 else -> 1f
             }
             val ky = if (endX[1] < 0f) (v.bottom / -endX[1]).coerceAtLeast(1f) else 1f
@@ -2223,10 +2653,12 @@ class HomeView(
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
                 // fix/castbar-slides (the user on 1.0.31: "it should only slide the direction if its on that half. If its set to both it
-                // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays
-                val r = now[p]
-                v.translationX = if (p == Part.STRIP && r != null) HomeSlide.dx(halfOf(p, r, width.toFloat()), sidePx * ee)
-                    else (if (o === left) -1f else 1f) * sidePx * ee
+                // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays.
+                // fix/menus-fit: every part by its column (its half), each side by its own distance (LbFit: Classic's 340 both)
+                val pl = (lb?.pushLeft ?: sidePx) * ee; val pr = (lb?.pushRight ?: sidePx) * ee
+                val bar = p == Part.STRIP || p == Part.CAST2
+                v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
+                    else if (o === left) -pl else pr
                 v.translationY = 0f
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
@@ -2236,15 +2668,1379 @@ class HomeView(
         if (classPending && sidePx > 0f && t <= 0f) { classPending = false; classLayerShow(true) }
     }
 
+    // ================================================================ MOVABLE HOME, PHASE 2: EDIT MODE (SPEC.txt sections 3, 4, 7, 8, 10)
+
+    /**
+     * EDIT MODE (the user's rulings D4 / D6, 2026-11-20): Home stays live and full size; [HomeEditModel] keeps the draft, the cursor, the
+     * lift, the menus; [HomeEditView] draws the chrome over every part and takes every touch; the host draws the ribbon in the room bar's
+     * XP track and the disc's gold tick ([onEditChrome]). Three ways in: a 450 ms hold on the chat's or the map's body ([holdWatch], the
+     * ring from 150 ms; hold, drag and release is one swap gesture), Settings > Bottom screen's first tile and Y on the Home disc (the
+     * host's [editOpen]). Never in a fight: a request then flashes the widget's edge red; a fight mid-edit parks it (the chrome fades
+     * out, Home plays the record's fight) and brings it back after. 1518: every settled change is written as it is made ([editPersist]);
+     * Done ends, Discard (Done's long press, a held B) writes the opening record back; nothing is sent to the add-on while it is live.
+     */
+    private var edit: HomeEditModel? = null
+    /** edit mode's timers (the hold, the hover, the flash) on the main looper: they run whether or not Home is attached yet */
+    private val editUi = android.os.Handler(android.os.Looper.getMainLooper())
+    /** the session whose chrome is fading out (MODULE_CLOSE) after it ended */
+    private var chromeModel: HomeEditModel? = null
+    /** edit mode runs on Home, not parked by a fight or a room (the host's gates: the class wheel, the LB picture, Start, the disc) */
+    val editing: Boolean get() = editLive()
+    /** the 1515 merge: edit mode is there, open OR parked (a fight, a room): the host's key question waits for it to end */
+    val editPresent: Boolean get() = edit != null
+    /** the host's: true while the key question is up (KeyPick.editMayOpen) - edit mode does not open then */
+    var editBlocked: (() -> Boolean)? = null
+    /** edit mode holds Home now: its chrome takes the touches, the guest "home" its presses; parked (a fight, a room) Home is Home */
+    private fun editLive(): Boolean = edit?.parked == false
+    /** the off-device tests: the session */
+    fun editModel(): HomeEditModel? = edit
+    /** a room over Home parked the draft: it comes back when Home does */
+    private var editAway = false
+    private var chromeA = 0f
+    private var chromeAnim: ValueAnimator? = null
+    /** the lift (0 .. 1: the shadow, the depth) of [liftStop], on [motion]'s lift spring (1.04 with its overshoot, the drop's plop) */
+    private val liftK: Float get() = liftStop?.let { motion.liftK(liftKey, motionNow()) } ?: 0f
+    private var liftStop: EditStop? = null
+    /** [liftStop]'s motion key, taken at the lift (its stop's EditStop.key) */
+    private var liftKey = 0
+    private var editFlash: Pair<EditStop, Long>? = null
+
+    /**
+     * THE iPHONE-STYLE EDIT MODE (the user, 2026-11-21: "resemble more of like an iPhone app edit mode with apps kind of animating
+     * zoomed smaller a bit and being more animated generally"): every widget shrinks a little and wiggles, a lifted one grows and stops,
+     * a drop plops, the cursor flies, the menus pop ([HomeEditMotion], pure). Drawn only: the model, the solver and [now] never see it.
+     * ONE Choreographer ticker drives it while anything moves ([editKick]); it stops when idle, in a fight, with Home away and with the
+     * system's animations off (the static shrink). Classic outside edit mode never reaches it.
+     */
+    private val motion = HomeEditMotion()
+    /** the off-device shots: a pinned clock / animator scale (null = SystemClock / the system's) */
+    var editMotionNow: (() -> Long)? = null
+    var editMotionScale: (() -> Float)? = null
+    private fun motionNow(): Long = editMotionNow?.invoke() ?: SystemClock.uptimeMillis()
+    private fun motionScale(): Float = editMotionScale?.invoke() ?: if (!live) 0f else systemAnimScale()
+    private fun systemAnimScale(): Float = try {
+        if (android.os.Build.VERSION.SDK_INT >= 33) ValueAnimator.getDurationScale()
+        else android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    } catch (t: Throwable) { 1f }
+    /** the off-device tests: the motion (read only) */
+    fun editMotion(): HomeEditMotion = motion
+    private val pose = HomeEditMotion.Pose()
+    private val poseBox = RectF()
+    private val poseOut = FloatArray(4)
+    private val viewM = android.graphics.Matrix()
+    private val paintM = android.graphics.Matrix()
+    private var tickerPosted = false
+    private val editTicker = android.view.Choreographer.FrameCallback { tickerPosted = false; editTick() }
+    /** what the motion saw last (a change pops a menu, flies the cursor) */
+    private var seenCursor: EditStop? = null
+    private var seenMenu: EditStop? = null
+    private var seenSheet: HomeEditModel.Sheet? = null
+    /** each part's speed at the last glide frame (px/s: centre x, y, width, height): a new glide starts at it (no stop, no stutter) */
+    private val partVel = HashMap<Part, FloatArray>()
+    private val glideOut = FloatArray(2)
+    private var editPadN = Int.MIN_VALUE
+    /** the next apply's glide (null = apply's own rule) */
+    private var applyMs: Long? = null
+    /** the map laid once at its glide's destination size and scaled along the motion (null = laid at now[MAP]) */
+    private var mapScaleTo: RectF? = null
+    private var mapScaleTx = 0f
+    private var mapScaleTy = 0f
+    /** a transform of edit mode's is on a view (one reset pass after edit mode ends) */
+    private var decorDirty = false
+
+    /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the bar's slots (the Controller room's Tap-to-cast
+     *  tab), the chat's filters (the Chat room's checklist) */
+    var onEditChrome: ((HomeEditView?) -> Unit)? = null
+    var onEditSlots: (() -> Unit)? = null
+    var onEditFilters: (() -> Unit)? = null
+    /** a behaviour row's press with the host's env (BottomTiles.press); null = Home presses it itself (the off-device renders) */
+    var onEditPress: ((String, Int) -> Unit)? = null
+    /** edit mode opened / closed (the host re-reads its guards) */
+    var onEditChanged: ((Boolean) -> Unit)? = null
+    /** 1518: edit mode is LIVE (open, not parked) or not any more (Done, Discard, a fight, another room): the host tells the add-on the
+     *  record's D-pad sides and fight bar only while it is not live (the autosave writes every change; the pictures preview it meanwhile) */
+    var onEditLive: ((Boolean) -> Unit)? = null
+
+    private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft
+    /** fix round 3: Home is back over a room-parked session and its resume is posted ([borrow]): the page is laid with the draft already */
+    private var editBackDue = false
+    /** the band's rest Home is laid with: the draft's while edit mode is live (Y on the band, the menu's Rest row preview live), else the
+     *  record's (a fight's park; Discard puts the opening record back) */
+    private fun restWanted(): HomeRest = editDraft()?.rest ?: HomeSettings.rest
+    /** HomeFlow's rest to [restWanted]; true = it changed (the next lay reads it: [layoutNow], CastView's look, [solveFor]) */
+    private fun editRestSync(): Boolean = flow.setRest(restWanted())
+
+    /**
+     * P5's ONE EXCEPTION (SPEC section 1): while edit mode runs, the band's D-pad pictures preview the DRAFT (after a swap Left = the map,
+     * Right = the chat), the add-on's own `d` kept aside ([roomBarReal]) and put back when edit mode ends or parks. The host hands every
+     * padmap's `d` through [roomBarFor].
+     */
+    private var roomBarReal: Map<Int, String>? = null
+    private var roomBarKept = false
+    fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
+    private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
+        val draft = editDraft()
+        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
+            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+            ?: run { roomBarHold = null; return dirs }
+        val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
+        if (have == want) { if (draft == null) roomBarHold = null; return dirs }
+        return dirs + mapOf(1 to dirs.getValue(3), 3 to dirs.getValue(1))
+    }
+    /**
+     * fix round 3 (SPEC section 10: "after Save (new d arrives): 120 ms cross-fade if they differ"): Done keeps the saved record's sides
+     * (its mirror bit) on the pictures until the add-on's `d` says them - the swap the player previewed never slides back and forth
+     * while ToolbarMirror's taps are on their way. The host's [roomBarHoldEnd] (the resend gave up, no key to send for) puts `d` back with
+     * the cross-fade. Null = `d` as it is
+     */
+    private var roomBarHold: Int? = null
+    fun roomBarHoldEnd() {
+        if (roomBarHold == null) return
+        roomBarHold = null
+        if (!lent(castView) || editDraft() != null) return
+        val want = editRoomBar(roomBarReal)
+        if (castView.roomBar != want) { castView.roomBarFade(want); castView.invalidate() }
+    }
+    private fun editRoomBarSync() {
+        if (!lent(castView)) return
+        if (!roomBarKept) { roomBarReal = castView.roomBar; roomBarKept = true }
+        val want = editRoomBar(roomBarReal)
+        if (castView.roomBar != want) { castView.roomBar = want; castView.invalidate() }
+    }
+    /** the off-device renders: Home is "on screen" (never attached there), so edit mode's glides run on the test clock */
+    var forceLive = false
+    private val live: Boolean get() = isShown || forceLive
+    /** the off-device tests (and the chrome's own touch route): one call of the model, its effects carried out */
+    fun editAct(f: (HomeEditModel) -> List<HomeEditModel.Fx>) { edit?.let { editRun(f(it)) } }
+    private fun editGlides(): Boolean = edit != null || chromeModel != null
+
+    private val editHost: HomeEditView.Host by lazy { object : HomeEditView.Host {
+        override val model: HomeEditModel? get() = edit ?: chromeModel
+        override val liveModel: HomeEditModel? get() = edit
+        override val chromeAlpha: Float get() = chromeA
+        override fun parts(): Map<HomePart, RectF> {
+            partsOut.clear()
+            for ((p, r) in now) if (views[p]?.visibility == View.VISIBLE) {
+                val hp = HOME_PART_OF[p.ordinal]
+                val o = partsPool[p.ordinal]
+                o.set(r); partsOut[hp] = o
+            }
+            return partsOut
+        }
+        override fun liftK(): Float = liftK
+        override fun pose(p: HomePart, out: android.graphics.Matrix): Boolean = partMatrix(Part.valueOf(p.name), out)
+        override fun cursorOffset(out: FloatArray) = motion.cursorOffset(motionNow(), out)
+        override fun cursorTurn(): Float = motion.cursorTurn(motionNow())
+        override fun popK(kind: Int): Float = motion.popK(kind, motionNow())
+        override fun holdK(): Float? = editHoldK()
+        override fun holdDone(down: Boolean): Boolean = if (down) { editHoldDown(); false } else editHoldUp()
+        override fun roomPose(r: Room, out: FloatArray): Boolean {
+            if (!motion.on) return false
+            motion.pose(HomeEditMotion.roomKey(r.ordinal), motionNow(), ROOM_HALF_DIAG, pose)
+            out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
+            return !pose.isIdentity
+        }
+        override fun plusPose(out: FloatArray): Boolean {
+            if (!motion.on) return false
+            motion.pose(HomeEditMotion.PLUS_ROOM, motionNow(), ROOM_HALF_DIAG, pose)
+            out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
+            return !pose.isIdentity
+        }
+        override fun poke() = editKick()
+        override fun solve(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> = solveFor(l)
+        override val geo: HomeEditModel.Geo get() = editGeo
+        override fun run(fx: List<HomeEditModel.Fx>) = editRun(fx)
+        override fun menuRows(s: EditStop): List<MenuRow> = editMenuRows(s)
+        override val stripH: Int get() = Strip.HEIGHT
+        override val flash: Pair<EditStop, Long>? get() = editFlash
+        override fun bar(): Strip? = roomBar
+        override fun band(): HomeEditView.BandGeo? = editBand()
+        override fun extraPose(key: String, out: android.graphics.Matrix): Boolean {
+            val r = bandCells[key] ?: return false
+            if (!extraPoseAt(key)) return false
+            val p = extraPoseBuf
+            out.reset()
+            out.postScale(p.scale, p.scale, r.centerX(), r.centerY()); out.postRotate(p.rot, r.centerX(), r.centerY()); out.postTranslate(p.dx, p.dy)
+            return true
+        }
+    } }
+
+    /** the extras' cells (and "+") as the last [editBand] laid them, by key: their poses' pivots */
+    private val bandCells = HashMap<String, RectF>()
+    private val bandSlotBox = RectF()
+
+    /**
+     * THE TOP BAR'S PIECES in Home's px (P1 - P4): the band's buttons (CastView's slot table), the clock chip and its extras as the
+     * clock block draws them (the edit row: [editRowKeys]), and where BandEdit puts the pencils, the Look chip and the fight pencil.
+     * Null = no band on Home now (a module full screen, the controller layout not come yet, edit mode parked)
+     */
+    private fun editBand(): HomeEditView.BandGeo? {
+        val m = edit?.takeIf { !it.parked } ?: return null
+        val s = shown ?: return null
+        if (!lent(castView) || castView.parent !== barsSlot || castView.layout == CastView.Layout.FULL || castView.width <= 0) return null
+        if (s.full != null && !s.takeover) return null
+        val b = now[Part.BARS] ?: return null
+        val slots = ArrayList<HomeLayoutSolver.Box>(8)
+        val pad = RectF(); val face = RectF()
+        val keys = ArrayList<RectF>(8)
+        for (pos in 0 until 8) {
+            castView.slotRect(pos, bandSlotBox); bandSlotBox.offset(b.left, b.top)
+            slots += HomeLayoutSolver.Box(bandSlotBox.left, bandSlotBox.top, bandSlotBox.right, bandSlotBox.bottom)
+            keys += RectF(bandSlotBox)
+            if (pos == 0 || pos == 4) (if (pos == 0) pad else face).set(bandSlotBox) else (if (pos < 4) pad else face).union(bandSlotBox)
+        }
+        val diamonds = castView.layout == CastView.Layout.DIAMONDS
+        val grown = big(s)
+        // the clock block (and its extras) only where Home draws it: the small diamonds at rest
+        val clockShown = overlayOf(s).clock && barsSeen && clockText.isNotEmpty() && batteryPct >= 0
+        bandCells.clear()
+        var chip: RectF? = null
+        val extras = ArrayList<Pair<String, RectF>>()
+        var plus: RectF? = null
+        if (clockShown) {
+            // the block as the clock draw lays it now (the fight preview: a fight's own row, no edit row)
+            val ed = editClock()
+            val keys = if (ed) editRowKeys() else emptyList()
+            val items = if (ed) editBandItems(keys) else bandItems()
+            val spot = castView.clockSpot()?.also { sp -> for (i in 0 until sp.size - 1) sp[i] += if (i % 2 == 0) b.left else b.top }
+            val gold = if (ed) editChipGold() else chipGold()
+            val (cb, gb, cells) = UiKit.clockBlockBoxes(b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, gold, spot, items,
+                infoG(android.os.SystemClock.elapsedRealtime()))
+            chip = cb
+            val byKey = HashMap<String, RectF>()
+            gb?.let { byKey["gold"] = it }
+            for ((i, k) in keys.withIndex()) cells.getOrNull(i)?.let { byKey[k] = it }
+            bandCells.putAll(byKey)
+            if (!m.fightPreview) {
+                for (k in HomeEditModel.EXTRA_KEYS) byKey[k]?.let { extras += k to RectF(it) }
+                plus = byKey[EDIT_PLUS]?.let { RectF(it) }
+            }
+        }
+        val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
+            chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
+            away = b.bottom <= 0f)                                        // Top screen's preview: the band above the page
+        fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
+        return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
+            pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
+    }
+
+    /** P2: the extras now for edit mode's model (Settings' clock rows: on, hidden) - fed before every input reaches it */
+    private fun editBandFeed(m: HomeEditModel? = edit) {
+        m ?: return
+        m.bandIs(HomeEditModel.EXTRA_KEYS.filter { BottomTiles.clockOn(it) }, HomeEditModel.EXTRA_KEYS.filter { !BottomTiles.clockOn(it) })
+    }
+    private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
+    /** the host's Strip draws the ribbon through this */
+    val editChrome: HomeEditView get() = editView
+    // edit mode's chrome over every part (GONE until edit mode opens)
+    init {
+        addView(editView); editView.visibility = View.GONE; editView.translationZ = EDIT_Z
+        if (!PreviewStage.building) liveDraft = null                   // a new live Home has no edit mode (an Activity made again)
+    }
+
+    private val editGeo = object : HomeEditModel.Geo {
+        override fun columns(l: HomeLayout) = HomeLayoutSolver.columns(l, width.toFloat(), UiKit.MODULE_GAP)
+        override fun valid(l: HomeLayout): Boolean {
+            val st = solveState(l)
+            return HomeLayoutRules.problems(l, st, HomeLayoutSolver.places(HomeLayoutRules.shown(l), st)).isEmpty()
+        }
+        override val w: Float get() = width.toFloat()
+        override val colTop: Float get() = barsBottom() + UiKit.MODULE_GAP
+        override val colBottom: Float get() = frameH - UiKit.MODULE_GAP
+        override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
+    }
+
+    /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
+    private fun solveState(l: HomeLayout): HomeLayoutSolver.State {
+        val p = party.party
+        val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
+        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
+            card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
+            partyOn = partyOnHere(), castHidden = castHiddenNow(), partyFight = partyFightNow())
+    }
+    private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
+        HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes
+
+    private val partsOut = LinkedHashMap<HomePart, RectF>()
+    private val partsPool = Array(Part.values().size) { RectF() }
+    private val HOME_PART_OF: Array<HomePart> by lazy { Part.values().map { HomePart.valueOf(it.name) }.toTypedArray() }
+
+    /** the menus' behaviour values now (HomeSettings / Settings, the toolbar's word, this character's hold to talk) */
+    private fun editValues(): HomeWidgetMenus.Values {
+        val d = padMap?.dpad
+        val who = GameUi.character
+        return HomeWidgetMenus.Values(
+            quickInput = Settings.chatDefaultInput == "quick",
+            talk = if (who != null && d?.want == true && d.colOn != null) HomeSettings.holdTalk(who) else null,
+            talkSendNow = who != null && HomeSettings.talkSendNow(who),
+            folded = HomeSettings.questMin, zoomOut = Settings.minimapYd, zoomIn = Settings.minimapIndoorYd,
+            castShowInFight = CastStripModel.showOf(HomeSettings.castBarCombat), castParty = HomeSettings.castBarPartyShow,
+            toolbarOn = d?.want == true, toolbarAvail = d?.colOn != null, rest = HomeSettings.rest, rankBadges = HomeSettings.rankBadges,
+            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct)
+    }
+    private fun editMenuRows(s: EditStop): List<MenuRow> {
+        val m = edit ?: chromeModel ?: return emptyList()
+        return HomeWidgetMenus.rows(s, m.draft, editValues())
+    }
+
+    /**
+     * EDIT MODE OPENS on Home's rest page with the cursor on [start] ([lift]: the held widget, lifted). Refused in a fight (the widget's
+     * edge red for FLASH_MS); a full-screen module closes first. Returns whether it opened.
+     */
+    fun editOpen(start: EditStop = EditStop.CHAT, lift: Boolean = false): Boolean {
+        if (edit != null) { edit?.let { if (!it.parked) editRun(it.startOn(start, lift)) }; return true }
+        if (fightShown()) { editRefuse(start); return false }
+        // the 1515 merge: never while the sticky realm's key question is up (shown or waiting for the controller): one owner at a time
+        if (editBlocked?.invoke() == true) { Log.i(TAG, "home edit: refused (the key question is up)"); editRefuse(start); return false }
+        if (flow.full != null && !flow.takeover && flow.close()) changed()
+        mailCard(false); auraPane.close(); closeTypeTool()
+        if (classOpen) classLayerShow(false)
+        val saved = HomeSettings.layout
+        chromeModel = null
+        val m = HomeEditModel(saved, start)
+        editBandFeed(m)
+        edit = m
+        editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
+        editPersisted = saved; editLate = null
+        editAway = false
+        editView.visibility = View.VISIBLE
+        chromeFade(1f, HomeEditModel.CHROME_IN)
+        editGuest(true)
+        onEditChrome?.invoke(editView)
+        Log.i(TAG, "home edit: open on ${start.name.lowercase()}${if (lift) " (lifted)" else ""}, ${HomeLayoutJson.json(saved)}")
+        editMotionStart(start)
+        editRun(m.startOn(start, lift))
+        liveDraft = m.draft
+        onEditChanged?.invoke(true)
+        onEditLive?.invoke(true)
+        onStateChanged?.invoke()
+        return true
+    }
+
+    /**
+     * 1518, THE AUTOSAVE: the draft as last written ([editPersist]: the base of the next write, so only the fields a change changed are
+     * laid on the record the store holds - a change made meanwhile is kept)
+     */
+    private var editPersisted: HomeLayout? = null
+
+    /**
+     * a settled draft change is written now (nothing lifted, no finger down: a lifted widget's steps and a finger's hover lays are
+     * written at the drop), through the store's per-character rules: the record edit mode opened on only (another character's: nothing
+     * written - edit mode ends then, [editOwnerCheck]), the session's own fields laid on the record as it is now, a pending name's edit
+     * held until its key comes. Nothing is sent to the add-on while edit mode is live ([onEditLive]). [now] = whatever its state (edit
+     * mode parks or ends: the draft as it stands)
+     */
+    private fun editPersist(m: HomeEditModel, now: Boolean = false) {
+        if (!now && (m.parked || !m.settled)) return
+        val prev = editPersisted ?: return
+        if (m.draft == prev) return
+        // 1518 (F1-a): the pending name's key came while a widget was lifted (its rebase waited for the drop): the session takes it
+        // BEFORE its first write under it, while the store still holds the character's own record as the key brought it
+        val late = editAdopt(m)
+        val o = editOwner ?: return
+        val rec = HomeLayoutStore.editSave(o, prev, m.draft) ?: run {
+            Log.i(TAG, "home edit: NOT saved (the record it was read under is not the active one now)"); return }
+        HomeSettings.saveLayout(rec)
+        editPersisted = m.draft
+        Log.i(TAG, "home edit: saved ${HomeLayoutJson.json(rec)}${if (rec != m.draft) " (laid on the record as it is now)" else ""}")
+        // the session is the real record's now: the draft is the record as written, Discard's the character's own (taken before the write)
+        if (late != null) {
+            val now = HomeLayoutStore.active()
+            m.rebase(now, late); editPersisted = now
+            Log.i(TAG, "home edit: on the late key's record ${HomeLayoutJson.json(now)}")
+            if (!m.parked) editRelay(Motion.MODULE_OPEN)
+        }
+    }
+
+    /**
+     * the store's record changed while edit mode waited (a fight, another room, the pending name's key that arrived: its real record
+     * with the held edit laid on): the draft follows it, and the record Discard puts back takes that outside change too (only this
+     * session's own changes are undone). A late key's owner becomes the session's (its writes are its own record's from here)
+     */
+    private fun editRebase(m: HomeEditModel) {
+        val prev = editPersisted ?: return
+        val late = editAdopt(m)
+        val now = HomeLayoutStore.active()
+        if (late == null && now == prev) return
+        m.rebase(now, late ?: HomeLayoutStore.layOn(m.saved, prev, now))
+        editPersisted = now
+        Log.i(TAG, "home edit: rebased on the record as it is now ${HomeLayoutJson.json(now)}")
+    }
+
+    /**
+     * 1518: the pending name's key came (the late key, [HomeLayoutStore.EditSave.LAY_ON]): the session's owner is the character's key from
+     * here, and the record Discard puts back is the character's REAL record with only the held changes of before the session on it
+     * ([HomeLayoutStore.lateAdopt]; a change made under the key since it came laid on too) - never the pending default's values over the
+     * fields the session touched. Run before ANY write or Discard under the new owner (the rebase, the drop's save, a Discard that came
+     * first): returns that record (the caller rebases the draft on the record as it is then), null = no late key to take
+     */
+    private fun editAdopt(m: HomeEditModel): HomeLayout? {
+        val o = editOwner ?: return null
+        if (HomeLayoutStore.editSaveFor(o) != HomeLayoutStore.EditSave.LAY_ON) return null
+        val prev = editPersisted ?: return null
+        val back = HomeLayoutStore.lateAdopt(o, editLate, m.saved, prev)
+        m.savedIs(back)
+        editOwner = HomeLayoutStore.owner(); editLate = null
+        return back
+    }
+    /** 1518 (F1-b): the late key as it came, kept by the session from the owner change (so nothing after - a reset in the Settings room
+     *  while parked - can lose it before the session takes it) */
+    private var editLate: HomeLayoutStore.Late? = null
+
+    /**
+     * EDIT MODE ENDS: Done (every change is written already; the DS toolbar's switch sent now) or Discard (the record it opened on
+     * written back over the session's own changes; Home glides back to it); the chrome out (200 ms). [write] false = end only, nothing
+     * written (Home is leaving for a Layouts reset, or another character's record is active now)
+     */
+    private fun editEnd(discard: Boolean, write: Boolean = true) {
+        val m = edit ?: return
+        // 1518: every end (Done, Discard - a finger may still rest on Done past its hold -, a cancel) lets the ribbon's finger go, so
+        // the next session's first ribbon tap is never swallowed by a stale down or a fired hold
+        hold.cancel(); editView.ribbonLetGo(); hold.fired = false
+        if (write && !discard) editPersist(m, now = true)
+        // 1518: a late key's Discard (the key came while lifted / parked): the character's real record back
+        if (write && discard) editAdopt(m)?.let { back -> val now = HomeLayoutStore.active(); m.rebase(now, back); editPersisted = now }
+        // Discard: the opening record back, laid as the inverse of the session's net change over the record the store holds now (a
+        // change made meanwhile kept); only to the record it was read under (another character's is never written)
+        val back = if (write && discard) editPersisted?.let { prev -> editOwner?.let { o -> HomeLayoutStore.editSave(o, prev, m.saved) } } else null
+        if (back != null) HomeSettings.saveLayout(back)
+        val done = write && !discard
+        Log.i(TAG, "home edit: ${when { done -> "done"; back != null -> "discarded, back to ${HomeLayoutJson.json(back)}"; discard -> "discard NOT written (another record is active)"; else -> "ended" }}")
+        edit = null
+        editBackDue = false
+        editPersisted = null; editLate = null
+        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
+        editOwner = null
+        liveDraft = null
+        editRestSync()                                                    // the record's rest
+        editRoomBarSync()                                                 // the add-on's own `d` again (the record's mirror follows it)
+        editBarSync(Motion.MODULE_CLOSE)                                  // P4: the room bar's order (Discard glides it back)
+        chromeModel = m
+        editAway = false
+        if (!m.parked) editGuest(false)                                   // parked (a fight, a room): the guest was freed then
+        motion.leave(motionNow()); editKick()                             // every widget grows back to 1, the wiggle out, the ribbon down
+        chromeFade(0f, Motion.MODULE_CLOSE) { chromeModel = null; editView.visibility = View.GONE; onEditChrome?.invoke(null) }
+        // every part to the record's rects (Discard: its glide back already runs; Done: kept where the draft put them, the chrome's settle);
+        // P4 fix round: a preview that was showing - the D-pad's own pictures again, and the band laid again even for a Discard that
+        // changed nothing (its rest look, no stand-in swing)
+        val preview = previewEnded()
+        if (discard && !preview) editRelay(Motion.MODULE_CLOSE) else editRelay(Motion.MODULE_CLOSE, force = true)
+        onEditChanged?.invoke(false)
+        onEditLive?.invoke(false)
+        onStateChanged?.invoke()
+    }
+
+    /** the host's: Home is leaving for a Layouts reset (open or parked): edit mode ends, nothing written (the reset decides the record) */
+    fun editCancel() { if (edit != null) editEnd(discard = false, write = false) }
+    /** the record edit mode opened on ([HomeLayoutStore.owner]; a late key's once it came) */
+    private var editOwner: HomeLayoutStore.Owner? = null
+    /** the active record's owner is another now (another character, the key let go): edit mode - open or parked - ends, nothing more
+     *  written (what it saved stays that character's); the pending name's key that arrived keeps it (its real record, with the held
+     *  edit laid on, is the session's from here: [editRebase]). True = it ended */
+    private fun editOwnerCheck(why: String): Boolean {
+        val m = edit ?: return false
+        val o = editOwner ?: return false
+        when (HomeLayoutStore.editSaveFor(o)) {
+            HomeLayoutStore.EditSave.SAME -> return false
+            HomeLayoutStore.EditSave.LAY_ON -> {
+                if (editLate == null) editLate = HomeLayoutStore.lateFor(o)  // 1518 (F1-b): the key as it came, whatever the state
+                // live and settled: at once (lifted / a finger down: at the drop, editPersist; parked: at the resume)
+                if (!m.parked && m.settled) { editRebase(m); editRelay(Motion.MODULE_OPEN); editBarSync(Motion.MODULE_OPEN); editView.invalidate() }
+                return false
+            }
+            HomeLayoutStore.EditSave.NONE -> {}
+        }
+        Log.i(TAG, "home edit: ended ($why: the draft's record is not the active one)")
+        editEnd(discard = false, write = false)
+        return true
+    }
+    /** the disc's gold tick: Done */
+    fun editDone() { edit?.let { editRun(it.done()) } }
+
+    // ---------------------------------------------------------------- Done's long press / a held B = Discard (1518)
+
+    /** the hold on Done (a finger) or on B (the direct feed): Discard when it lasts [HomeEditModel.DISCARD_HOLD_MS] */
+    private inner class Hold : Runnable {
+        /** since when (uptime ms), -1 = none */
+        var at = -1L
+        /** it ran out this hold: Discard ran, the release does nothing */
+        var fired = false
+        fun start() { cancel(); at = android.os.SystemClock.uptimeMillis(); fired = false; editUi.postDelayed(this, HomeEditModel.DISCARD_HOLD_MS); editKick(); editRibbonRedraw?.invoke() }
+        fun cancel() { editUi.removeCallbacks(this); at = -1L }
+        override fun run() {
+            at = -1L; fired = true
+            val m = edit?.takeIf { !it.parked } ?: return
+            Log.i(TAG, "home edit: Done held: discard")
+            editRun(m.discard())
+        }
+    }
+    private val hold = Hold()
+    /** the hold's progress now (0 .. 1), null = none - and none for its first [HomeEditModel.RING_FROM_MS] (the review: a normal B or
+     *  tap on Done never flashes "Discard"; the ring then fills over the rest of [HomeEditModel.DISCARD_HOLD_MS]) */
+    fun editHoldK(): Float? {
+        val at = hold.at.takeIf { it >= 0 } ?: return null
+        val t = android.os.SystemClock.uptimeMillis() - at
+        if (t < HomeEditModel.RING_FROM_MS) return null
+        return ((t - HomeEditModel.RING_FROM_MS).toFloat() / (HomeEditModel.DISCARD_HOLD_MS - HomeEditModel.RING_FROM_MS)).coerceIn(0f, 1f)
+    }
+    private fun editHoldDown() { if (edit?.parked == false) hold.start() }
+    /** true = the hold had fired (Discard ran): the release does nothing */
+    private fun editHoldUp(): Boolean { val f = hold.fired; hold.cancel(); hold.fired = false; editRibbonRedraw?.invoke(); return f }
+
+    /**
+     * B on the controller's DIRECT feed while edit mode is live ([down] its press, then its release): held [HomeEditModel.DISCARD_HOLD_MS]
+     * = Discard; a shorter press is B (on its release): one step back, then Done. The relayed guest's B (release only, no hold to see)
+     * stays [editKey]'s plain B
+     */
+    fun editB(down: Boolean) {
+        if (edit?.parked != false) return
+        if (down) { editHoldDown(); return }
+        if (!editHoldUp()) editKey("PAD2")
+    }
+
+    /** the guest "home" while edit mode holds the controller (its presses: [editPad]) */
+    private fun editGuest(hold: Boolean) {
+        partyView.invalidate()                                            // the party's own row box: hidden while edit mode holds Home
+        if (homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = hold))) Log.i(TAG, "home edit: ${if (hold) "hold" else "free"}")
+        if (hold) homeGuestTap(GuestPad.bnext(pad, home = false))
+    }
+
+    /** one press of the guest "home" while editing (A = PAD1 .. the shoulders, Select, Start through the host) */
+    private fun editPad(msg: JSONObject) {
+        val m = edit ?: return
+        if (msg.has("lost")) { Log.i(TAG, "home edit: the controller let go (${msg.optString("lost")}); touch goes on"); return }
+        val n = msg.optInt("n", Int.MIN_VALUE)
+        if (n != Int.MIN_VALUE && n == editPadN) return
+        editPadN = n
+        editKey(msg.optString("k"))
+    }
+
+    /** the cursor on a widget with no box now (the card / the bar Off, Party mode's Hide): to "+" or the chat ([HomeEditModel.cursorCheck]) */
+    private fun editCursorCheck(m: HomeEditModel) {
+        if (m.cursor !in HomeEditModel.GONE_CHECKED) return
+        val was = m.lifted
+        if (m.cursorCheck(editView.stops())) {
+            Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}")
+            if (was != null && m.lifted == null) editLift(null)            // 1518: its lift ended too: no stale lifted pose
+            editView.invalidate()
+        }
+    }
+
+    /** one key of edit mode's (the guest's, Start from the host's reader, the tests) */
+    fun editKey(k: String) {
+        val m = edit ?: return
+        editBandFeed(m)
+        if (settled) editCursorCheck(m)
+        editRun(m.key(k, editView.stops()) { s -> editMenuRows(s) })
+        editView.invalidate()
+    }
+
+    /** carries out the model's effects */
+    private fun editRun(fx: List<HomeEditModel.Fx>) {
+        val m = edit
+        for (f in fx) when (f) {
+            is HomeEditModel.Fx.Relay -> { liveDraft = m?.draft; editRestSync(); editRelay(f.ms); editRoomBarSync() }
+            HomeEditModel.Fx.Done -> { editEnd(discard = false); return }
+            HomeEditModel.Fx.Discard -> { editEnd(discard = true); return }
+            is HomeEditModel.Fx.Press -> editPress(f.key, f.k)
+            // the bar's slots / the chat's filters (another room): the draft is saved first; a session that changed nothing ends, one
+            // that did WAITS (the room's giveBack parks it, editAwayPark) so Discard can still put it back, and edit mode is back where
+            // it was with Home
+            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.Filters -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditFilters?.invoke(); return }
+            is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
+            HomeEditModel.Fx.Lift -> editLift(m?.lifted)
+            // P4: the fight preview on / off: the page laid again with the band's combat (or rest) look - nothing sent, no fight state
+            is HomeEditModel.Fx.Preview -> {
+                Log.i(TAG, "home edit: fight preview ${if (f.on) "on" else "off"}")
+                previewLaid = editFightLook()
+                applyDpad()
+                editRelay(if (f.on) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK, force = true)
+            }
+        }
+        m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
+        m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
+        m?.let { editBandFeed(it); if (it.settled) editCursorCheck(it) } // P2: Settings' extras as they are now; a piece gone: the cursor on
+        editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
+        editNotice()
+        editDecor()
+        editView.invalidate()
+        invalidate()
+    }
+
+    // ---------------------------------------------------------------- the motion's hooks (HomeEditMotion)
+
+    /** edit mode opens or comes back ([from]: the widget it opened on, the others ripple out from it; null = all at once) */
+    private fun editMotionStart(from: EditStop?) {
+        val t = motionNow()
+        motion.scale = motionScale()
+        motion.enter(t, from?.let { rippleFrom(it) }); cardOwnTo(0f, t, 0L)
+        val m = edit
+        seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet
+        editKick()
+    }
+
+    /** each key's start (ms) by its distance from [s]'s widget: the open ripples out from the one held */
+    private fun rippleFrom(s: EditStop): LongArray? {
+        val c = stopBox(s) ?: return null
+        val cx = c.centerX(); val cy = c.centerY()
+        val pts = ArrayList<Triple<Int, Float, Float>>()
+        for (k in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.PARTY))
+            stopBox(k)?.let { pts += Triple(k.key, it.centerX(), it.centerY()) }
+        val bar = roomBar
+        val xs = bar?.slotCentres().orEmpty()
+        val rooms = RoomBar.shown(edit?.draft ?: HomeSettings.layout)
+        for ((i, x) in xs.withIndex()) rooms.getOrNull(i)?.let { pts += Triple(HomeEditMotion.roomKey(it.ordinal), x, frameH + Strip.BAR / 2f) }
+        bar?.plusBox()?.let { pts += Triple(HomeEditMotion.PLUS_ROOM, it.centerX(), frameH + Strip.BAR / 2f) }
+        val far = pts.maxOfOrNull { kotlin.math.hypot(it.second - cx, it.third - cy) } ?: return null
+        val out = LongArray(HomeEditMotion.KEYS)
+        for ((k, x, y) in pts) out[k] = HomeEditMotion.ripple(kotlin.math.hypot(x - cx, y - cy), far)
+        return out
+    }
+    /** [s]'s widget box now (logical: the model's) */
+    private fun stopBox(s: EditStop): RectF? = when (s) {
+        EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
+        EditStop.CAST -> now[Part.STRIP] ?: now[Part.CAST2]
+        EditStop.PARTY -> now[Part.PARTY]
+        EditStop.DIVIDER -> editView.dividerBox()
+        else -> null
+    }
+    /** the part whose pose [s]'s chrome is drawn through (HomeEditView.poseOf's) */
+    private fun stopPart(s: EditStop): Part? = when (s) {
+        EditStop.CHAT -> Part.CHAT; EditStop.MAP -> Part.MAP; EditStop.QUEST -> Part.QUESTS
+        EditStop.CAST -> Part.STRIP; EditStop.PARTY -> Part.PARTY
+        else -> null
+    }
+    /** [s]'s whole pose now (HomeEditView draws its chrome through it: the scale, the turn, the move, the finger's carry) into [out];
+     *  its scale is the return (1 = none) */
+    private fun stopMatrix(s: EditStop?, out: android.graphics.Matrix): Float {
+        out.reset()
+        stopTurn = 0f
+        val p = s?.let { stopPart(it) } ?: return 1f
+        if (!partMatrix(p, out)) return 1f
+        stopTurn = pose.rot
+        return pose.scale
+    }
+    /** the last [stopMatrix]'s turn (deg; 0 = none) */
+    private var stopTurn = 0f
+    private val seatA = android.graphics.Matrix()
+    private val seatB = android.graphics.Matrix()
+    private val seatInv = android.graphics.Matrix()
+    private val seatPt = FloatArray(2)
+
+    /** the model moved on: a new cursor flies there (and the X chip pops), a menu / the Add tray pops open, the wiggle calms */
+    private fun editNotice() {
+        val m = edit?.takeIf { !it.parked } ?: return
+        val t = motionNow()
+        if (m.cursor != seenCursor) {
+            val old = seenCursor
+            seenCursor = m.cursor
+            val wb = editView.widgetBoxes()
+            val a = old?.let { wb[it] ?: stopBox(it) }; val b = wb[m.cursor] ?: stopBox(m.cursor)
+            if (a != null && b != null) {
+                // the gold box leaves the box it was DRAWN at: the old box (its flight's offset kept) through the OLD widget's whole pose
+                // (its wiggle's turn too: up to 8 px at a big module's corner), its centre taken back through the NEW widget's, its size
+                // by the two scales (the box is drawn through the new pose from this frame on: no jump on its first frame)
+                motion.cursorOffset(t, poseOut)
+                // the old box's drawn angle (its widget's turn and the gold box's own turn still in flight) over the new widget's: the gold
+                // box turns by it on its first frame and springs to the new widget's angle (the two wiggle on their own phases)
+                val turnA = motion.cursorTurn(t)
+                val sa = stopMatrix(old, seatA); val ra = stopTurn
+                val sb = stopMatrix(m.cursor, seatB); val rb = stopTurn
+                val hw = (a.width() + poseOut[2] - poseOut[0]) / 2f * sa / sb; val hh = (a.height() + poseOut[3] - poseOut[1]) / 2f * sa / sb
+                seatPt[0] = (a.left + poseOut[0] + a.right + poseOut[2]) / 2f; seatPt[1] = (a.top + poseOut[1] + a.bottom + poseOut[3]) / 2f
+                seatA.mapPoints(seatPt)
+                if (seatB.invert(seatInv)) seatInv.mapPoints(seatPt)
+                motion.cursorFrom(seatPt[0] - hw - b.left, seatPt[1] - hh - b.top, seatPt[0] + hw - b.right, seatPt[1] + hh - b.bottom, t,
+                    ra + turnA - rb)
+            }
+            if (m.cursor.removable) motion.pop(HomeEditMotion.CHIP, t)
+        }
+        if (m.menu != null && m.menu != seenMenu) motion.pop(HomeEditMotion.MENU, t)
+        seenMenu = m.menu
+        if (m.sheet != null && m.sheet != seenSheet) motion.pop(HomeEditMotion.SHEET, t)
+        seenSheet = m.sheet
+        motion.modal(m.menu != null || m.sheet != null, t)
+        editKick()
+    }
+
+    /** the lift ([s] picked up) or the drop (null: the widget that was lifted plops into its dock, from the finger's offset) */
+    private fun editLift(s: EditStop?) {
+        val t = motionNow()
+        if (s != null) {
+            val k = s.key
+            // 1518: the drop's Lift and the new one come in one run (the model's state is the new lift's by then): once is enough
+            if (liftStop == s && liftKey == k && motion.lifted == k) { editKick(); editDecor(); return }
+            // 1518: another widget still in its lifted pose (a lift that replaced it): it plops into its dock first
+            liftStop?.let { was -> if (motion.lifted == liftKey && liftKey != k) {
+                motion.drop(liftKey, 0f, 0f, t); if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK) } }
+            liftStop = s; liftKey = k
+            motion.lift(liftKey, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN)
+        }
+        else liftStop?.let { was ->
+            val ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; val oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
+            dragOffsetNow.fill(0f)
+            motion.drop(liftKey, ox, oy, t)
+            // dropped (on the map): it rides the map's pose again over its plop
+            if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK)
+        }
+        editKick()
+        editDecor()
+    }
+
+    /** the ticker's next frame (one post at a time; only while the motion is on): the display's vsync on screen; off a window (the
+     *  off-device renders) there is none to keep time with, so a 16 ms post */
+    private fun editKick() {
+        if (tickerPosted || !motion.on) return
+        tickerPosted = true
+        if (isAttachedToWindow) android.view.Choreographer.getInstance().postFrameCallback(editTicker)
+        else editUi.postDelayed(editTickOff, FRAME_MS)
+    }
+    private val editTickOff = Runnable { tickerPosted = false; editTick() }
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == View.VISIBLE && motion.on) editKick()          // Home's window back: the edit motion goes on
+    }
+    /**
+     * ONE FRAME OF THE EDIT MOTION: the views' properties and the chrome (nothing is laid or measured here). A fight stills it at once;
+     * Home away stops it (an input or Home again starts it); it posts the next frame only while something moves.
+     */
+    private fun editTick() {
+        if (!motion.on) return
+        val t = motionNow()
+        if (fightShown()) { motion.still(); editDecor(); return }
+        if (!live) return
+        // the wiggle never rests while edit mode is open (the user's pick 2026-11-21): the window hidden (the screen off, the app gone
+        // behind another) stops the ticker too; onWindowVisibilityChanged starts it again
+        if (isAttachedToWindow && windowVisibility != View.VISIBLE) return
+        edit?.takeIf { !it.parked }?.let { motion.modal(it.menu != null || it.sheet != null, t) }
+        editDecor()
+        roomBar?.invalidate()
+        if (motion.busy(t)) editKick()
+        else if (!motion.on) editDecor()                                  // the leave landed: one identity pass
+    }
+
+    /** [p]'s pose key: its widget's (a rider's host's: the buffs and the card on the map ride the map's); -1 = none */
+    private fun keyOfPart(p: Part): Int = when (p) {
+        // 1518 build 3: the band is no widget and never moves (the user's ruling 2026-11-22: it stays still in edit mode)
+        Part.BARS -> -1
+        Part.CHAT -> EditStop.CHAT.key
+        Part.MAP, Part.AURAS -> EditStop.MAP.key
+        Part.QUESTS -> if (cardOverMap()) EditStop.MAP.key else EditStop.QUEST.key
+        Part.STRIP, Part.CAST2 -> EditStop.CAST.key
+        Part.PARTY -> HomeEditMotion.PARTY
+        Part.CHAT_FULL -> -1
+    }
+    /** the box [p]'s pose turns about (its key's widget: the map for its riders, both halves for a Split bar) into [out] */
+    private fun ownerBox(p: Part, out: RectF): Boolean {
+        val r = when (keyOfPart(p)) {
+            -1 -> null
+            // the card on the map turns about its OWN centre with the map's pose composed over it ([partPose]: no pivot switch at a lift)
+            EditStop.MAP.key -> if (p == Part.QUESTS) now[Part.QUESTS] else now[Part.MAP]
+            EditStop.CAST.key -> {
+                val a = now[Part.STRIP]; val b = now[Part.CAST2]
+                if (a != null) { out.set(a); if (b != null) out.union(b); return true }
+                b
+            }
+            else -> now[p]
+        } ?: return false
+        out.set(r)
+        return true
+    }
+    /** [p]'s pose at [t] into [out] (its box into [poseBox]) */
+    private fun partPose(p: Part, t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        if (!motion.on) return out.identity()
+        val k = keyOfPart(p)
+        if (k < 0 || !ownerBox(p, poseBox)) return out.identity()
+        if (p == Part.QUESTS && k == EditStop.MAP.key) return cardRidePose(t, out)
+        return posedIn(k, t, poseBox, out)
+    }
+    /**
+     * [k]'s pose for its widget laid at [box], kept inside Home's frame (the user's pick 2026-11-21: a lifted full-height map at 1.04 grew
+     * past Home's foot and the room bar / the ribbon drew over its bottom edge; the bigger wiggle's corners at the frame's edges): the
+     * shift that keeps its grown, turning box inside (HomeEditMotion.keepIn). Drawn only: touch reads the laid box
+     */
+    private fun posedIn(k: Int, t: Long, box: RectF, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        motion.pose(k, t, 0.5f * kotlin.math.hypot(box.width(), box.height()), out)
+        if (!out.isIdentity) HomeEditMotion.keepIn(box.left, box.top, box.right, box.bottom, 0f, 0f, width.toFloat(), frameH, out)
+        return out
+    }
+    /**
+     * the card on the map: the MAP's pose (its scale and turn about the map's centre) said about the card's own centre ([poseBox]), mixed
+     * with the card's own pose (QUEST's key: its lift, its plop, its wiggle) by [cardOwn] - 0 riding the map, 1 lifted - so a lift and a
+     * drop move the card on, never by a pivot's jump (the map and the card centres are ~200 px apart: 0.06 of that at 0.94)
+     */
+    private fun cardRidePose(t: Long, out: HomeEditMotion.Pose): HomeEditMotion.Pose {
+        val m = now[Part.MAP] ?: return out.identity()
+        val cx = poseBox.centerX(); val cy = poseBox.centerY()
+        posedIn(EditStop.MAP.key, t, m, rideM)
+        val vx = (cx - m.centerX()) * rideM.scale; val vy = (cy - m.centerY()) * rideM.scale
+        val a = Math.toRadians(rideM.rot.toDouble()); val co = kotlin.math.cos(a).toFloat(); val si = kotlin.math.sin(a).toFloat()
+        val mdx = m.centerX() + vx * co - vy * si + rideM.dx - cx
+        val mdy = m.centerY() + vx * si + vy * co + rideM.dy - cy
+        val w = cardOwn(t)
+        if (w <= 0f) { out.scale = rideM.scale; out.rot = rideM.rot; out.dx = mdx; out.dy = mdy; return out }
+        posedIn(EditStop.QUEST.key, t, poseBox, rideQ)
+        out.scale = lerp(rideM.scale, rideQ.scale, w); out.rot = lerp(rideM.rot, rideQ.rot, w)
+        out.dx = lerp(mdx, rideQ.dx, w); out.dy = lerp(mdy, rideQ.dy, w)
+        return out
+    }
+    private val rideM = HomeEditMotion.Pose()
+    private val rideQ = HomeEditMotion.Pose()
+    /** the card's own pose's share over the map's (0 .. 1): up as it is lifted, back down as it plops onto the map again */
+    private var ownFrom = 0f
+    private var ownTo = 0f
+    private var ownAt = 0L
+    private var ownMs = 0L
+    private fun cardOwn(t: Long): Float {
+        if (motion.scale <= 0f || ownMs <= 0L) return ownTo
+        val k = ((t - ownAt).toFloat() / ownMs / motion.scale).coerceIn(0f, 1f)
+        return ownFrom + (ownTo - ownFrom) * (k * k * (3f - 2f * k))
+    }
+    private fun cardOwnTo(to: Float, t: Long, ms: Long) { ownFrom = cardOwn(t); ownTo = to; ownAt = t; ownMs = ms }
+    /** [p]'s pose as a matrix in Home's px (the finger's carry of a lifted widget too): false = identity. The chrome and Home's own paint
+     *  over a part (the map's well, zone band and buttons; the clock block) follow it */
+    private fun partMatrix(p: Part, out: android.graphics.Matrix): Boolean {
+        if (!motion.on) return false
+        partPose(p, motionNow(), pose)
+        var dx = pose.dx; var dy = pose.dy
+        val lifted = edit?.takeIf { !it.parked }?.lifted ?: liftStop
+        if (lifted != null && partOf(lifted, p)) { liftOffset(liftOff); dx += liftOff[0]; dy += liftOff[1] }
+        if (pose.scale == 1f && pose.rot == 0f && dx == 0f && dy == 0f) return false
+        out.reset()
+        out.postScale(pose.scale, pose.scale, poseBox.centerX(), poseBox.centerY())
+        out.postRotate(pose.rot, poseBox.centerX(), poseBox.centerY())
+        out.postTranslate(dx, dy)
+        return true
+    }
+    /** Home's own paint over the parts follows their poses (edit mode on screen, or its leave landing) */
+    private fun editPaintPosed(): Boolean = motion.on && (edit?.parked == false || chromeModel != null)
+
+    /**
+     * P4, THE ROOM BAR UNDER EDIT MODE ([roomBar], the host's Strip): its order is the draft's while edit mode is live (each change glides
+     * on [ms]: EDIT_STEP a controller step, MODULE_OPEN a change, MODULE_CLOSE a drop / put back), the record's otherwise (a fight's
+     * park, Discard: back on MODULE_CLOSE); the lifted room and a finger's carry ride along. A carried room is written at its drop.
+     */
+    var roomBar: Strip? = null
+    private fun editBarSync(ms: Long) {
+        val b = roomBar ?: return
+        val m = edit?.takeIf { !it.parked }
+        b.showOrder(RoomBar.shown(m?.draft ?: HomeSettings.layout), ms)
+        val lr = m?.barLifted?.let { n -> Room.values().firstOrNull { it.name == n } }
+        b.liftRoom = lr
+        b.liftX = m?.drag?.takeIf { it.stop == EditStop.ROOMS && lr != null }?.cx
+        b.invalidate()
+    }
+    private val dragTick = Runnable { edit?.let { m -> if (m.drag != null) editRun(m.dragTick(android.os.SystemClock.uptimeMillis())) } }
+
+    /**
+     * a behaviour row: the host's BottomTiles.press (its env), else Home's own for the setters it can reach. THE TOP BAR'S rows (P1 - P4,
+     * the user's rulings 2026-11-22) are Settings > Bottom screen's very setters: they autosave and Discard leaves them (1518's ruling for
+     * behaviour rows). The resting look and In fights are fields of the per-character record (HomeSettings.rest / fightBand write it):
+     * the draft is rebased on the record as it is now (so the page shows it live, Discard keeps it, and the session's own changes stay
+     * the only ones Discard undoes)
+     */
+    private fun editPress(key: String, k: Int) {
+        when (key) {
+            HomeEditModel.K_FOLD -> { HomeSettings.questMin = if (k < 0) !HomeSettings.questMin else k == 0; changed() }
+            HomeEditModel.K_CAST_FIGHT -> HomeSettings.castBarCombat = if (k == 0) CastStripModel.Combat.STAY else CastStripModel.Combat.HIDE
+            HomeEditModel.K_CAST_PARTY -> HomeSettings.castBarPartyShow = k == 0
+            else -> onEditPress?.invoke(key, k) ?: BottomTiles.press("", key, k, BottomTiles.Env(padMap?.dpad, GameUi.character)) { }
+        }
+        val m = edit
+        when (key) {
+            BottomTiles.REST, BottomTiles.COMBAT -> if (m != null && !m.parked) {
+                // the session's own settled change first (a widget dropped by this very tap), then the record as it is now
+                editPersist(m)
+                editRebase(m); liveDraft = m.draft
+                editRestSync()
+                editRelay(Motion.MODULE_OPEN, force = true)
+                Log.i(TAG, "home edit: the band's ${if (key == BottomTiles.REST) "rest look" else "fight look"} now ${HomeLayoutJson.json(m.draft)}")
+            }
+            // the rank badges are read as the band draws (no listener): redraw it; the extras: Home draws the clock block
+            BottomTiles.RANK, BottomTiles.SWING -> { castView.invalidate(); if (lent(castView)) castView.swingOn = HomeSettings.swingTimer }
+            in HomeEditModel.EXTRA_KEYS -> { m?.let { editBandFeed(it) }; invalidate() }
+        }
+        editView.invalidate()
+    }
+
+    /** lay Home again with the draft, gliding [ms]; [force] = a glide even when the draft equals what is laid (the chrome's settle) */
+    private fun editRelay(ms: Long, force: Boolean = false) {
+        // the band's rest changed under edit mode (the draft's, or back to the saved one): the page's screen with the flow's rest now
+        val s = shown?.let { if (it.rest != flow.rest) flow.screen else it } ?: return
+        if (!force && laidLayout == layoutNow(s) && !laidChanged()) { editDecor(); return }
+        applyMs = ms
+        try { apply(s, animate = live) } finally { applyMs = null }
+    }
+    /** what [places] laid besides the record: the card's height, the bar's side (a settle lays these again) */
+    private fun laidChanged(): Boolean = laidSide != castSideNow() || (layoutNow().cast == HomeLayout.CastDock.SPLIT) != laidSplit ||
+        layoutNow().cast.top != laidTop
+
+    /** refused (a fight, a dimmed choice): the widget's edge red for FLASH_MS, nothing else */
+    private fun editRefuse(s: EditStop?) {
+        editFlash = (s ?: EditStop.CHAT) to android.os.SystemClock.uptimeMillis()
+        Log.i(TAG, "home edit: refused${if (fightShown()) " (a fight)" else ""} on ${s?.name?.lowercase()}")
+        invalidate(); editView.invalidate()
+        editUi.postDelayed({ invalidate() }, HomeEditModel.FLASH_MS + 20L)
+    }
+
+    /** a fight starting mid-edit parks edit mode (chrome out 120 ms, the record's fight laid by the fight's own motion: the draft is
+     *  saved already); its end with Home on screen brings edit mode back where it was (120 ms in), on the record as it is then.
+     *  [relay]: lay the page here (no takeover change to do it) */
+    private fun editFightCheck(relay: Boolean = false) {
+        val m = edit ?: return
+        if (editAway) return
+        val fight = fightShown()
+        if (fight && !m.parked) {
+            hold.cancel(); editView.ribbonLetGo()                         // 1518: a finger held on Done lets go (no stale down after)
+            m.park(); editPersist(m, now = true); liveDraft = null
+            editRestSync()                                                // the saved rest for the fight (the draft's waits)
+            editRoomBarSync(); editBarSync(Motion.COMBAT_GROW)
+            editGuest(false)
+            // every widget at its own size at once, nothing turning (no motion in a fight); the ticker stops
+            liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
+            // the room bar's chrome goes with the rest (the XP track back, no disc tick, no ribbon touches) once the fade is out
+            chromeFade(0f, HomeEditModel.CHROME_IN) { if (edit?.parked == true) onEditChrome?.invoke(null) }
+            Log.i(TAG, "home edit: parked (a fight)")
+            onEditLive?.invoke(false)
+            // P4 fix round: a preview showing when the fight came: the D-pad follows the real fight's word now (the caller without
+            // [relay] lays the page itself)
+            val preview = previewEnded()
+            if (relay) editRelay(Motion.COMBAT_GROW, force = preview)
+        } else if (!fight && m.parked && live) {
+            if (editOwnerCheck("the fight ended on another character")) return
+            editRebase(m)
+            m.resume(); liveDraft = m.draft
+            editRestSync()
+            editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
+            editGuest(true)
+            onEditChrome?.invoke(editView)
+            chromeFade(1f, HomeEditModel.CHROME_IN)
+            editMotionStart(null)
+            Log.i(TAG, "home edit: back (the fight ended)")
+            onEditLive?.invoke(true)
+            if (relay) editRelay(Motion.COMBAT_SHRINK)
+        }
+    }
+
+    /** another room over Home: the draft waits (as for a fight); Home again: edit mode where it was */
+    private fun editAwayPark() {
+        editBackDue = false
+        val m = edit ?: return
+        hold.cancel(); editView.ribbonLetGo()                             // 1518: a finger held on Done lets go (no stale down after)
+        if (!m.parked) { m.park(); editPersist(m, now = true); liveDraft = null; editRestSync(); editGuest(false); editBarSync(0L); onEditLive?.invoke(false) }
+        // P4 fix round: a preview showing: the D-pad's own pictures and the band's rest look (no stand-in swing, the cast bar alone) laid
+        // at once, while the band is still Home's - the room that takes it next never gets the preview's look
+        if (previewEnded()) shown?.let { apply(if (it.rest != flow.rest) flow.screen else it, animate = false) }
+        editAway = true
+        chromeAnim?.cancel(); chromeA = 0f
+        liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
+        onEditChrome?.invoke(null)
+    }
+    private fun editAwayBack() {
+        val due = editBackDue
+        editBackDue = false
+        val m = edit ?: return
+        if (!editAway) { if (due) { editRestSync(); editRelay(Motion.MODULE_CLOSE) }; return }
+        editAway = false
+        if (editOwnerCheck("Home again on another character")) return
+        if (fightShown()) {                                               // the fight's end brings it back (editFightCheck)
+            if (due) { editRestSync(); editRelay(Motion.COMBAT_GROW) }    // the draft laid early goes: the saved record for the fight
+            return
+        }
+        editRebase(m)
+        m.resume(); liveDraft = m.draft
+        editRestSync()
+        editGuest(true)
+        onEditChrome?.invoke(editView)
+        chromeFade(1f, HomeEditModel.CHROME_IN)
+        editMotionStart(null)
+        editRelay(Motion.MODULE_CLOSE)
+        editBarSync(Motion.MODULE_CLOSE)
+        onEditLive?.invoke(true)
+    }
+
+    private fun chromeFade(to: Float, ms: Long, end: (() -> Unit)? = null) {
+        chromeAnim?.cancel()
+        if (!live || ms <= 0L) { chromeA = to; editView.invalidate(); end?.invoke(); return }
+        chromeAnim = ValueAnimator.ofFloat(chromeA, to).apply {
+            duration = ms; interpolator = Motion.curve()
+            addUpdateListener { chromeA = it.animatedValue as Float; editView.invalidate(); onEditChrome?.let { _ -> editRibbonRedraw?.invoke() } }
+            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) { chromeA = to; end?.invoke() } })
+            start()
+        }
+    }
+    /** the host's: redraw the ribbon (it lives in the room bar) */
+    var editRibbonRedraw: (() -> Unit)? = null
+
+    /** the drag's offset as last placed (a finger's drop springs into its dock from it) */
+    private val dragOffsetNow = FloatArray(2)
+    /** [liftOffset]'s frame buffer (every ticker frame reads it: no boxed pair per frame) */
+    private val liftOff = FloatArray(2)
+
+    /** the lifted widget's offset now under the finger (its grab kept) into [out] (x, y); its drop's spring into the dock is [motion]'s */
+    private fun liftOffset(out: FloatArray) {
+        out[0] = 0f; out[1] = 0f
+        val d = edit?.drag
+        if (d != null && d.stop.movable) {
+            val base = baseOf(d.stop) ?: return
+            val at = d.at()
+            out[0] = at.l - base.left; out[1] = at.t - base.top
+        }
+    }
+    private fun baseOf(s: EditStop): RectF? = when (s) {
+        EditStop.CHAT -> now[Part.CHAT]; EditStop.MAP -> now[Part.MAP]; EditStop.QUEST -> now[Part.QUESTS]
+        EditStop.CAST -> now[Part.STRIP]; EditStop.PARTY -> now[Part.PARTY]; else -> null
+    }
+    /** the parts a widget moves with it (the map takes its buffs and the card over it) */
+    private fun partOf(s: EditStop, p: Part): Boolean = when (s) {
+        EditStop.CHAT -> p == Part.CHAT
+        EditStop.MAP -> p == Part.MAP || p == Part.AURAS || (p == Part.QUESTS && cardOverMap())
+        EditStop.QUEST -> p == Part.QUESTS
+        EditStop.CAST -> p == Part.STRIP || p == Part.CAST2
+        EditStop.PARTY -> p == Part.PARTY
+        else -> false
+    }
+
+    /**
+     * edit mode's transforms on the parts, every frame of a glide / a drag / a lift / the ticker: each part's pose ([motion]: the shrink,
+     * the wiggle, the lift with its overshoot, the drop's plop and slide), about its widget's centre (a rider's about its host's); the
+     * lifted widget's finger offset and depth; the map's picture scaled to its gliding box ([mapScaleTo], cover, clipped to the box) with
+     * its pose composed over the crop. Properties only (nothing is laid here). Nothing outside edit mode (one reset pass after it ends),
+     * so the class / pause slides keep their own translation.
+     */
+    private fun editDecor() {
+        // fix round 1: a session PARKED (a fight, a room) is no session here: one reset pass, then the class / pause / LB slides keep
+        // their own translation and depth (they open while parked), never written over on a layout or an apply frame
+        val liveEdit = edit?.takeIf { !it.parked }
+        if (liveEdit == null && chromeModel == null && !decorDirty && mapScaleTo == null && !motion.on) return
+        // the middle wheel's columns parting (wheelPart's animators) is theirs too: the leave's ticker never writes them back to 0
+        if (liveEdit == null && chromeModel == null && mapScaleTo == null && (classOpen || wheelOpen || pauseT > 0f || pauseSide > 0f)) return
+        val t = motionNow()
+        val lifted = liveEdit?.lifted ?: liftStop
+        liftOffset(liftOff)
+        val ox = liftOff[0]; val oy = liftOff[1]
+        if (liveEdit?.drag != null) { dragOffsetNow[0] = ox; dragOffsetNow[1] = oy }
+        val k = liftK
+        val settling = lifted != null && motion.settling(lifted.key, t)
+        for ((p, v) in views) {
+            val mine = lifted != null && partOf(lifted, p)
+            partPose(p, t, pose)
+            val dx = pose.dx + (if (mine) ox else 0f); val dy = pose.dy + (if (mine) oy else 0f)
+            val d = if (p == Part.MAP) mapScaleTo else null
+            if (d != null) {
+                val cur = now[Part.MAP] ?: d
+                val s = max(cur.width() / max(1f, d.width()), cur.height() / max(1f, d.height()))
+                val tx = cur.centerX() - (d.left + d.width() * s / 2f)
+                val ty = cur.centerY() - (d.top + d.height() * s / 2f)
+                // the pose turns and shrinks the map about its DRAWN centre while the crop holds it (identity: today's pivot 0, 0 move)
+                HomeEditMotion.composeMapGlide(d.left, d.top, tx, ty, s, cur.centerX(), cur.centerY(), poseOut)
+                // the crop's own translation (its pivot's share included): what is left of translationX / Y is the finger's carry, which
+                // the map's paint follows when it is not drawn through the pose (a Discard's glide outlives the chrome's fade)
+                mapScaleTx = poseOut[2]; mapScaleTy = poseOut[3]
+                v.pivotX = poseOut[0]; v.pivotY = poseOut[1]
+                v.scaleX = s * pose.scale; v.scaleY = s * pose.scale
+                v.rotation = pose.rot
+                v.translationX = poseOut[2] + dx; v.translationY = poseOut[3] + dy
+                val l = (cur.left - d.left - tx) / s; val tp = (cur.top - d.top - ty) / s
+                v.clipBounds = android.graphics.Rect(kotlin.math.floor(l).toInt(), kotlin.math.floor(tp).toInt(),
+                    kotlin.math.ceil(l + cur.width() / s).toInt(), kotlin.math.ceil(tp + cur.height() / s).toInt())
+            } else {
+                // about the widget's centre (a rider: its host's), else the view's own
+                if (motion.on && ownerBox(p, poseBox)) { v.pivotX = poseBox.centerX() - v.left; v.pivotY = poseBox.centerY() - v.top }
+                else { v.pivotX = v.width / 2f; v.pivotY = v.height / 2f }
+                v.scaleX = pose.scale; v.scaleY = pose.scale
+                v.rotation = pose.rot
+                v.translationX = dx; v.translationY = dy
+            }
+            v.translationZ = if (mine && (k > 0f || ox != 0f || oy != 0f || settling)) LIFT_Z + restZ(p) else restZ(p)
+        }
+        // the lift has landed and its drop slid in: nothing is lifted any more
+        // (after its lift spring has landed too: the drop's plop runs below 1 after the lift's share reads 0)
+        if (liveEdit?.lifted == null && liveEdit?.drag == null && liftStop != null && k == 0f && !settling && motion.liftDone(liftKey, t)) liftStop = null
+        decorDirty = liveEdit != null || chromeModel != null || mapScaleTo != null || liftK > 0f || motion.on
+        if (mapScaleTo == null) { mapScaleTx = 0f; mapScaleTy = 0f }
+        // fix round 1: the page settled with the cursor's widget gone (the card / the bar Off, Party mode's Hide): the cursor moves on
+        if (liveEdit != null && settled) editCursorCheck(liveEdit)
+        editView.invalidate()
+        invalidate()
+    }
+
+    /** the drawn boxes (pose and offset applied) of the parts raised over the others by edit mode - a lifted, dragged or settling widget
+     *  that is not the map (the map's own paint follows the map); empty outside edit mode. Read every frame: the list and its boxes are
+     *  this view's own, good until the next call */
+    fun liftedBoxes(): List<RectF> {
+        liftedOut.clear()
+        // a parked session lifts nothing (the class wheel's cover depth on a column is not a lift)
+        if (edit?.takeIf { !it.parked } == null && chromeModel == null) return liftedOut
+        if ((edit?.lifted ?: liftStop) == EditStop.MAP) return liftedOut
+        for ((p, v) in views) {
+            if (p == Part.MAP || p == Part.AURAS || v.visibility != View.VISIBLE || v.width <= 0) continue
+            if (v.translationZ <= restZ(p) + 0.5f) continue
+            if (liftedPool.size <= liftedOut.size) liftedPool += RectF()
+            liftedOut += drawnBox(v, liftedPool[liftedOut.size])
+        }
+        return liftedOut
+    }
+    private val liftedOut = ArrayList<RectF>()
+    private val liftedPool = ArrayList<RectF>()
+    /** [v]'s box as drawn (its scale and turn about its pivot, its translation), in Home's px, into [out] */
+    private fun drawnBox(v: View, out: RectF = RectF()): RectF {
+        viewM.reset()
+        viewM.postScale(v.scaleX, v.scaleY, v.pivotX, v.pivotY)
+        viewM.postRotate(v.rotation, v.pivotX, v.pivotY)
+        viewM.postTranslate(v.left + v.translationX, v.top + v.translationY)
+        out.set(0f, 0f, v.width.toFloat(), v.height.toFloat())
+        viewM.mapRect(out)
+        return out
+    }
+
+    /** the map's glide scaling ends: laid at its box, no scale, no clip (one full layout pass where it lands) */
+    private fun mapScaleEnd() {
+        if (mapScaleTo == null) return
+        mapScaleTo = null; mapScaleTx = 0f; mapScaleTy = 0f
+        mapSlot.clipBounds = null
+        mapSlot.scaleX = 1f; mapSlot.scaleY = 1f; mapSlot.rotation = 0f
+        mapSlot.pivotX = mapSlot.width / 2f; mapSlot.pivotY = mapSlot.height / 2f
+        mapSlot.translationX = 0f; mapSlot.translationY = 0f
+        decorDirty = true
+        placeFrame()
+    }
+
+    // ---------------------------------------------------------------- way 1: the long hold on the chat's or the map's BODY
+
+    /** the hold now: its widget, where and when it came down; [holdTakes] = it fired: the rest of the gesture is edit mode's */
+    private var holdStop: EditStop? = null
+    private var holdAt = 0L
+    private var holdX = 0f
+    private var holdY = 0f
+    private var holdTakes = false
+    /** the gesture after a hold that was refused (a fight): swallowed to its end, nothing else */
+    private var holdSwallow = false
+    private var holdChildCancelled = false
+    private val holdFire = Runnable { holdFired() }
+    private val holdRing = object : Runnable { override fun run() { if (holdStop != null) { invalidate(); editUi.postDelayed(this, 16L) } } }
+
+    /** the body of the chat (not its "!") or of the map (not its zone band, the calendar and mail buttons, the zoom, the auras, the
+     *  card), on Home's rest page; null = a hold there is never edit mode's */
+    private fun holdBodyAt(x: Float, y: Float): EditStop? {
+        if (flow.full != null && !flow.takeover) return null
+        // never armed in a fight: a slow touch there stays today's tap (the map / the chat opens, combat-touch); the refusal's red edge
+        // is the Settings tile's and the disc's (editOpen)
+        if (fightShown()) return null
+        if (classOpen || pauseT > 0f || typeWanted || mailOpen || wheelOpen) return null
+        // fix round 3: never while hold to talk's pop-up is up (it lies over the chat's and the map's tops; its tabs take a finger)
+        if (castView.talkPanel != null) return null
+        now[Part.QUESTS]?.let { if (questPane.visibility == View.VISIBLE && it.contains(x, y)) return null }
+        now[Part.PARTY]?.let { if (partyView.visibility == View.VISIBLE && it.contains(x, y)) return null }
+        now[Part.CHAT]?.let { c -> if (chatPane.visibility == View.VISIBLE && c.contains(x, y) && !chatPane.onBang(x - c.left, y - c.top)) return EditStop.CHAT }
+        now[Part.MAP]?.let { m ->
+            if (mapSlot.visibility != View.VISIBLE || !m.contains(x, y)) return null
+            if (y < m.top + ZONE_BAND_BOTTOM) return null
+            if (auraPane.visibility == View.VISIBLE && auraPane.owns(x - auraPane.left, y - auraPane.top)) return null
+            return EditStop.MAP
+        }
+        return null
+    }
+
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        // the hold fired: the child that had the touch is cancelled once (no Chat room, no map module), the rest is edit mode's
+        if (holdTakes || holdSwallow) {
+            if (!holdChildCancelled) {
+                holdChildCancelled = true
+                val c = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
+                super.dispatchTouchEvent(c); c.recycle()
+            }
+            if (holdTakes && edit != null) editView.touch(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) { holdTakes = false; holdSwallow = false }
+            return true
+        }
+        if (edit == null) holdWatch(e)
+        return super.dispatchTouchEvent(e)
+    }
+
+    private fun holdWatch(e: MotionEvent) {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                holdCancel()
+                val s = holdBodyAt(e.x, e.y) ?: return
+                holdStop = s; holdAt = android.os.SystemClock.uptimeMillis(); holdX = e.x; holdY = e.y
+                editUi.postDelayed(holdFire, HomeEditModel.HOLD_MS)
+                editUi.postDelayed(holdRing, HomeEditModel.RING_FROM_MS)
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> holdCancel()                 // a second finger: never a hold
+            MotionEvent.ACTION_MOVE -> if (holdStop != null && (abs(e.x - holdX) > HomeEditModel.HOLD_SLOP || abs(e.y - holdY) > HomeEditModel.HOLD_SLOP)) holdCancel()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> holdCancel()
+        }
+    }
+    private fun holdCancel() {
+        if (holdStop == null) return
+        holdStop = null
+        editUi.removeCallbacks(holdFire); editUi.removeCallbacks(holdRing)
+        invalidate()
+    }
+    private fun holdFired() {
+        val s = holdStop ?: return
+        holdStop = null
+        editUi.removeCallbacks(holdRing)
+        holdChildCancelled = false
+        // a fight, or (the 1515 merge's review) the key question up - shown or waiting for the controller: refused AND swallowed to the
+        // lift (the red edge only; never the Chat room or the map module on the UP). Fix round 1: the DOWN's gates again at the fire
+        // (Home left or covered meanwhile: another room, the pause / LB / class wheel, the type tool, the mail card, a host overlay):
+        // nothing opens, the gesture stays the child's
+        when (HomeEditModel.holdFire(fightShown(), editBlocked?.invoke() == true, holdStillOk(s))) {
+            HomeEditModel.HoldFire.REFUSE -> {
+                if (!fightShown()) Log.i(TAG, "home edit: refused (the key question is up)")
+                holdSwallow = true; editRefuse(s); invalidate(); return
+            }
+            HomeEditModel.HoldFire.LET_GO -> { Log.i(TAG, "home edit: the hold ended unopened (Home left or covered)"); invalidate(); return }
+            HomeEditModel.HoldFire.OPEN -> {}
+        }
+        if (editOpen(s, lift = true)) { holdTakes = true; editView.carry(s, holdX, holdY) }
+        else holdSwallow = true                                           // refused there: the lift is swallowed the same way
+        invalidate()
+    }
+    /** the hold's widget is still what [holdBodyAt] gives where it came down, on a Home that is on screen and not covered */
+    private fun holdStillOk(s: EditStop): Boolean = live && holdBodyAt(holdX, holdY) == s && overlayOpen?.invoke() != true
+
+    /** the hold's gold ring at the finger from RING_FROM_MS, and the panel's edge lighting over the hold (final_12) */
+    private val pRing = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private fun drawHold(c: Canvas) {
+        // a request refused in a fight (edit mode not open: its chrome draws its own): the widget's edge red for FLASH_MS
+        editFlash?.let { (fs, at) ->
+            val t = android.os.SystemClock.uptimeMillis() - at
+            val box = now[when (fs) { EditStop.MAP -> Part.MAP; EditStop.CAST -> Part.STRIP; EditStop.QUEST -> Part.QUESTS
+                else -> Part.CHAT }]
+            if (edit == null && chromeModel == null && box != null && t in 0 until HomeEditModel.FLASH_MS) {
+                pRing.strokeWidth = 6f; pRing.color = Color.argb((255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt(), 220, 40, 30)
+                c.drawRoundRect(RectF(box).apply { inset(-2f, -2f) }, UiKit.MODULE_R, UiKit.MODULE_R, pRing)
+                postInvalidateOnAnimation()
+            }
+        }
+        val s = holdStop ?: return
+        val t = android.os.SystemClock.uptimeMillis() - holdAt
+        if (t < HomeEditModel.RING_FROM_MS) return
+        val k = ((t - HomeEditModel.RING_FROM_MS).toFloat() / (HomeEditModel.HOLD_MS - HomeEditModel.RING_FROM_MS)).coerceIn(0f, 1f)
+        val box = now[if (s == EditStop.CHAT) Part.CHAT else Part.MAP] ?: return
+        pRing.strokeWidth = 5f; pRing.color = Theme.focusA((200 * k).toInt())
+        c.drawRoundRect(RectF(box).apply { inset(2f, 2f) }, UiKit.MODULE_R, UiKit.MODULE_R, pRing)
+        val r = RING_R
+        pRing.strokeWidth = 4f; pRing.color = Color.argb(150, 0, 0, 0)
+        c.drawCircle(holdX, holdY, r, pRing)
+        pRing.strokeWidth = 9f; pRing.color = Theme.focusA(255)
+        c.drawArc(RectF(holdX - r, holdY - r, holdX + r, holdY + r), -90f, 360f * k, false, pRing)
+        pRing.strokeWidth = 0f
+    }
+
+
+    // ================================================================ movable Home: the D-pad toast (SPEC section 6 "SYNC", final_05)
+
+    /** the add-on's `d` changed its Left / Right (a swap took): "D-pad < Map > Chat" on Home for 1.6 s, the kit's gold arrows */
+    private var toastAt = 0L
+    private var toastWords: List<String> = emptyList()
+    fun toolbarToast(dirs: Map<Int, String>) {
+        toastWords = ToolbarMirror.toastWords(dirs).map { Tr.t(it) }
+        toastAt = SystemClock.uptimeMillis()
+        invalidate()
+    }
+    private val pToast = Paint(Paint.ANTI_ALIAS_FLAG)
+    /**
+     * the D-pad toast's pill for words [wsum] wide: in the diamonds' clock gap at rest (today's spot); fix/menus-fit: under the band
+     * when the band is the thin row or grown for a fight (the gap is not there: the pill lay on the row's buttons / the D-pad's lower
+     * button), over the columns' tops, inside the frame; under a tap-to-cast bar that sits at the top of a column (Above chat / Above
+     * map, shown) when the pill reaches over it. Classic keeps 1516's spot on the band's foot (classicLook: not yet ruled on)
+     */
+    fun toastBox(wsum: Float, h: Float = 54f): RectF {
+        val cx = width / 2f
+        val bb = (now[Part.BARS]?.bottom ?: 226f).coerceAtLeast(0f)
+        val diamonds = 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
+        val l = cx - wsum / 2f - 28f; val r = cx + wsum / 2f + 28f
+        // Classic's diamonds grown for a fight: 1516's pill on the band's foot (a thin-row record is not 1516's Classic look: under it)
+        val held = classicLook() && (laidLayout ?: layoutNow()).rest == HomeRest.DIAMONDS
+        val cy = if (kotlin.math.abs(bb - diamonds) < 1f || held) bb - h / 2f - 6f
+            else {
+                var top = bb + UiKit.MODULE_GAP
+                if (laidTop && !laidHidden) for (p in TOP_BARS) {
+                    val b = now[p] ?: continue
+                    if (views[p]?.visibility != View.VISIBLE || b.bottom <= bb + 0.5f) continue
+                    if (b.left < r && l < b.right) top = maxOf(top, b.bottom + UiKit.MODULE_GAP)
+                }
+                (top + h / 2f).coerceAtMost(frameH - UiKit.MODULE_GAP - h / 2f)
+            }
+        return RectF(l, cy - h / 2f, r, cy + h / 2f)
+    }
+    private val TOP_BARS = arrayOf(Part.STRIP, Part.CAST2)
+    private val pToastEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+    private fun drawToast(c: Canvas) {
+        if (toastWords.isEmpty()) return
+        val a = ToolbarMirror.toastAlpha(SystemClock.uptimeMillis() - toastAt)
+        if (a <= 0f) { toastWords = emptyList(); return }
+        pToast.textSize = 30f; UiKit.asBody(pToast); pToast.color = Theme.gold; pToast.alpha = (255 * a).toInt()
+        val arrow = 22f; val gap = 14f
+        val words = toastWords
+        val wsum = words.sumOf { pToast.measureText(it).toDouble() }.toFloat() + (words.size - 1) * (arrow + 2 * gap)
+        val h = 54f
+        val cx = width / 2f
+        val box = toastBox(wsum, h)
+        val cy = box.centerY()
+        pToastEdge.color = Theme.gold; pToastEdge.alpha = (255 * a).toInt()
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ink; alpha = (235 * a).toInt() }
+        c.drawRoundRect(box, h / 2f, h / 2f, fill)
+        c.drawRoundRect(box, h / 2f, h / 2f, pToastEdge)
+        var x = box.left + 28f
+        val base = cy - (pToast.ascent() + pToast.descent()) / 2f
+        for ((i, w) in words.withIndex()) {
+            if (i > 0) {
+                x += gap
+                UiKit.tex(if (i == 1) "move_arrow_left" else "move_arrow_right")?.let { b ->
+                    val bp = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = (255 * a).toInt() }
+                    c.drawBitmap(b, null, RectF(x, cy - arrow / 2f, x + arrow, cy + arrow / 2f), bp)
+                }
+                x += arrow + gap
+            }
+            c.drawText(w, x, base, pToast)
+            x += pToast.measureText(w)
+        }
+        postInvalidateOnAnimation()
+    }
+
+    /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        dispatchDrawHome(c)
+        if (editView.visibility == View.VISIBLE && editView.width > 0) {
+            val s = c.save(); c.translate(editView.left.toFloat(), editView.top.toFloat()); editView.draw(c); c.restoreToCount(s)
+        }
+    }
+    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
+
+    /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (Classic too: the user's pick
+     *  2026-11-21, "Fix in Classic too") */
+    private fun mapPaintRides(): Boolean = pauseT > 0f
+    /** fix/menus-fit, the tests' reading of [dispatchDrawHome]: how far the map's own paint (the well edge, the zone band, the calendar)
+     *  is drawn from the map's laid box now, x */
+    fun mapPaintDx(): Float = (if (pauseT > 0f && !mapPaintRides()) pauseMap[0] else 0f) + mapSlot.translationX - mapScaleTx
+
+    /** the map's own paint's boxes (the zone band, the Calendar and mail buttons), set in place each draw */
+    private val mapBand = RectF()
+    private val mapCal = RectF()
+    private val mapMail = RectF()
+
+    private fun dispatchDrawHome(c: Canvas) {
         super.dispatchDraw(c)
         if (shown == null || typeWanted) return                          // f-trackpad-keyboard: the tool is a clean page
+        drawHold(c)
         // the zone band and the clock FADE with a move (the harmony pass; they used to vanish at a move's start and pop back at
         // its end), drawn where their part is now (and, while the pause menu slides, where the map / the band have gone)
-        val zoneA = mix(overlayFrom.zone, overlayTo.zone) * pauseMap[2]
+        // fix/menus-fit: during the LB picture's and the pause's slides the map's own paint (its well edge, the zone band, the calendar
+        // and mail buttons, the mail card) rides the MAP VIEW's real move (mapSlide below already holds it) at the view's alpha: the
+        // pause curve's extra rightward move sent it twice as far, or the wrong way after a swap (an empty framed well with the zone's
+        // name stood behind the LB picture). Classic too (the user's pick 2026-11-21: "Fix in Classic too")
+        val paintRides = mapPaintRides()
+        val zoneA = mix(overlayFrom.zone, overlayTo.zone) * (if (paintRides) mapSlot.alpha else pauseMap[2])
+        // (In fights = Top screen: the clock rides the band's box up off the page and back - TopSlide; no "up" plate any more)
         val clockA = mix(overlayFrom.clock, overlayTo.clock) * pauseTop[2]
         val pauseSave = if (pauseT > 0f) c.save() else -1
-        if (pauseSave >= 0) c.translate(pauseMap[0], pauseMap[1])
+        if (pauseSave >= 0 && !paintRides) c.translate(pauseMap[0], pauseMap[1])
         // THE ZONE BAND across the small map's top, its whole width, the name centred (user, 09-29 17:30: "The current map
         // name should show over the top of the minimap like it does normally"; 09-30: centred across the full space): the
         // classic minimap's own zone bar (UI Art's UiKit.zoneBand)
@@ -2252,9 +4048,18 @@ class HomeView(
         // MODULE_R, then the well's edge), at the page's alpha (a full map has no well: the corners fade out with the page)
         // f-class-radial rework (the user on 1.0.8-test4: "the border and map name are not moving still on the map module"): the well's
         // edge and the zone band are painted HERE, from the map's laid-out place, so they follow the map's slide (its translationX) too
-        val mapSlide = mapSlot.translationX
-        val slideSave = if (mapSlide != 0f) c.save() else -1
-        if (slideSave >= 0) c.translate(mapSlide, 0f)
+        // P2: the map's lift (a finger dragging it) moves its paint too; its glide's scaling does not (now[MAP] is the box drawn)
+        val mapSlide = mapSlot.translationX - mapScaleTx
+        val mapSlideY = if (edit != null || chromeModel != null) mapSlot.translationY - mapScaleTy else 0f
+        // fix round 1: a widget other than the map lifted / dragged / settling lies OVER the map's own paint (its well edge, the zone
+        // band, the calendar and mail buttons, the mail card): that paint is clipped out of the lifted box (translationZ orders views only)
+        val liftClip = liftedBoxes()
+        val clipSave = if (liftClip.isNotEmpty()) c.save() else -1
+        for (b in liftClip) c.clipOutRect(b)
+        // the iPhone-style edit mode: the map's paint shrinks, turns and lifts with the map (its pose, the finger's carry included)
+        val mapPosed = editPaintPosed() && partMatrix(Part.MAP, paintM)
+        val slideSave = if (mapPosed || mapSlide != 0f || mapSlideY != 0f) c.save() else -1
+        if (mapPosed) c.concat(paintM) else if (slideSave >= 0) c.translate(mapSlide, mapSlideY)
         if (zoneA > 0.01f) now[Part.MAP]?.let { m -> mapWell(c, m, zoneA) }
         if (zoneA > 0.01f && zoneText.isNotEmpty()) now[Part.MAP]?.let { m ->
             // the name is half the bar's height (UiKit.zoneBand): a 64 px bar = 32 px text (user 09-30: "the map name is SUPER
@@ -2263,23 +4068,25 @@ class HomeView(
             // before it, and both fade and slide together
             // THE MAIL ENVELOPE (the user, 2026-11-16: "we need to add an icon somewhere to the home menu for when the player has mail";
             // HomeMailButton): beside the Calendar button while the game says there is mail; the band one button shorter meanwhile
+            // (no boxes made: the edit wiggle's ticker draws this every frame the whole time edit mode is open)
             val mailOn = mail?.on == true
-            val band = RectF(m.left + 8f, m.top + ZONE_BAND_TOP, HomeMailButton.bandRight(m.right, mailOn), m.top + ZONE_BAND_BOTTOM)
-            val cb = HomeCalendarButton.box(m.right, m.top)
-            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb[2] + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
+            val band = mapBand.apply { set(m.left + 8f, m.top + ZONE_BAND_TOP, HomeMailButton.bandRight(m.right, mailOn), m.top + ZONE_BAND_BOTTOM) }
+            val cb = mapCal.apply { set(m.right - HomeCalendarButton.EDGE - HomeCalendarButton.SIZE, m.top + HomeCalendarButton.TOP, m.right - HomeCalendarButton.EDGE, m.top + HomeCalendarButton.TOP + HomeCalendarButton.SIZE) }
+            val save = if (zoneA < 0.99f) c.saveLayerAlpha(band.left - 4f, band.top - 4f, cb.right + 4f, band.bottom + 4f, (zoneA * 255).toInt()) else -1
             UiKit.zoneBand(c, band, zoneText, Theme.zoneColour(zonePvp))
-            UiKit.calendarButton(c, RectF(cb[0], cb[1], cb[2], cb[3]), calPending, down = auraPane.calDown)
-            val mb = HomeMailButton.box(m.right, m.top)
-            if (mailOn) UiKit.mailButton(c, RectF(mb[0], mb[1], mb[2], mb[3]), lit = mailOpen, down = auraPane.mailDown)
+            UiKit.calendarButton(c, cb, calPending, down = auraPane.calDown)
+            val mb = mapMail.apply { set(cb); offset(-HomeMailButton.SHIFT, 0f) }
+            if (mailOn) UiKit.mailButton(c, mb, lit = mailOpen, down = auraPane.mailDown)
             if (save >= 0) c.restoreToCount(save)
             // its card hangs under it, over the map (and the quest card / buffs while it is open), at the band's own fade
             if (mailOn && mailOpen && !auraPane.fullMap()) {
                 val cs = if (zoneA < 0.99f) c.saveLayerAlpha(m.left, m.top, m.right, m.bottom + 40f, (zoneA * 255).toInt()) else -1
-                mail?.let { ml -> UiKit.mailCard(c, mb[2], mb[3] + HomeMailButton.CARD_GAP, m.left + 8f, ml.heading, ml.from) }
+                mail?.let { ml -> UiKit.mailCard(c, mb.right, mb.bottom + HomeMailButton.CARD_GAP, m.left + 8f, ml.heading, ml.from) }
                 if (cs >= 0) c.restoreToCount(cs)
             }
         }
         if (slideSave >= 0) c.restoreToCount(slideSave)
+        if (clipSave >= 0) c.restoreToCount(clipSave)
         // THE CLOCK AND THE BATTERY at the top centre, between the two diamond groups (17:30: "the time should be on display
         // at the top center between the controls, right under it, a battery Icon with my current system charge").
         // not before the controller layout has come: the Cast view's "Waiting" stands there (UI Art, seen on its emulator)
@@ -2301,13 +4108,20 @@ class HomeView(
         val rowOn = bandA > 0.01f && barsSeen && castView.parent === barsSlot
         if (chipOn || rowOn) now[Part.BARS]?.let { b ->
             // the items even while the triggers fade the row out: the block's grown size counts them (no jump as the row fades)
-            val items = if (barsSeen && castView.parent === barsSlot) bandItems() else emptyList()
+            // P2 (the user's ruling 2026-11-22): in edit mode every extra turned on is drawn (with or without its data) and wiggles as an
+            // app, the gold line too, with the "+" spot's cell after them; outside edit mode exactly as always
+            val ed = editClock()
+            val keys = if (ed) editRowKeys() else emptyList()
+            val items = if (barsSeen && castView.parent === barsSlot) (if (ed) editBandItems(keys) else bandItems()) else emptyList()
+            if (ed) editRowDrawn = keys
             val spot = if (castView.parent === barsSlot) castView.clockSpot()?.also { spot ->
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
             } else null
+            // the band itself never moves in edit mode (1518 build 3; the user's ruling 2026-11-22): only the extras wiggle
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
-            UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, chipGold(), spot, items, g,
-                rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0)
+            UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, if (ed) editChipGold() else chipGold(),
+                spot, items, g, rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0,
+                pose = if (ed) extraPoser else null)
             if (save >= 0) c.restoreToCount(save)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
@@ -2323,6 +4137,7 @@ class HomeView(
             else castView.drawTalkLine(c, ox, oy, width.toFloat())
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
+        drawToast(c)                                                      // the D-pad toast over the clock block's chips (final_05)
     }
 
     // ================================================================ the bars: a tap opens them full screen
@@ -2333,6 +4148,8 @@ class HomeView(
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         // f-trackpad-keyboard: the tool's touches are the tool's (a drag starting where the bars lie was taken as a tap on the bars)
         if (typeWanted) { barsDown = false; return false }
+        // P2: edit mode's chrome (the top child) takes every touch: no touch-cast, no chat / map / bar taps while editing
+        if (editLive()) { barsDown = false; return false }
         // hold to talk's pop-up: a finger on it is its own (a tab picks that chat); nothing under it acts
         if (e.actionMasked == MotionEvent.ACTION_DOWN) talkSwallow = castView.talkPanelTouch(e.x, e.y)
         if (talkSwallow) { barsDown = false; return true }
@@ -2569,6 +4386,8 @@ class HomeView(
 
         /** chat40: the refresh notice's "!" button (empty = none on show) */
         private val bang = RectF()
+        /** P2: ([x], [y]) in the pane's px is on the "!" button (a hold there is the button's, never edit mode's) */
+        fun onBang(x: Float, y: Float): Boolean = !bang.isEmpty && notice != null && RectF(bang).apply { inset(-10f, -10f) }.contains(x, y)
         private var onBang = false
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -3261,6 +5080,10 @@ class HomeView(
             return false
         }
 
+        /** P2: ([x], [y]) in the pane's px is one of its own touch areas (a hold there is never edit mode's) */
+        fun owns(x: Float, y: Float): Boolean = open != null || zoomIn.contains(x, y) || zoomOut.contains(x, y) ||
+            buffBox.contains(x, y) || debuffBox.contains(x, y)
+
         override fun onTouchEvent(e: MotionEvent): Boolean {
             // a touch on the open quest panel is the panel's (the map below takes it), never a buff's
             if (e.actionMasked == MotionEvent.ACTION_DOWN && fullMap() && lent(mapView) && mapView.panelCover()?.contains(e.x, e.y) == true) return false
@@ -3387,7 +5210,10 @@ class HomeView(
         /** the focused quest's card over the map (b121): above the map's 0, under the wheel's lifted left column */
         private const val CARD_Z = 2f
         /** the focused quest over the minimap (Settings > Home, HomeSettings.questOverMap; was the constant QUEST_ABOVE_MAP) */
-        fun cardOverMap(): Boolean = renderLook?.overMap ?: HomeSettings.questOverMap
+        fun cardOverMap(): Boolean = renderLook?.let { l -> l.layout?.let { it.card == HomeLayout.CardDock.ON_MAP } ?: l.overMap }
+            ?: ((liveDraft ?: HomeSettings.layout).card == HomeLayout.CardDock.ON_MAP)
+        /** P2: the live Home's edit draft while edit mode lays the page with it (null = the active record) */
+        @Volatile internal var liveDraft: HomeLayout? = null
 
         /**
          * f-settings-previews (the user: "make our visual aids in the settings less shitty", "Yes, this direction"): the Settings panel's
@@ -3398,16 +5224,40 @@ class HomeView(
         data class Look(val rest: HomeRest, val grow: Boolean, val overMap: Boolean, val swing: Boolean,
                         /** the one-time cast bar question's picture (the user, 2026-11-13: "make sure that this pop up uses realistic
                          *  visuals"): the bar laid on this side, Hide in combat, whatever the player's own setting; null = theirs */
-                        val castSide: CastStripModel.Side? = null)
+                        val castSide: CastStripModel.Side? = null,
+                        /** movable Home: a whole layout record to draw (the Settings tiles' pictures); null = the player's */
+                        val layout: HomeLayout? = null)
         internal var renderLook: Look? = null
         /** the Track Pad & Keyboard's own controller guest (Quests.lua's "tool": ZL / ZR kept from the game while it holds) */
         const val TOOL_GUEST = "tool"
         /** logcat tag for Home's taps and refusals (`adb logcat -s WCHOME`) */
         const val TAG = "WCHOME"
+        /** #584: how long the map controls wait for the game's stick catch before asking again, and how many asks before the keep-alive */
+        const val STICKS_ANSWER_MS = 1_200L
+        /** the map module without the controller (Home's B reader): in a fight, and out of one (es / fr in i18n) */
+        const val FIGHT_MAP_NOTE = "In a fight the game keeps the controller: press B to close the map"
+        const val KEPT_MAP_NOTE = "The game kept the controller: press B to close the map"
+        const val STICKS_ASKS = 3
         /** f-trackpad-keyboard: the tool's lift, above the quest card (2) and the class wheel's cover */
         private const val TYPE_Z = 50f
         /** the party member's player menu: over every module (the card at CARD_Z, a sliding column at CLASS_COVER_Z), under the tool */
         private const val PARTY_MENU_Z = 10f
+        /** P2: edit mode's chrome, over the party menus and the tool */
+        private const val EDIT_Z = 60f
+        private val ZERO4 = FloatArray(4)
+        /** the edit ticker's frame off a window */
+        private const val FRAME_MS = 16L
+        /** the card dropped on the map: its own pose hands back to the map's over this long (its plop shows on the way) */
+        private const val CARD_RIDE_BACK = 320L
+        /** a room's picture on the bar: half its diagonal (its wiggle's turn) */
+        private const val ROOM_HALF_DIAG = 40f
+        /** P2: an extra's wiggle size (a small picture: the room bar's pace and turn) and the edit row's "+" cell's key */
+        private const val EXTRA_HALF_DIAG = 24f
+        private const val EDIT_PLUS = "plus"
+        /** P2: a lifted widget's depth (above the others, under the chrome) */
+        private const val LIFT_Z = 30f
+        /** P2: the hold's gold ring round the finger (final_12) */
+        private const val RING_R = 44f
         /** B's give-back is retried once after this when the faces are still armed (the bar cursor's hold retry, the same reason) */
         const val GIVEBACK_RETRY_MS = 450L
         const val NOTE_MS = 2500L
@@ -3470,6 +5320,30 @@ class HomeView(
         /** the red reminder's strength behind the controller (UI Art: 0.55; user 17:37: "a bit more subtle") */
         const val RED_STRENGTH = 0.55f
         const val COMBAT_BARS = 380f
+        /** phase 3's "up" cue: the plate's side, its red cloth and edge (final_10) */
+        const val CUE_PX = 64f
+        val CUE_FILL = Color.rgb(122, 26, 18)
+        val CUE_EDGE = Color.rgb(214, 58, 40)
+
+        /** the "up" plate ([sz] square round [cx], [cy], alpha [a]): an ink rim, the red cloth, the game's gold arrow (Home's cue and
+         *  Settings' In fights picture of Top screen) */
+        fun upPlate(c: Canvas, cx: Float, cy: Float, sz: Float, a: Float, p: Paint, path: android.graphics.Path) {
+            val box = RectF(cx - sz / 2f, cy - sz / 2f, cx + sz / 2f, cy + sz / 2f)
+            val al = (255 * a.coerceIn(0f, 1f)).toInt()
+            p.style = Paint.Style.FILL; p.color = Theme.ink; p.alpha = al
+            c.drawRoundRect(RectF(box.left - 3f, box.top - 3f, box.right + 3f, box.bottom + 3f), 10f, 10f, p)
+            p.color = CUE_FILL; p.alpha = al
+            c.drawRoundRect(box, 8f, 8f, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 3f; p.color = CUE_EDGE; p.alpha = al
+            c.drawRoundRect(box, 8f, 8f, p)
+            path.reset()
+            path.moveTo(cx, box.top + sz * 0.22f); path.lineTo(box.right - sz * 0.2f, box.bottom - sz * 0.26f)
+            path.lineTo(box.left + sz * 0.2f, box.bottom - sz * 0.26f); path.close()
+            p.style = Paint.Style.FILL; p.color = Theme.gameGold; p.alpha = al
+            c.drawPath(path, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f; p.color = Theme.ink; p.alpha = al
+            c.drawPath(path, p)
+        }
         private const val HIDE_RULING = "ruling.hide.2026-09-28"
         const val SLOP = 16f
 
@@ -3494,15 +5368,16 @@ class HomeView(
     }
 }
 
-/** f-class-radial rework: Home's wheel slot, pure (the tests check it fits): a square centred between the columns under the bars, at
- *  most [maxSide] (half the width, and never wider than the chat column it hides behind); [push] = how far each column slides out */
+/** f-class-radial rework: Home's wheel slot, pure (the tests check it fits: HomeSlideTest, HomeMenusFitTest): a square on the line
+ *  between the columns under the bars, at most [maxSide]; [Middle.push] / [Middle.pushRight] = how far each column slides out */
 internal object ClassSlot {
     data class Slot(val left: Float, val top: Float, val side: Float)
     data class Area(val left: Float, val top: Float, val right: Float, val bottom: Float)
     /** the column's area: the union of its parts' boxes [parts] (l, t, r, b), under the bars; none shown = that half of the page */
     fun column(parts: List<Area>, barsBottom: Float, h: Float, gap: Float, left: Boolean, w: Float): Area =
         if (parts.isEmpty()) (if (left) Area(gap, barsBottom + gap, w / 2f - gap / 2f, h - gap) else Area(w / 2f + gap / 2f, barsBottom + gap, w - gap, h - gap))
-        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, parts.maxOf { it.bottom })
+        // fix/menus-fit: never below the frame (the wheel ran off it into the room bar when a stray box counted)
+        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, minOf(h - gap, parts.maxOf { it.bottom }))
     /** the wheel: the largest square in the column's area, centred in it */
     fun inColumn(a: Area): Slot {
         val side = minOf(a.right - a.left, a.bottom - a.top).coerceAtLeast(1f)
@@ -3510,14 +5385,19 @@ internal object ClassSlot {
     }
     /**
      * f-radial-middle: the item / spell wheel's square between the columns, under the bars ([barsBottom]), at most [maxSide]; [push] =
-     * how far each column parts (half the wheel and a gap)
+     * how far the LEFT column parts, [pushRight] the right one (half the wheel and a gap each).
+     * fix/menus-fit (the user on 1516: menus "don't fit right with the map swapped and bigger"): centred on the LINE between the columns
+     * ([mid], the middle of the gap between the left column's right edge and the right column's left edge), not the page's middle: at a
+     * 1/3 or 2/3 share the wider column covered up to 190 px of a wheel centred on w / 2. Kept inside the page; a column parts as far
+     * as it needs to clear the square. Classic's line is the page's middle: unchanged.
      */
-    data class Middle(val left: Float, val top: Float, val side: Float, val push: Float)
-    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float, bottom: Float = h - gap): Middle {
+    data class Middle(val left: Float, val top: Float, val side: Float, val push: Float, val pushRight: Float = push)
+    fun middle(w: Float, h: Float, barsBottom: Float, gap: Float, maxSide: Float, bottom: Float = h - gap, mid: Float = w / 2f): Middle {
         val avail = bottom - (barsBottom + gap)
-        val side = minOf(avail, maxSide).coerceAtLeast(1f)
+        val side = minOf(avail, maxSide, w - 2f * gap).coerceAtLeast(1f)
         val top = barsBottom + gap + (avail - side) / 2f
-        return Middle((w - side) / 2f, top, side, side / 2f + gap)
+        val left = (mid - side / 2f).coerceIn(gap, maxOf(gap, w - gap - side))
+        return Middle(left, top, side, maxOf(0f, mid - left + gap), maxOf(0f, left + side - mid + gap))
     }
     /** how far a part of the column slides to be wholly off its own edge ([w] the page's width) */
     fun away(left: Boolean, partLeft: Float, partRight: Float, w: Float, gap: Float): Float =
@@ -3536,15 +5416,23 @@ internal object ClassSlot {
  */
 internal object HomeSlide {
     enum class Half { LEFT, RIGHT, NONE }
-    fun half(strip: Boolean, side: CastStripModel.Side, hidden: Boolean, centerX: Float, w: Float): Half = when {
+    /** fix/menus-fit: [strip] = the part is a tap-to-cast bar (either view: the Split bar's second half too); [split] = the bar is laid
+     *  in two halves, each under its column (by its centre). A bar slid below the page for a fight is NO column's, split or not: the
+     *  class wheel counted Fighter's hidden halves into its column and ran off the frame into the room bar */
+    fun half(strip: Boolean, side: CastStripModel.Side, hidden: Boolean, centerX: Float, w: Float, split: Boolean = false): Half = when {
         !strip -> if (centerX < w / 2f) Half.LEFT else Half.RIGHT
         hidden -> Half.NONE
+        split -> if (centerX < w / 2f) Half.LEFT else Half.RIGHT
         side == CastStripModel.Side.LEFT -> Half.LEFT
         side == CastStripModel.Side.RIGHT -> Half.RIGHT
         else -> Half.NONE
     }
-    /** a side slide's offset for [h]: the left half goes left [px], the right half right, a part of neither stays */
-    fun dx(h: Half, px: Float): Float = when (h) { Half.LEFT -> -px; Half.RIGHT -> px; Half.NONE -> 0f }
+    /** a side slide's offset for [h]: the left half goes left [px], the right half right ([rightPx], [px] unless given), a part of
+     *  neither stays */
+    fun dx(h: Half, px: Float, rightPx: Float = px): Float = when (h) { Half.LEFT -> -px; Half.RIGHT -> rightPx; Half.NONE -> 0f }
+    /** fix/menus-fit: a part that spans the whole page (a full-screen module) - the only one that keeps its NAME's side in the slides;
+     *  a 1/3 or 2/3 column straddles the middle but belongs to the half its centre is in */
+    fun fullWidth(left: Float, right: Float, w: Float, gap: Float): Boolean = left <= gap + 1f && right >= w - gap - 1f
     /** the middle wheel's lowest edge: above Both's laid bar (it stays), else the page's foot */
     fun middleBottom(side: CastStripModel.Side, hidden: Boolean, stripTop: Float?, h: Float, gap: Float): Float =
         if (side == CastStripModel.Side.BOTH && !hidden && stripTop != null) minOf(h - gap, stripTop - gap) else h - gap

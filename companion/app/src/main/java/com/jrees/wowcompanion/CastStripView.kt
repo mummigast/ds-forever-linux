@@ -57,12 +57,25 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     /** the place Home laid the bar in (its slots in view and spread) */
     var side: CastStripModel.Side = CastStripModel.Side.LEFT
-        set(v) { CastStripModel.Live.laid(v); if (field != v) { field = v; flingAt = -1L; invalidate() } }
+        set(v) { if (splitHalf == 0) CastStripModel.Live.laid(v); if (field != v) { field = v; flingAt = -1L; invalidate() } }
+
+    /**
+     * MOVABLE HOME P2, SPLIT (SPEC section 8: "two 4-slot bars, one under each column, with all 8 slots in view and no scrolling"): 0 = the
+     * one bar; 1 = the first half (slots 1-4, laid as LEFT at its start), 2 = the second (slots 5-8, laid as RIGHT at its end). The halves
+     * never scroll, show no edge arrows and never touch the one bar's kept scroll ([CastStripModel.Live]); a tap is the slot's same cell
+     */
+    var splitHalf = 0
+        set(v) { if (field != v) { field = v; flingAt = -1L; invalidate() } }
 
     /** cb5: the strip's scroll now (px, 0 = slot 1 leftmost), kept for the app's run as slots' shares in [CastStripModel.Live.pos] */
     var scroll: Float
-        get() = CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.posFor(side))
+        get() = when (splitHalf) {
+            1 -> 0f
+            2 -> CastStripModel.fromPos(side, width.toFloat(), CastStripModel.rest(CastStripModel.Side.RIGHT))
+            else -> CastStripModel.fromPos(side, width.toFloat(), CastStripModel.Live.posFor(side))
+        }
         set(v) {
+            if (splitHalf != 0) return                                                  // P2: a split half never scrolls
             if (!CastStripModel.scrolls(side) || width <= 0) return                 // cb8: BOTH never scrolls (nor a bar not laid yet)
             val p = CastStripModel.toPos(side, width.toFloat(), v)
             if (CastStripModel.Live.side != side || p != CastStripModel.Live.pos) { CastStripModel.Live.keep(side, p); invalidate() }
@@ -74,8 +87,12 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     private val fightGate = CastStripModel.FightGate()
 
     /** Home's fight now ([fighting] = HomeView.fightShown()) with the choice [mode]; true = hidden changed (Home lays the page again) */
-    fun fight(mode: CastStripModel.Combat, fighting: Boolean): Boolean {
-        if (!fightGate.note(mode, fighting)) return false
+    fun fight(mode: CastStripModel.Combat, fighting: Boolean, partyKeep: Boolean = false): Boolean {
+        val fn = fighting && CastStripModel.showOf(mode)                  // cb14: Show in combat on and Home shows a fight
+        if (fn != fightNow) { fightNow = fn; invalidate() }
+        if (partyKeep != partyNow) { partyNow = partyKeep; invalidate() }
+        // cb15: Party mode on with Bar in Party mode on: the bar stays in fights (party heals reachable) whatever Show in combat says
+        if (!fightGate.note(if (partyKeep) CastStripModel.Combat.STAY else mode, fighting)) return false
         if (fightGate.hidden) dropTouch()
         invalidate()
         return true
@@ -90,6 +107,14 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         if (downAt >= 0 || moved) parent?.requestDisallowInterceptTouchEvent(false)
         downAt = -1; moved = false; caught = false; pressedUntil = 0L; flingAt = -1L
     }
+
+    /** cb14: Home shows a fight with Show in combat on: a set fight slot shows and casts in its slot's place
+     *  ([CastStripModel.shownSlot] / [CastStripModel.tapCell] with fight = true) */
+    var fightNow = false
+        private set
+    /** cb15: Party mode is on with Bar in Party mode on: a set party slot shows and casts in its slot's place (on Party mode's pick) */
+    var partyNow = false
+        private set
 
     /** hidden by the fight (Hide in combat): no touch reaches the slots */
     val fightHidden: Boolean get() = fightGate.hidden
@@ -137,7 +162,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         c.clipRect(wl, 0f, wr, h)                                                       // the strip scrolls inside the well
         if (drawSlots(c, o, now)) sweeping = true
         c.restore()
-        val (al, ar) = CastStripModel.arrows(side, w, o)
+        val (al, ar) = if (splitHalf != 0) 0f to 0f else CastStripModel.arrows(side, w, o)
         if (al > 0f) edge(c, true, al, w, h)
         if (ar > 0f) edge(c, false, ar, w, h)
         if (sweeping || now < pressedUntil || flinging) postInvalidateDelayed(FRAME_MS)
@@ -149,8 +174,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
         var sweeping = false
         for (i in CastStripModel.inView(side, width.toFloat(), height.toFloat(), o)) {
             val r = slotRect(i)
-            val s = b?.slots?.getOrNull(i)
-            val live = CastStripModel.tapCell(b, i) != null
+            val s = CastStripModel.shownSlot(b, i, fightNow, partyNow)     // cb14: a fight's override in its place; cb15: Party mode's first
+            val live = CastStripModel.tapCell(b, i, fightNow, partyNow) != null
             val itemId = s?.takeIf { it.kind == CastStripModel.Kind.ITEM }?.id
             val spent = itemId != null && (s?.count == 0 || ItemCd.dim(itemId))       // cb9: none left, or held till the fight ends
             val alpha = when { s?.filled != true -> 110; live && !spent -> 255; else -> DIM }
@@ -160,7 +185,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 c.drawRoundRect(r, 4f, 4f, pWell)
                 // the spell's icon from icons.pak ([Icons], as the Spellbook draws it); the kit's fid_ art only for what the pack lacks
                 val icon = if (s?.kind == CastStripModel.Kind.COMMAND && PadMapModel.kitArt(s.key) != null) UiKit.tex(PadMapModel.kitArt(s.key)!!)
-                    else s?.icon?.let { Icons.get(it) ?: UiKit.icon(it) }
+                    else (s?.icon ?: MACRO_QMARK.takeIf { s?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }   // cb13: a macro without a picture: the game's question mark
                 if (icon != null) {
                     val inset = r.width() * 0.07f
                     pIcon.alpha = alpha
@@ -188,6 +213,11 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                     UiKit.ringEdge(c, ringPath, UiKit.RING_W, lit = down, alpha = alpha)
                 }
                 s?.countShown?.let { n -> UiKit.stackCount(c, r, n) }
+                // #471: a ranked spell's badge, top left (a count is bottom right)
+                SpellRanks.of(s?.spellId)?.let { rb ->
+                    val inset = r.width() * 0.07f
+                    UiKit.spellRank(c, RectF(r.left + inset, r.top + inset, r.right - inset, r.bottom - inset), rb, alpha = alpha)
+                }
             }
         }
         return sweeping
@@ -243,7 +273,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 downAt = CastStripModel.slotAt(side, ev.x, ev.y, w, height.toFloat(), scroll)
                 downX = ev.rawX; downY = ev.rawY; moved = false
                 sampleT.clear(); sampleX.clear(); sample(ev.eventTime, ev.rawX)
-                if (!caught && downAt >= 0 && CastStripModel.tapCell(bar, downAt) != null) {
+                if (!caught && downAt >= 0 && CastStripModel.tapCell(bar, downAt, fightNow, partyNow) != null) {
                     pressedSlot = downAt; pressedUntil = SystemClock.elapsedRealtime() + PRESS_MS; invalidate()
                 }
                 return true
@@ -254,22 +284,22 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
                 if (!moved && CastStripModel.leftTap(dx, dy)) {
                     moved = true; pressedUntil = 0L
                     dragX = ev.rawX; dragFrom = scroll                                  // the strip follows from here (no jump)
-                    if (CastStripModel.scrolls(side)) parent?.requestDisallowInterceptTouchEvent(true)
+                    if (CastStripModel.scrolls(side) && splitHalf == 0) parent?.requestDisallowInterceptTouchEvent(true)
                     invalidate()
                 }
-                if (moved && CastStripModel.scrolls(side)) scroll = CastStripModel.dragScroll(side, w, dragFrom, ev.rawX - dragX)
+                if (moved && CastStripModel.scrolls(side) && splitHalf == 0) scroll = CastStripModel.dragScroll(side, w, dragFrom, ev.rawX - dragX)
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 sample(ev.eventTime, ev.rawX)
                 if (moved) {
                     val v = CastStripModel.velocity(sampleT, sampleX)
-                    if (CastStripModel.scrolls(side) && CastStripModel.flings(v)) {
+                    if (CastStripModel.scrolls(side) && splitHalf == 0 && CastStripModel.flings(v)) {
                         flingFrom = scroll; flingV = v; flingAt = ev.eventTime; invalidate()
                     }
                 } else if (!caught) {
                     val i = CastStripModel.slotAt(side, ev.x, ev.y, w, height.toFloat(), scroll)
-                    if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i) != null) onTap(i)
+                    if (i >= 0 && i == downAt && CastStripModel.tapCell(bar, i, fightNow, partyNow) != null) onTap(i)
                 }
                 downAt = -1; moved = false; caught = false
                 return true
@@ -287,6 +317,8 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
 
     companion object {
         const val DIM = 90
+        /** cb13 (#553): the game's question-mark icon (fileID 134400), drawn for a macro slot the add-on sent no picture for */
+        const val MACRO_QMARK = 134400
         const val RING_SCALE = 0.75f
         const val PRESS_MS = 160L
         const val FRAME_MS = 16L
