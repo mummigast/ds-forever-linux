@@ -3,6 +3,18 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 433). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## Beta 4 (on the beta branch), add-on set 437
+
+On top of linux-v1.0.38.3.
+
+- **The auction house remote on the bottom screen:** the game's own buttons that are shown now (Buy / Sell / Auctions, Search,
+  Filter, Favorites, Back, Buy now, Buyout, Bid, OK, Cancel, Post, Cancel auction, scroll) and the visible result rows, a finger each.
+  Each is one keyboard shortcut that clicks the game's own button (no D-pad hunting, no guessing what the game aims at). Quantity,
+  Price, Min / Max level and the search line put the game's cursor in that box, and the keyboard comes up only then.
+- **No keys or clicks into the wrong window:** the PC helper tells the Thor which window is in front; while it is not WoW (e.g.
+  Battle.net, whose Play button once got our Enter and started a second WoW), the app holds its keys and clicks back and asks for
+  WoW to be brought to the front.
+
 ## 2026-11-23 (evening): linux-v1.0.38.3, add-on set 433 (bugfix)
 
 - **Buying in the auction house works again:** the confirm (OK) did nothing. The add-ons no longer listen in on the game's own buy
