@@ -145,7 +145,11 @@ class ControllerView(
         val after = if (toCb) CastStripModel.ctlTabCells() + (PadMapModel.ROW to PadMapModel.colPos(1)) else emptyList()
         val cells = if (col != null) pre + ("spells" to col) + after
                     else (if (page.needsLayout()) listOf(page.layoutCell()) else emptyList()) + (PadMapModel.ROW to PadMapModel.COL_OPENED)
-        val sent = onPadCells(cells)
+        // Linux Streaming Edition (2026-11-23, the user: "ALOT of clicks ... switching to the controller tab"): one cell without keys
+        // (the room's open cell on the spells row) made the whole batch go as clicks, 8 per open and again on a missed-row retry; the
+        // setting picks (padtab, keyed) now go as their own batch first (keys), only the open cell and what follows as clicks.
+        // TapBridge runs both batches on one thread (RootShell's), so the order holds.
+        val sent = if (col != null && pre.isNotEmpty()) onPadCells(pre) && onPadCells(cells.drop(pre.size)) else onPadCells(cells)
         if (sent && col != null) { cbSent = cbOn; showSent = show; pshowSent = pshow }
         if (sent && col != null) castBarWanted = false                    // once: this open (on the tab when it shows)
         if (sent && col != null) { lastCbsn = null; lastCbon = null; lastCbpn = null }       // p56: the counts start again
