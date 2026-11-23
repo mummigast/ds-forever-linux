@@ -774,7 +774,12 @@ object PadMapModel {
      *  22-23): PadTabCodesTest keeps them apart */
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
-        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON)
+        "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
+        "controller room open" to P3_CROOM..P3_CROOM)
+    /** Linux Streaming Edition (2026-11-23, Book's P3[24]): the Controller room's open by keys (padtab is a key row); the spells row's
+     *  "croom" cell is a secure row's and went as a click, which missed now and then ("Open the Controller room first") */
+    const val P3_CROOM = 24
+    fun croomCells(): List<Pair<String, Int>> = page3(P3_CROOM)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     /** the tab's index (1-4) by its name */

@@ -1961,6 +1961,9 @@ for k = 1, 10 do P3[9 + k] = function() if type(WC.charKeyPick) == "function" th
 for k = 0, 1 do P3[20 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.dpadMirror) == "function" then pcall(pm.dpadMirror, k == 1) end end end
 -- b75 (PadMap m179): the top-screen combat bar's flag off / on (b76: codes 22 / 23; were 11 / 12) (ActionBar nbar7's Wings); no room, no controller needed
 for k = 0, 1 do P3[22 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.combatTop) == "function" then pcall(pm.combatTop, k == 1) end end end
+-- Linux Streaming Edition (2026-11-23): code 24 = the Controller room's open by keys (padtab 39, 38, 37, 24; padtab is a key row),
+-- the same as the spells row's "croom" cell (handle("croom"): its guards), which is a secure row's cell and so went as a CLICK
+P3[24] = function() if type(WC._spellsBookKey) == "function" then pcall(WC._spellsBookKey, "croom") end end
 if type(pad) == "table" and type(pad.op) == "function" then
     pcall(pad.op, "padtab", "padtab", function(_, col)
         local fn = type(col) == "number" and PADTAB[col]

@@ -638,7 +638,11 @@ local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay", UP = "isell", DOWN = "~far" }
 -- (pad.keyRow: no cells, no place on the pad, a handler only) as far rows too: Bags' bcur0..bcur5 (selectors N..S) move the
 -- controller's cursor to a slot in ONE step (was bmvq 36 + bagsort + bmv: three steps, 12 keys). Keys only: no click can reach them.
 local KEY_FAR = { "ibuy", "iqty", "keytest", "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv", "bmvq", "bagsort", "bmv",
-                  "bcur0", "bcur1", "bcur2", "bcur3", "bcur4", "bcur5", "idlg", "aurapick", "talents", "talentn", "chq", "chr", "chs" }
+                  "bcur0", "bcur1", "bcur2", "bcur3", "bcur4", "bcur5", "idlg", "aurapick", "talents", "talentn", "chq", "chr", "chs",
+                  "extra" }
+-- pad35b (2026-11-23, the user: "clicking around" picking the hearthstone for the tap-to-cast bar; the log: padtab 6 + extra 35
+-- went as clicks, "a cell without keys"): the Controller room's Extra / chooser row is a far row too (selector 0). Its handler
+-- (PadTabCtl touchExtra) reads no modifier.
 -- pad33 (2026-11-21, the user: "the Auction House is very hard to use"; the log: every letter typed into its search box went as a
 -- CLICK on the chat rows - chq's row key PAGEDOWN is bound in the live game, chr / chs never had one): the chat rows are far rows
 -- (selectors X, Y, Z). The add-on builds the text itself, so the held CTRL-SHIFT means nothing to them. A row that has its own row key
