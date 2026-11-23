@@ -17,6 +17,9 @@ import java.nio.file.Files
  * real scheduler through the same moments.
  */
 class IndoorBackgroundBuildTest {
+    // Linux Edition: these are upstream's rule (streamOnlyBake off); PlayGateTest has the edition's own
+    @org.junit.Before fun upstreamRule() { PlayGate.streamOnlyBake = false }
+    @org.junit.After fun editionRule() { PlayGate.streamOnlyBake = true }
 
     // ------------------------------------------------------------------ the start / stop table over #573's evening
 

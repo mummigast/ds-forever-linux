@@ -1084,8 +1084,6 @@ object GameUi {
     private const val LOAD_REPORTS_KEY = "load.reports"
     private const val LOAD_SETTLE_MS = 1_000L   // after the loading screen went (LoadGate)
     private const val HUD_KEY = "hud" // PR #533: hudBack's one key
-    private const val LOAD_REPORTS_KEY = "load.reports"
-    private const val LOAD_SETTLE_MS = 1_000L  // Linux Streaming Edition: after the loading screen went
     // Linux Edition 2026-11-20 (the user: "as few automated presses as possible"): nothing asks for the handshake on a timer now, so the
     // restore waits for the player's first press (which asks) instead of going as a click after 15 s (a lost click cost ~20 taps)
     private const val KEY_WAIT_MS = 600_000L  // Linux Streaming Edition: the restore waits this long for the key handshake

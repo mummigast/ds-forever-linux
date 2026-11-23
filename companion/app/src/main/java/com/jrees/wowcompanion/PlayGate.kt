@@ -121,7 +121,7 @@ internal object PlayGate {
 
     fun indoorWait(streaming: Boolean, artRunning: Boolean, gameActive: Boolean, playedThisRun: Boolean, quiet: Boolean = true): String? = when {
         streamOnlyBake && streaming -> GAME_BUSY
-        streamOnlyBake -> if (gameActive) GAME_RUNNING else if (artRunning) ART_FIRST else null     // app open, not streaming: build
+        streamOnlyBake -> if (gameActive) GAME_RUNNING else if (artRunning) GAME_BUSY else null     // app open, not streaming: build
         streaming -> if (artRunning) ART_FIRST else null
         gameActive -> GAME_RUNNING
         !playedThisRun -> AFTER_PLAY
