@@ -2,9 +2,9 @@
 
 Newest first. This is the BETA line (branch `beta`, published as pre-releases): its "Beta:" sections are what it has on top of the stable line ([CHANGES.md on main](https://github.com/mummigast/ds-forever-linux/blob/main/CHANGES.md); see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 419). What differs from DS Forever in general: [FORK.md](FORK.md).
 
-## Beta: DS Forever 1.0.38 merged, add-on set 424 (beta.2 + upstream; release candidate for linux-v1.0.38.1)
+## Beta: DS Forever 1.0.38 merged, add-on set 426 (beta.2 + upstream; released as linux-v1.0.38.1)
 
-Upstream DS Forever 1.0.38 (code 1520) on top of beta.2. Built and passing the tests; being played.
+Upstream DS Forever 1.0.38 (code 1520) on top of beta.2. Tested on the Thor 2026-11-23.
 
 - **Everything new in DS Forever 1.0.38** ([its notes](https://github.com/Jreese702/DS-Forever/releases/tag/v1.0.38)): edit Home like a
   phone's home screen, *In fights: Top screen*, the rebuilt Controller room with your own macros and tap-to-cast slots for fights and
@@ -12,6 +12,10 @@ Upstream DS Forever 1.0.38 (code 1520) on top of beta.2. Built and passing the t
 - The edition's own behaviour stays: keyboard presses instead of clicks where the game allows, the top screen's restore waits for
   your first press, indoor maps build while the app is open and pause while you stream. The loading-screen wait this edition sent
   upstream (PR #567) comes back in upstream's improved form.
+- **The Controller room and the tap-to-cast bar by keyboard shortcuts** (1.0.38's new room clicked a lot over the stream):
+  opening the room is keys only (was 8 clicks, sent twice when one missed), picking an item, mount, command or macro for the
+  bar is keys, and **pressing a tap-to-cast slot is a key** that casts the slot's spell / item / macro itself (made for fights too; tested out of combat)
+  (its clicks missed now and then: "nothing happens").
 
 ## Beta: linux-v1.0.37.5-beta.2, add-on set 419 (pre-release)
 
