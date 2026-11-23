@@ -2909,7 +2909,7 @@ function N.ahInfo()
     local fb = N.ahFocusBox()
     local okFT, ftext = pcall(function() return fb and fb:GetText() end)
     local out = { kbd = N.ahk.open and "ahsearch" or nil, text = (okT and type(text) == "string") and text or "", owned = {}, bought = N.ahk.bought,
-                  focus = fb and (fb == box and "search" or "other") or nil,
+                  focus = fb and (fb == box and "search" or (N.ahk.lr and fb == N.ahk.lr.MinLevel and "min") or (N.ahk.lr and fb == N.ahk.lr.MaxLevel and "max") or "other") or nil,
                   ftext = fb and okFT and type(ftext) == "string" and ftext or nil, fid = fb and (N.ahk.fid or 0) or nil, fdbg = N.ahk.fdbg,
                   lv = N.ahLevelShown() or nil }
     local n = TN(function() return C_AuctionHouse.GetNumOwnedAuctions() end) or 0

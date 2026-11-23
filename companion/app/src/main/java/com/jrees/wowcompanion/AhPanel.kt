@@ -34,6 +34,8 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     /** which focus the add-on reported last (its fid; -1 = none): another box = start again from that box's text */
     private var liveFid = -1
     private var lastDbg = ""
+    /** the box in focus as the add-on says: "search", "min", "max", "other" or "" */
+    private var focusKind = ""
     private val stream = ChatStream({ cells, gap ->
         TapBridge.tapsSpaced(ctx, padOf(), cells, gap) { why -> view.post { view.note = why; view.invalidate() } }
     }, field = true).apply { onEvent = { view.post { view.invalidate() } } }
@@ -46,7 +48,14 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         // i184: "Min level" / "Max level": one key (iact ahlv min|max) puts the game's focus in that box, then the keyboard types live
         view.onLevel = { which ->
             val col = view.info?.optInt(if (which == "max") "lvmax" else "lvmin", -1) ?: -1
-            if (col >= 0) {
+            val inBox = if (live) focusKind else ""
+            // a text box has the game's focus: it takes the keys, so our key would land IN it (the user: Min then Max closed the
+            // window). Between the level boxes the game's own Tab moves the focus (their template links them); from another box
+            // nothing is sent - the player leaves it first (Done)
+            if (inBox == which) { /* already there */ }
+            else if (inBox == "min" || inBox == "max") InputSink.signInTab()
+            else if (inBox.isNotEmpty()) { view.note = "Press Done first, then pick the level box"; view.invalidate() }
+            else if (col >= 0) {
                 TapBridge.taps(ctx, padOf(), listOf("iact" to col)) { why -> view.post { view.note = why; view.invalidate() } }
                 reopen()
             } else { view.note = "The game gave this no key"; view.invalidate() }
@@ -61,6 +70,7 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
         // i183: ANY of the game's AH text boxes in focus ("search", or "other" = the filter's level range ...): each box its own text
         val fkind = if (InputSink.sink != null) ah.optString("focus", "") else ""
+        focusKind = fkind
         ah.optString("fdbg", "").let { d -> if (d.isNotEmpty() && d != lastDbg) { lastDbg = d; Log.i("WCHOME", "ah keyboard: game focus = $d") } }
         val fid = if (fkind.isNotEmpty()) ah.optInt("fid", 0) else -1
         if (fid != liveFid) {
