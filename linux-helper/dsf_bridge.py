@@ -938,10 +938,10 @@ async def focus_watch():
         if not sessions or not wow_running():
             last, last_n = None, 0
             continue
-        cls = await asyncio.to_thread(wow_linux.active_window_class)
-        if cls is None:
+        aw = await asyncio.to_thread(wow_linux.active_window)
+        if aw is None:
             continue                                   # unknown: say nothing (nothing is held back)
-        front = "wow" in cls
+        front, cls = aw
         if front != last or len(sessions) != last_n:
             last, last_n = front, len(sessions)
             log(f"PC focus: {'WoW' if front else (cls or 'a non-WoW window')} in front")

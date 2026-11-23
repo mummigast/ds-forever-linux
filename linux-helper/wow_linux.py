@@ -332,8 +332,9 @@ def _x_env():
                 return _xenv
     return {}
 
-def active_window_class():
-    """the WM_CLASS of the PC's active X window ("wow.exe", "battle.net.exe", ...), "" = a non-X window, None = unknown"""
+def active_window():
+    """(wow, what) for the PC's active X window: wow = it is WoW's own window (its _NET_WM_PID is Wow.exe's, or its title is
+    "World of Warcraft" - under Steam's Proton WoW and Battle.net share one WM_CLASS); what = its title. None = unknown."""
     env = _x_env()
     if not env:
         return None
@@ -344,9 +345,13 @@ def active_window_class():
         if r.returncode != 0 or not m:
             _xenv.clear(); return None
         if int(m.group(1), 16) == 0:
-            return ""
-        r = subprocess.run(["xprop", "-id", m.group(1), "WM_CLASS"], capture_output=True, text=True, timeout=2, env=e)
-        names = re.findall(r'"([^"]*)"', r.stdout)
-        return names[-1].lower() if names else ""
+            return (False, "")
+        r = subprocess.run(["xprop", "-id", m.group(1), "_NET_WM_PID", "_NET_WM_NAME"], capture_output=True, text=True, timeout=2, env=e)
+        pm = re.search(r"_NET_WM_PID\(CARDINAL\) = (\d+)", r.stdout)
+        nm = re.search(r'_NET_WM_NAME\(UTF8_STRING\) = "([^"]*)"', r.stdout)
+        title = nm.group(1) if nm else ""
+        wow_pid = pid_of(WOW_PROC, "_forever_")
+        wow = bool(pm and wow_pid and int(pm.group(1)) == wow_pid) or title == "World of Warcraft"
+        return (wow, title)
     except (OSError, subprocess.SubprocessError):
         return None
