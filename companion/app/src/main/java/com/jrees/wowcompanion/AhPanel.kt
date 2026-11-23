@@ -41,7 +41,17 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         override fun run() { stream.tick(); if (stream.sending) view.postDelayed(this, 500L) }
     }
 
-    init { view.onTypeTap = { reopen() } }
+    init {
+        view.onTypeTap = { reopen() }
+        // i184: "Min level" / "Max level": one key (iact ahlv min|max) puts the game's focus in that box, then the keyboard types live
+        view.onLevel = { which ->
+            val col = view.info?.optInt(if (which == "max") "lvmax" else "lvmin", -1) ?: -1
+            if (col >= 0) {
+                TapBridge.taps(ctx, padOf(), listOf("iact" to col)) { why -> view.post { view.note = why; view.invalidate() } }
+                reopen()
+            } else { view.note = "The game gave this no key"; view.invalidate() }
+        }
+    }
 
     /** every current interact document */
     fun update(msg: JSONObject) {
@@ -153,13 +163,23 @@ class AhInfoView(ctx: Context) : View(ctx) {
     var note: String? = null
     var kbDismissed = false
     var onTypeTap: () -> Unit = {}
+    var onLevel: (String) -> Unit = {}
     private var searchBottom = 0f
+    private val lvMin = android.graphics.RectF()
+    private val lvMax = android.graphics.RectF()
     private val bg = Paint().apply { color = Color.argb(235, 12, 10, 8) }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         // the search line only; everything else passes through (the panel has no functions)
         if (e.y > searchBottom) return false
-        if (e.action == MotionEvent.ACTION_UP) onTypeTap()
+        if (e.action == MotionEvent.ACTION_UP) {
+            val lv = info?.optBoolean("lv", false) == true
+            when {
+                lv && lvMin.contains(e.x, e.y) -> onLevel("min")
+                lv && lvMax.contains(e.x, e.y) -> onLevel("max")
+                else -> onTypeTap()
+            }
+        }
         return true
     }
 
@@ -180,6 +200,18 @@ class AhInfoView(ctx: Context) : View(ctx) {
         c.drawText("Search", pad, y + label.textSize, label)
         val shown = typed.ifEmpty { if (kbDismissed) "tap here to type" else "" }
         c.drawText(shown, pad + w * 0.14f, y + label.textSize, if (typed.isEmpty()) sub else body)
+        // i184: the game's Filter menu open: its level range's two boxes, a finger each
+        if (a.optBoolean("lv", false)) {
+            val bw = w * 0.17f; val bh = label.textSize * 1.6f; val top = y - label.textSize * 0.3f
+            lvMax.set(w - pad - bw, top, w - pad, top + bh)
+            lvMin.set(lvMax.left - pad - bw, top, lvMax.left - pad, top + bh)
+            val fill = Paint().apply { color = Color.argb(255, 60, 48, 28) }
+            val txt = UiKit.bodyPaint(w * 0.024f).apply { textAlign = Paint.Align.CENTER }
+            for ((r, t) in listOf(lvMin to "Min level", lvMax to "Max level")) {
+                c.drawRoundRect(r, bh * 0.25f, bh * 0.25f, fill)
+                c.drawText(t, r.centerX(), r.centerY() + txt.textSize * 0.35f, txt)
+            }
+        } else { lvMin.setEmpty(); lvMax.setEmpty() }
         y += label.textSize * 1.9f
         searchBottom = y
         note?.let { c.drawText(it, pad, y, UiKit.bodyPaint(w * 0.022f, Color.rgb(230, 90, 70))); y += w * 0.03f }
