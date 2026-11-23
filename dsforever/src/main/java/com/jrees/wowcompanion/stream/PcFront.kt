@@ -23,7 +23,9 @@ object PcFront {
 
     fun set(wow: Boolean, w: String) {
         if (wow != wowFront) Log.i("DSFTAP", "pc focus: ${if (wow) "WoW in front" else "another window in front ($w): app keys and clicks held back"}")
+        val back = wow && !wowFront
         wowFront = wow; what = w; told = false
+        if (back) runCatching { com.jrees.wowcompanion.TapBridge.frontBack() }    // the held-back handshake ask goes again
     }
 
     /** true = the app may send a key / click now; false = dropped (another window has the PC's focus) */
