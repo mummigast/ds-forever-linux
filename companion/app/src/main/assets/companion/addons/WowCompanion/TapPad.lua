@@ -639,7 +639,9 @@ local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay", UP = "isell", DOWN = "~far" }
 -- controller's cursor to a slot in ONE step (was bmvq 36 + bagsort + bmv: three steps, 12 keys). Keys only: no click can reach them.
 local KEY_FAR = { "ibuy", "iqty", "keytest", "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv", "bmvq", "bagsort", "bmv",
                   "bcur0", "bcur1", "bcur2", "bcur3", "bcur4", "bcur5", "idlg", "aurapick", "talents", "talentn", "chq", "chr", "chs",
-                  "extra", "castbar" }
+                  "extra", "castbar", "ahr" }
+-- pad35d (2026-11-23, the AH remote, Interact i186): the auction house's buttons and result lines (secure "click" cells, the Calendar
+-- row's guest) are a secure far row too (selector 2); none of their targets reads a modifier.
 -- pad35c (2026-11-23, the user: food on the tap-to-cast bar "inconsistent"; the game's padrx: the bar's clicks for slots 3 / 4
 -- never arrived): the tap-to-cast bar (ActionBar's secure row "castbar") is a secure far row as the bags are (selector 1): the
 -- press copies the cell's type / spell / item / macrotext onto the proxy (COL_SNIP) and casts it itself, in fights too.
@@ -890,7 +892,7 @@ local COLX_SNIP = [[
 -- CTRL-SHIFT, and a click delegated inside the key press sees them. The dialogs' cells (StaticPopup / trade / charter buttons, the
 -- per-window leaves -> Interact's secure leave -> the window's close) do; the backpack door does NOT (BagSlotOnClick: with a
 -- modifier held it runs IsModifiedClick("OPENALLBAGS") instead of ToggleBag), so bag0's doors stay clicks. Rows listed here only.
-local KEY_SFX = { idlg = true }
+local KEY_SFX = { idlg = true, ahr = true }     -- ahr: the AH remote (Interact i186): its targets read no modifier
 local function proxyFor(k, col)
     keys.proxy = keys.proxy or {}
     local p = keys.proxy[k]

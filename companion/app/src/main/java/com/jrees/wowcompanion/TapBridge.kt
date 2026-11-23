@@ -527,6 +527,9 @@ object TapBridge {
     /** Linux Edition: a controller press this recent lets the login's handshake ask go (keysPending) */
     private const val PRESS_ASK_MS = 3_000L
     @Volatile private var lastChangeAt = 0L      // SystemClock.uptimeMillis() of the last button change (any button)
+    /** Linux Streaming Edition (2026-11-23): WoW came back in front on the PC (PcFront) - asks held back while another window had the
+     *  focus are asked once more now, as if the player had just pressed (the restore waited for a press that had already come) */
+    fun frontBack() { lastChangeAt = SystemClock.uptimeMillis(); askedAt = 0L }
     @Volatile private var heldNow = false        // a non-D-pad button is held (face, Start / Select, ...)
     @Volatile private var watcher: PadInput? = null
     private var lastMask = 0

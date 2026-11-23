@@ -44,8 +44,19 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     }
 
     init {
-        view.onTypeTap = { reopen() }
+        // i187: a finger on the search line puts the game's cursor in its search box (one key); the keyboard follows the focus
+        view.onTypeTap = {
+            val col = view.info?.optInt("fsearch", -1) ?: -1
+            if (col >= 0) TapBridge.taps(ctx, padOf(), listOf("iact" to col)) { why -> view.post { view.note = why; view.invalidate() } }
+            view.kbDismissed = false
+        }
         // i184: "Min level" / "Max level": one key (iact ahlv min|max) puts the game's focus in that box, then the keyboard types live
+        // i186 THE AH REMOTE: a button or a result line = one key on the secure row "ahr" (the game's own button clicked by that key);
+        // a box (Quantity / Price) = one key on iact (its focus), then the keyboard types into it live
+        view.onRemote = { row, col ->
+            TapBridge.taps(ctx, padOf(), listOf(row to col)) { why -> view.post { view.note = why; view.invalidate() } }
+            if (row == "iact") reopen()
+        }
         view.onLevel = { which ->
             val col = view.info?.optInt(if (which == "max") "lvmax" else "lvmin", -1) ?: -1
             val inBox = if (live) focusKind else ""
@@ -83,11 +94,13 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
                 if (kbOpen) kb.open()
             }
             view.note = if (live) (if (fkind == "search") LIVE_NOTE else LIVE_NOTE_OTHER) else null
-            if (!live) { typed = ah.optString("text", ""); if (kbOpen) kb.open() }      // the keyboard shows the game's search text again
+            if (!live) { typed = ah.optString("text", ""); view.kbDismissed = false }       // the panel shows the game's search text again
             Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on ($fkind box in focus)" else "off"}")
         }
-        if (ah.optString("kbd") == "ahsearch") {
-            if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
+        // i187 (the user: "the keyboard is always up"): the keyboard is up only while one of the game's text boxes has the focus
+        // (live typing); it goes down when the focus goes (Done / the game's Enter)
+        if (live) {
+            if (!kbOpen && !view.kbDismissed) openKb(ah.optString("ftext", ah.optString("text", "")))
         } else if (kbOpen) closeKb()
         view.typed = if (kbOpen) typed else ah.optString("text", "")
         view.invalidate()
@@ -139,7 +152,7 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     private fun reopen() {
         val ah = view.info ?: return
         view.kbDismissed = false
-        if (!kbOpen && ah.optString("kbd") == "ahsearch") openKb(ah.optString("text", ""))
+        if (!kbOpen && live) openKb(ah.optString("ftext", ah.optString("text", "")))     // i187: only with a game box in focus
         view.invalidate()
     }
 
@@ -174,6 +187,10 @@ class AhInfoView(ctx: Context) : View(ctx) {
     var kbDismissed = false
     var onTypeTap: () -> Unit = {}
     var onLevel: (String) -> Unit = {}
+    var onRemote: (String, Int) -> Unit = { _, _ -> }
+    /** i186: what is drawn to be tapped: the rect, the pad row and its column */
+    private data class Hit(val r: android.graphics.RectF, val row: String, val col: Int)
+    private val hits = ArrayList<Hit>()
     private var searchBottom = 0f
     private val lvMin = android.graphics.RectF()
     private val lvMax = android.graphics.RectF()
@@ -181,7 +198,8 @@ class AhInfoView(ctx: Context) : View(ctx) {
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         // the search line only; everything else passes through (the panel has no functions)
-        if (e.y > searchBottom) return false
+        if (e.action == MotionEvent.ACTION_UP) hits.firstOrNull { it.r.contains(e.x, e.y) }?.let { onRemote(it.row, it.col); return true }
+        if (e.y > searchBottom) return hits.any { it.r.contains(e.x, e.y) }
         if (e.action == MotionEvent.ACTION_UP) {
             val lv = info?.optBoolean("lv", false) == true
             when {
@@ -208,7 +226,7 @@ class AhInfoView(ctx: Context) : View(ctx) {
         val body = UiKit.bodyPaint(w * 0.03f)
         val label = UiKit.bodyPaint(w * 0.026f, Theme.gold)
         c.drawText("Search", pad, y + label.textSize, label)
-        val shown = typed.ifEmpty { if (kbDismissed) "tap here to type" else "" }
+        val shown = typed.ifEmpty { "tap here to type" }
         c.drawText(shown, pad + w * 0.14f, y + label.textSize, if (typed.isEmpty()) sub else body)
         // i184: the game's Filter menu open: its level range's two boxes, a finger each
         if (a.optBoolean("lv", false)) {
@@ -225,6 +243,11 @@ class AhInfoView(ctx: Context) : View(ctx) {
         y += label.textSize * 1.9f
         searchBottom = y
         note?.let { c.drawText(it, pad, y, UiKit.bodyPaint(w * 0.022f, Color.rgb(230, 90, 70))); y += w * 0.03f }
+        hits.clear()
+        val r = a.optJSONObject("r")
+        if (r != null) y = remote(c, a, r, pad, y, w)
+        val lines = r?.optJSONArray("lines")
+        if (lines != null && lines.length() > 0) { list(c, lines, pad, y, w); return }
         val half = (w - pad * 3) / 2f
         val owned = a.optJSONArray("owned") ?: JSONArray()
         val bought = a.optJSONArray("bought") ?: JSONArray()
@@ -261,6 +284,56 @@ class AhInfoView(ctx: Context) : View(ctx) {
         }
     }
 
+    /** i186: the game's buttons that are shown now (r.on), in the window's order, a finger each; the boxes after them */
+    private fun remote(c: Canvas, a: JSONObject, r: JSONObject, pad: Float, y0: Float, w: Float): Float {
+        val on = r.optJSONObject("on") ?: JSONObject()
+        val items = ArrayList<Triple<String, String, Int>>()          // label, pad row, column
+        for ((k, label) in REMOTE) if (on.has(k)) items.add(Triple(label, "ahr", on.optInt(k)))
+        val kind = r.optString("kind", "")
+        if (kind == "sellc" || kind == "selli" || on.has("post")) {
+            a.optInt("fqty", -1).takeIf { it >= 0 }?.let { items.add(Triple("Quantity", "iact", it)) }
+            a.optInt("fgold", -1).takeIf { it >= 0 }?.let { items.add(Triple("Price (gold)", "iact", it)) }
+        }
+        if (on.has("buynow")) a.optInt("fbuyqty", -1).takeIf { it >= 0 }?.let { items.add(Triple("Quantity", "iact", it)) }
+        if (items.isEmpty()) return y0
+        val txt = UiKit.bodyPaint(w * 0.024f).apply { textAlign = Paint.Align.CENTER }
+        val fill = Paint().apply { color = Color.argb(255, 60, 48, 28) }
+        val bh = txt.textSize * 2.0f
+        var x = pad; var y = y0
+        for ((label, row, col) in items) {
+            val bw = txt.measureText(label) + w * 0.035f
+            if (x + bw > w - pad) { x = pad; y += bh + pad * 0.4f }
+            val rect = android.graphics.RectF(x, y, x + bw, y + bh)
+            c.drawRoundRect(rect, bh * 0.25f, bh * 0.25f, fill)
+            c.drawText(label, rect.centerX(), rect.centerY() + txt.textSize * 0.35f, txt)
+            hits.add(Hit(rect, row, col))
+            x += bw + pad * 0.5f
+        }
+        return y + bh + pad * 0.8f
+    }
+
+    /** i186: the game's visible result lines, a finger each (the game's own line is clicked: its selection) */
+    private fun list(c: Canvas, lines: JSONArray, pad: Float, y0: Float, w: Float) {
+        val row = UiKit.bodyPaint(w * 0.027f)
+        val num = UiKit.numberPaint(w * 0.026f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+        val band = Paint().apply { color = Color.argb(255, 30, 25, 18) }
+        val lh = row.textSize * 2.1f
+        var y = y0
+        for (i in 0 until lines.length()) {
+            val l = lines.optJSONObject(i) ?: continue
+            if (y + lh > height) break
+            val rect = android.graphics.RectF(pad, y, w - pad, y + lh - pad * 0.3f)
+            c.drawRoundRect(rect, lh * 0.15f, lh * 0.15f, band)
+            val q = l.optInt("q", 0)
+            val right = gsc(l.optLong("p", 0L)) + if (q > 1) "  ×$q" else ""
+            val base = rect.centerY() + row.textSize * 0.35f
+            c.drawText(fit(l.optString("t", "?"), row, rect.width() - num.measureText(right) - w * 0.05f), rect.left + pad * 0.6f, base, row)
+            c.drawText(right, rect.right - pad * 0.6f, base, num)
+            hits.add(Hit(rect, "ahr", l.optInt("c", -1)))
+            y += lh
+        }
+    }
+
     private fun fit(s: String, p: Paint, max: Float): String {
         if (p.measureText(s) <= max) return s
         var t = s
@@ -269,6 +342,10 @@ class AhInfoView(ctx: Context) : View(ctx) {
     }
 
     companion object {
+        /** i186: the remote's buttons (Interact AHR.FIXED's keys), in the window's order */
+        val REMOTE = listOf("buytab" to "Buy", "selltab" to "Sell", "auctab" to "Auctions", "search" to "Search", "filter" to "Filter",
+            "fav" to "Favorites", "back" to "Back", "buynow" to "Buy now", "buyout" to "Buyout", "bid" to "Bid", "ok" to "OK",
+            "cancel" to "Cancel", "post" to "Post", "cancelauc" to "Cancel auction", "up" to "▲", "down" to "▼")
         /** copper -> "1g 2s 3c" (the zero parts left out) */
         fun gsc(copper: Long): String {
             if (copper <= 0) return ""

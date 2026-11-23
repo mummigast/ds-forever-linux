@@ -310,3 +310,48 @@ def idle_close_due(running, thor_seen, alone_since, now, idle_s):
     """True when WoW should be closed: it runs, a Thor used it this run, and no Thor has been connected for idle_s seconds
     (0 = never). A WoW started on the PC alone (no Thor seen since it started) is never closed."""
     return bool(idle_s and running and thor_seen and alone_since is not None and now - alone_since >= idle_s)
+
+# ---------------------------------------------------------------- which window has the focus (Linux Streaming Edition, 2026-11-23)
+# The Thor's keys and clicks go to whatever window has the PC's focus: once Battle.net's window was in front and a key of the app (the
+# keyboard's Enter) pressed its Play - three WoWs. WoW and Battle.net both run on Xwayland, so its active window says which one is in
+# front (a native Wayland window in front reads as none of them). None = unknown (no Xwayland / no xprop): nothing is held back.
+_xenv = {}
+def _x_env():
+    if _xenv.get("DISPLAY"):
+        return _xenv
+    for d in glob.glob("/proc/[0-9]*/cmdline"):
+        try:
+            a = Path(d).read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if a and a[0].endswith(b"Xwayland") and b"-auth" in a:
+            disp = next((x.decode() for x in a[1:] if x.startswith(b":")), None)
+            auth = a[a.index(b"-auth") + 1].decode() if a.index(b"-auth") + 1 < len(a) else None
+            if disp and auth:
+                _xenv.update(DISPLAY=disp, XAUTHORITY=auth)
+                return _xenv
+    return {}
+
+def active_window():
+    """(wow, what) for the PC's active X window: wow = it is WoW's own window (its _NET_WM_PID is Wow.exe's, or its title is
+    "World of Warcraft" - under Steam's Proton WoW and Battle.net share one WM_CLASS); what = its title. None = unknown."""
+    env = _x_env()
+    if not env:
+        return None
+    e = dict(os.environ, **env)
+    try:
+        r = subprocess.run(["xprop", "-root", "_NET_ACTIVE_WINDOW"], capture_output=True, text=True, timeout=2, env=e)
+        m = re.search(r"(0x[0-9a-f]+)", r.stdout)
+        if r.returncode != 0 or not m:
+            _xenv.clear(); return None
+        if int(m.group(1), 16) == 0:
+            return (False, "")
+        r = subprocess.run(["xprop", "-id", m.group(1), "_NET_WM_PID", "_NET_WM_NAME"], capture_output=True, text=True, timeout=2, env=e)
+        pm = re.search(r"_NET_WM_PID\(CARDINAL\) = (\d+)", r.stdout)
+        nm = re.search(r'_NET_WM_NAME\(UTF8_STRING\) = "([^"]*)"', r.stdout)
+        title = nm.group(1) if nm else ""
+        wow_pid = pid_of(WOW_PROC, "_forever_")
+        wow = bool(pm and wow_pid and int(pm.group(1)) == wow_pid) or title == "World of Warcraft"
+        return (wow, title)
+    except (OSError, subprocess.SubprocessError):
+        return None
