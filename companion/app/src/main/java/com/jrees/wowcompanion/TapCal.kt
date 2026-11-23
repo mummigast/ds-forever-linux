@@ -57,7 +57,9 @@ object TapCal {
     private data class Pending(val key: String, val n0: Int, val at: Long, val aimY: List<Double>)
 
     const val WAIT_MS = 3_000L            // a strip tap's answer rides the next hub flush
-    const val MAX_TRIES = 3               // per layout: then the stream's taps go as before, and that is said once
+    // Linux Streaming Edition (2026-11-23, the user: "Cut the calibration retries"; the log: 3 tries x 2 clicks, none answered, while
+    // nearly everything goes by keys now): ONE try per layout, 2 clicks
+    const val MAX_TRIES = 1               // per layout: then the stream's taps go as before, and that is said once
     const val AIM_KEEP_MS = 5_000L        // a landing is matched to a tap sent at most this long before
     const val NOTE_EVERY_MS = 30_000L     // one landing note per meant row at most this often
     const val SPAN_MIN = 20.0             // the two strip taps' least distance apart (game px)
