@@ -1,11 +1,11 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 438). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 439). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
-## 2026-11-23 (late): linux-v1.0.38.4, add-on set 438 (beta 4, tested)
+## 2026-11-23 (late): linux-v1.0.38.4, add-on set 439 (beta 4, tested)
 
-On top of linux-v1.0.38.3. Tested on the Thor 2026-11-23: the remote's buttons, a buy and a sale through it, the keyboard.
+On top of linux-v1.0.38.3. Tested on the Thor 2026-11-23: the remote's buttons, selecting a result row, a buy and a sale through it, the keyboard.
 
 - **The auction house remote on the bottom screen:** the game's own buttons that are shown now (Buy / Sell / Auctions, Search,
   Filter, Favorites, Back, Buy now, Buyout, Bid, OK, Cancel, Post, Cancel auction, scroll) and the visible result rows, a finger each.
