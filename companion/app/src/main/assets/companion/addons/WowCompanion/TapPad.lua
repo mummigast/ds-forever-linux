@@ -639,7 +639,10 @@ local KEY_PAGE2 = { RIGHT = "ui", LEFT = "lay", UP = "isell", DOWN = "~far" }
 -- controller's cursor to a slot in ONE step (was bmvq 36 + bagsort + bmv: three steps, 12 keys). Keys only: no click can reach them.
 local KEY_FAR = { "ibuy", "iqty", "keytest", "bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv", "bmvq", "bagsort", "bmv",
                   "bcur0", "bcur1", "bcur2", "bcur3", "bcur4", "bcur5", "idlg", "aurapick", "talents", "talentn", "chq", "chr", "chs",
-                  "extra" }
+                  "extra", "castbar" }
+-- pad35c (2026-11-23, the user: food on the tap-to-cast bar "inconsistent"; the game's padrx: the bar's clicks for slots 3 / 4
+-- never arrived): the tap-to-cast bar (ActionBar's secure row "castbar") is a secure far row as the bags are (selector 1): the
+-- press copies the cell's type / spell / item / macrotext onto the proxy (COL_SNIP) and casts it itself, in fights too.
 -- pad35b (2026-11-23, the user: "clicking around" picking the hearthstone for the tap-to-cast bar; the log: padtab 6 + extra 35
 -- went as clicks, "a cell without keys"): the Controller room's Extra / chooser row is a far row too (selector 0). Its handler
 -- (PadTabCtl touchExtra) reads no modifier.
