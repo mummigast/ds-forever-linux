@@ -139,8 +139,8 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
     }
     /** lx2: "Box under the dot" (default on; Hub hub72's own tooltip for the unit under the reticle), in the Tooltips tile's band */
     private fun dotBoxRow(): GameUi.Row? = DotBoxSwitch.state?.let { s ->
-        GameUi.Row(DOTBOX_ID, "Box under the dot", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
-            if (s.show) "The game's box for the unit under the dot, with its quest lines" else "Off: no box under the dot")
+        GameUi.Row(DOTBOX_ID, "Ranged tooltips", null, if (s.show) UiMode.ON else UiMode.OFF, true, !s.show,
+            if (s.show) "The game's tooltip for the unit you aim at, as far as nameplates reach, with its quest lines" else "Off: the game's tooltips only up close")
     }
     /** at1: "Aggro tint" (default on; ar1's "Aggro rings" switch), shown once the add-on set has it */
     private fun ringsRow(): GameUi.Row? = RingsSwitch.state?.let { s ->

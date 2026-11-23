@@ -101,11 +101,13 @@ object SettingsTabs {
             "Focused quest",
             // the clock extras (the user's picks 2026-11-13): one row each
             "Hearthstone", "Class teleport", "Gold", "Free bag slots", "Ammo", "DS WoW toolbar",
+            // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): #471's rank badges (BottomTiles.RANK)
+            "Spell rank badges",
             // hold to talk (the user, 2026-11-16): under the toolbar, "On release" under its switch (HoldTalk)
             HomeSettingsSection.TALK_ROW, HomeSettingsSection.RELEASE_ROW), Drawer.HOME),
         // GitHub #43 cb3: Off / Left / Right / Both (Home's section draws it, as it drew the old Home row)
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
-        CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar", "In combat"), Drawer.HOME),
+        CAST_BAR(Group.CAST_BAR, "Tap-to-cast bar", listOf("Tap-to-cast bar", "Show in combat"), Drawer.HOME),     // cb14 (D5b)
         MAP(Group.MAP, "Map", listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map")),
         CHAT(Group.CHAT, "Chat", listOf("Message input")),
         // ---- Top screen (GameUiSection's parts: the same rows, ids, taps and channels as on QOL / Top screen before)
@@ -124,7 +126,7 @@ object SettingsTabs {
         GAME_UI(Group.WINDOWS, "Game windows", listOf("Normal game UI", "Minimap", "Quest tracker", "Chat window", "NPC windows", "Loot window",
             "Game tooltips",
             // lx2 (Linux Edition, 2026-11-19): the Tooltips tile's band row
-            "Box under the dot",
+            "Ranged tooltips",      // 2026-11-21: was "Box under the dot" (the user: "doesn't really make sense")
             "Cast bar", "Player frame", "Target frame",
             // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): three tiles where one was
             "Controller UI", "Buffs", "XP bar",

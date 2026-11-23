@@ -178,7 +178,7 @@ for d, f in (("WowCompanion", "TapPad"), ("WowCompanionSpells", "Spells"), ("Wow
     e = comp(SRC["x_%s_%s" % (d, f)], f)
     check(e is None, "a. Lua 5.1 compiles %s.lua" % f, e or '')
 TP, SP, BK = SRC["x_WowCompanion_TapPad"], SRC["x_WowCompanionSpells_Spells"], SRC["x_WowCompanionSpells_Book"]
-check((int(__import__('re').search(r'local PADV = "pad(\d+)"', TP).group(1)) >= 21) and 'local SV = "s17"' in SP and 'local BV = "b68"' in BK, "a. the versions: TapPad pad21, Spells s16, Book b65")
+check((int(__import__('re').search(r'local PADV = "pad(\d+)"', TP).group(1)) >= 21) and 'local SV = "s18"' in SP and 'local BV = "b76"' in BK, "a. the versions: TapPad pad21, Spells s16, Book b65")
 check("pad21 THE SHARED ROW" in TP and "s12 THE MACROS ROOM'S ROW SHARED" in SP and "b65 THE SHARED ROW" in BK,
       "a. each changed file's header note names the shared row")
 check('SHARE = "cal"' in SP and 'share = MR.SHARE' in SP, "a. the Macros room's row is the Calendar row's guest")
@@ -219,7 +219,7 @@ names_s = dict((k, int(v)) for k, v in Ls.eval('(function() local t = {} for n, 
                                              'return t end)()').items())
 rows_s = described(Ls)
 dropped = sorted(n for n in names_s if n not in ("cal", "lay") and n not in rows_s)
-check(dropped == ["bmv", "classr"] and "mac" in rows_s, "b. smallest scale (121.5): only rows 54-55 drop (classr, bmv: as before), mac stays",
+check(dropped == ["bmv", "keytest"] and "mac" in rows_s, "b. smallest scale (121.5): only rows 54-55 drop (pad26's last two: keytest, bmv), mac stays",
       (dropped, rows_s.get("mac")))
 print("INFO rows: Thor scale %d names on %d places, %d described; smallest scale %d described, dropped %s"
       % (len(names), len(set(names.values())), THOR_PLACED, len(rows_s), dropped))

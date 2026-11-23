@@ -119,6 +119,8 @@ object BottomPictures {
     }
     val small = Cache(SMALL_BUDGET)
     val large = Cache(LARGE_BUDGET)
+    // Light 8 (LIGHT8_PLAN.md change 1): the crops counted on the 8 GB Thors' memory line ("bottompics"); registered only
+    init { MemWatch.source8("bottompics") { small.bytes + large.bytes } }
 
     /** one crop to make: Home at [look] / [fight] / [toolbar], the [win]dow of Home's px, made [w] x [h] */
     class Shot(val look: HomeView.Companion.Look, val fight: Boolean, val toolbar: Boolean?, val win: (Map<String, RectF>) -> RectF?,
@@ -343,13 +345,23 @@ object BottomPictures {
         fun shot(lk: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?, w: (Map<String, RectF>) -> RectF?, ww: Int = cw, hh: Int = ch) =
             Shot(lk, fight, toolbar, w, ww, hh)
         when (id) {
+            BottomTiles.LAYOUT, BottomTiles.HOME_RESET -> {
+                // movable Home (final_11): the live miniature of Home in the active layout (Reset Home: the record Reset would make), the
+                // page's whole width from the band down
+                val lay = HomeSettings.layout.let { if (id == BottomTiles.HOME_RESET) it.classic() else it }
+                val b = crop("layout|${HomeLayoutJson.json(lay)}|$sz", shot(player().copy(layout = lay), false, null,
+                    { _ -> RectF(0f, 0f, 1240f, minOf(homeH(), 1240f * ch / cw)) }), prio)
+                if (b != null) blit(c, b, r) else fallback(c, r, "Home layout", look, tMs)
+            }
             BottomTiles.REST -> {
                 val rest = HomeSettings.rest
                 val b = crop("rest|$rest|$sz", shot(player(rest = rest), false, null, ::faces), prio)
                 if (b != null) { blit(c, b, r); sides(c, r) } else fallback(c, r, "Controller on Home", look, tMs)
             }
             BottomTiles.COMBAT -> {
-                val grow = HomeSettings.combatGrow
+                // In fights: Grow / Same size / Top screen (the band keeps its rest box as Same size does; the controls go up: the plate)
+                val band = HomeSettings.fightBand
+                val grow = band == HomeLayout.FightBand.GROW
                 val restB = crop("combat|rest|$sz", shot(player(), false, null, ::fightFaces), prio)
                 val fightB = crop("combat|$grow|$sz", shot(player(grow = grow), true, null, ::fightFaces), prio)
                 if (restB == null || fightB == null) { fallback(c, r, "Combat layout", look, tMs); return }
@@ -359,6 +371,12 @@ object BottomPictures {
                 if (k > 0f) { pBmp.alpha = (255 * k).toInt(); blit(c, fightB, r); pBmp.alpha = 255 }
                 sides(c, r, FIGHT_SIDE, FOOT)
                 if (k > 0f) UiKit.combatGlow(c, r, 0.75f * k, r.height() * 0.16f)
+                // Top screen: the "up" plate on the fight's frames (the Wings are on the game screen)
+                if (band == HomeLayout.FightBand.TOP && k > 0f) {
+                    // in the frame's upper left corner, clear of the faces (the band's own cue sits on the clock spot)
+                    val s = r.height() * 0.26f
+                    HomeView.upPlate(c, r.left + s * 0.5f + r.height() * 0.08f, r.top + s * 0.5f + r.height() * 0.08f, s, k, pF, path)
+                }
             }
             BottomTiles.SWING -> {
                 val on = HomeSettings.swingTimer
@@ -377,6 +395,8 @@ object BottomPictures {
             }
             BottomTiles.TALK -> talk(c, r, look, tMs)
             BottomTiles.CASTBAR -> castBar(c, r, tMs)
+            BottomTiles.RANK -> ranks(c, r, HomeSettings.rankBadges)
+            BottomTiles.XP -> xpTrack(c, r, HomeSettings.layout.xpBar)
             BottomTiles.ZOOM -> zoom(c, r, Settings.minimapYd, Settings.minimapIndoorYd, look.zoomIndoor)
             BottomTiles.WORLD -> world(c, r, Settings.worldMapFog == "all", look, tMs)
             BottomTiles.INPUT -> input(c, ctx, r, Settings.chatDefaultInput == "quick", big)
@@ -591,7 +611,8 @@ object BottomPictures {
         c.restore()
     }
 
-    // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, D-pad Left with Home's hold ring; the band: hold, the
+    // ---- Hold to talk: the real chat behind, the kit's chat box with the mic, the D-pad's chat arrow (Left; Right after a swap: the add-on's
+    // ---- `d`, HoldTalk.chatArrowRight - the row's own words) with Home's hold ring; the band: hold, the
     // ---- words in the box, then sent into the chat (Send now) or waiting for A (Show, A sends)
 
     private fun talk(c: Canvas, r: RectF, look: Look, tMs: Long?) {
@@ -608,13 +629,14 @@ object BottomPictures {
         // lands as the newest, lit a moment)
         val lines = if (sent) SAMPLE_CHAT + ChatLn("say", SAMPLE_ME, SAMPLE_SAID) else SAMPLE_CHAT
         chat(c, RectF(0f, 0f, 432f, chatH - 4f), 22f, lines, lit = if (sent) lines.size - 1 else -1)
-        // the lower part: the game's chat box on the frame, D-pad Left with Home's hold ring, the mic in the box
+        // the lower part: the game's chat box on the frame, the chat's D-pad arrow with Home's hold ring, the mic in the box
         pF.shader = LinearGradient(0f, chatH - 30f, 0f, chatH, Color.argb(0, 0, 0, 0), Color.argb(230, 10, 10, 12), Shader.TileMode.CLAMP)
         c.drawRect(0f, chatH - 30f, 432f, chatH, pF); pF.shader = null
         pF.color = Color.argb(230, 10, 10, 12); c.drawRect(0f, chatH, 432f, 216f, pF)
-        val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while D-pad Left is held
+        val hold = (t / 1.2f).coerceIn(0f, 1f)                                   // the ring fills while the arrow is held
         val gx = 46f; val gy = 178f
-        UiKit.pad(c, "gen_left", gx, gy, 58f, if (on) 255 else 150)
+        // fix round 1 (P5: the pictures never lie): the arrow hold to talk answers to now (Right once the toolbar's `d` is mirrored)
+        UiKit.pad(c, talkGlyph(look.env.dpad?.dirs), gx, gy, 58f, if (on) 255 else 150)
         if (on) UiKit.holdRing(c, gx, gy, 36f, hold)
         val box = RectF(92f, 154f, 424f, 202f)
         UiKit.inputBox(c, box)
@@ -627,6 +649,9 @@ object BottomPictures {
         }
         c.restore()
     }
+
+    /** the Hold to talk tile's arrow: the D-pad side the chat is on in the add-on's `d` ([HoldTalk.chatArrowRight]) */
+    fun talkGlyph(dirs: Map<Int, String>?): String = if (HoldTalk.chatArrowRight(dirs)) "gen_right" else "gen_left"
 
     // ---- Tap-to-cast bar: Home's two columns (the real chat, the minimap's own art), the bar of real spell icons under the chosen
     // ---- one(s); In combat: Hide slides it away
@@ -646,9 +671,13 @@ object BottomPictures {
         val left = side == CastStripModel.Side.LEFT || side == CastStripModel.Side.BOTH
         val right = side == CastStripModel.Side.RIGHT || side == CastStripModel.Side.BOTH
         val room = (barH + g) * (1f - slide)
+        // Above chat / Above map: the bar at its column's TOP (the column starts under it), sliding UP for Hide (Home: behind the band)
+        val atTop = HomeLayoutRules.shown(HomeSettings.layout).cast.top
         val top = 0f
-        val chatCol = RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
-        val map = RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
+        val chatCol = if (atTop) RectF(g, top + g + (if (left) room else 0f), 216f - g / 2f, 216f - g)
+            else RectF(g, top + g, 216f - g / 2f, 216f - g - (if (left) room else 0f))
+        val map = if (atTop) RectF(216f + g / 2f, top + g + (if (right) room else 0f), 432f - g, 216f - g)
+            else RectF(216f + g / 2f, top + g, 432f - g, 216f - g - (if (right) room else 0f))
         c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
         pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
         // the chat column, drawn as Home's pane lays it (its foot: the newest lines stay at the bottom as the column grows)
@@ -663,7 +692,7 @@ object BottomPictures {
         fun bar(l: Float, rr: Float, n: Int, first: Int) {
             val dy = (barH + g + 2f) * slide
             if (slide >= 1f) return
-            val well = RectF(l, 216f - g - barH + dy, rr, 216f - g + dy)
+            val well = if (atTop) RectF(l, g - dy, rr, g + barH - dy) else RectF(l, 216f - g - barH + dy, rr, 216f - g + dy)
             c.save(); c.clipRect(0f, 0f, 432f, 216f)
             pF.color = Theme.field; c.drawRoundRect(well, 6f, 6f, pF)
             pS.color = Theme.gold; pS.strokeWidth = 2f; c.drawRoundRect(well, 6f, 6f, pS)
@@ -686,6 +715,46 @@ object BottomPictures {
             CastStripModel.Side.OFF -> {}
         }
         if (fight > 0f) UiKit.combatGlow(c, RectF(0f, 0f, 432f, 216f), 0.8f * fight, 28f)
+        c.restore()
+    }
+
+    // ---- Spell rank badges (2026-11-20): four of Home's spell buttons with real icons, #471's "R3" chips on them while On (the top
+    // ---- known rank gold, a lower one grey, as UiKit.spellRank draws them on Home), bare while Off
+
+    private fun ranks(c: Canvas, r: RectF, on: Boolean) {
+        val kk = r.width() / 432f
+        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        val slot = 84f; val gap = 20f
+        val x0 = (432f - 4 * slot - 3 * gap) / 2f; val y0 = (216f - slot) / 2f
+        val badges = listOf(SpellRanks.Badge(4, true), SpellRanks.Badge(2, true), SpellRanks.Badge(2, false), SpellRanks.Badge(3, true))
+        for (j in 0 until 4) {
+            val box = RectF(x0 + j * (slot + gap), y0, x0 + j * (slot + gap) + slot, y0 + slot)
+            val ic = Icons.get(SPELL_ICONS[j])
+            if (ic != null) c.drawBitmap(ic, null, box, pBmp)
+            else { pF.color = Color.rgb(60 + 20 * j, 90, 140 - 10 * j); c.drawRect(box, pF) }
+            pS.color = Theme.bronzeDim; pS.strokeWidth = 2f; c.drawRect(box, pS)
+            if (on) UiKit.spellRank(c, box, badges[j])
+        }
+        c.restore()
+    }
+
+    /** the XP bar on Home (1518 build 2): the room bar's top, close up - its XP track over the rooms' row (Show), or the row alone with
+     *  Home reaching down to it (Hide) */
+    private fun xpTrack(c: Canvas, r: RectF, on: Boolean) {
+        val kk = r.width() / 432f
+        c.save(); c.translate(r.left, r.top); c.scale(kk, kk)
+        pF.color = WORLD; c.drawRect(0f, 0f, 432f, 216f, pF)
+        val top = if (on) 70f else 104f
+        pF.color = Theme.panel; c.drawRect(0f, top, 432f, 216f, pF)
+        if (on) UiKit.track(c, RectF(0f, top, 432f, top + 34f), "xp", 0.62f, 0.74f, 5, 0f, 0f, 8f, 1.5f)
+        // three rooms' discs under it (the bar's row)
+        val cy = 160f
+        for (j in 0 until 3) {
+            val cx = 64f + j * 104f
+            pF.color = Theme.raised; c.drawCircle(cx, cy, 34f, pF)
+            pS.color = Theme.bronzeDim; pS.strokeWidth = 2.5f; c.drawCircle(cx, cy, 34f, pS)
+        }
         c.restore()
     }
 

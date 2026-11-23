@@ -23,17 +23,48 @@ object HomeSettings {
 
     fun init(c: Context) {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("home", Context.MODE_PRIVATE)
+        layoutStore()
     }
 
     /** the off-device tests: these prefs (null = none, as before any init) */
-    internal fun startForTest(p: SharedPreferences?) { prefs = p }
+    internal fun startForTest(p: SharedPreferences?) { prefs = p; HomeLayoutStore.startForTest(p); layoutStore() }
 
+    /** MOVABLE HOME (SPEC section 9): the layout record shares this file; its changes are every Home listener's */
+    private var storeHeard = false
+    private fun layoutStore() {
+        if (HomeLayoutStore.prefs == null || HomeLayoutStore.prefs !== prefs) HomeLayoutStore.prefs = prefs
+        if (!storeHeard) { storeHeard = true; HomeLayoutStore.onChange { for (l in listeners.toList()) l() } }
+    }
+    /** the active layout record (the current character's; SPEC section 9) */
+    val layout: HomeLayout get() = HomeLayoutStore.active()
+
+    /**
+     * MOVABLE HOME: edit mode's write (1518: each settled change as it is made, and Discard's way back). The record becomes the active
+     * one (the store's per-character rules), the old keys written as their facade setters write them (one release's downgrade reads
+     * them; castBarChosen keeps its meaning: the bar's key is written only when the bar changed or was chosen before)
+     */
+    fun saveLayout(l: HomeLayout) {
+        val p = prefs ?: return
+        val e = p.edit().putString(KEY, l.rest.name).putBoolean(KEY_COMBAT_GROW, l.fight == HomeLayout.FightBand.GROW)
+        if (l.card != HomeLayout.CardDock.OFF) e.putBoolean("questOverMap", l.card == HomeLayout.CardDock.ON_MAP)
+        if (l.cast != layout.cast || p.contains(KEY_CAST_SIDE)) e.putString(KEY_CAST_SIDE, l.castSide.name).remove(KEY_CAST_STRIP)
+        e.apply()
+        if (!HomeLayoutStore.set(l)) for (x in listeners.toList()) x()
+    }
+
+    /** 1518, Settings' "Reset Home to Classic": THIS character's Home back to Classic ([HomeLayout.classic]: the bar's column and Same
+     *  size kept, as Classic always kept them; the room bar's order and the XP track back too), through the store's own rules; the
+     *  card's fold and the behaviour settings are left as they are. Only under a WHOLE key: while pending the active record is the
+     *  pending view, not the character's own, and the held change would lay nothing on the real record once the key arrives */
+    fun resetHomeToClassic() { if (HomeLayoutStore.who != null) saveLayout(layout.classic()) }
+
+    /** the band at rest: a FACADE on the active layout record since movable Home (the old key still written for one release) */
     var rest: HomeRest
-        get() = prefs?.getString(KEY, null)?.let { runCatching { HomeRest.valueOf(it) }.getOrNull() } ?: HomeRest.DIAMONDS
+        get() = layout.rest
         set(v) {
             if (v == rest) return
             prefs?.edit()?.putString(KEY, v.name)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(rest = v) }
         }
 
     /** the radial's way (the user, 2026-10-06: "make the Other radial type ... an option ... under the DS wow toolbar"): true = TAP
@@ -56,11 +87,11 @@ object HomeSettings {
      * minimap its full height. The card's rules are the same both ways (no focus = no card; a tap minimizes it)
      */
     var questOverMap: Boolean
-        get() = prefs?.getBoolean("questOverMap", true) ?: true
+        get() = layout.card != HomeLayout.CardDock.ABOVE_CHAT        // movable Home: a facade on the record's card dock
         set(v) {
-            if (v == questOverMap) return
+            if (v == questOverMap && layout.card != HomeLayout.CardDock.OFF) return
             prefs?.edit()?.putBoolean("questOverMap", v)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(card = if (v) HomeLayout.CardDock.ON_MAP else HomeLayout.CardDock.ABOVE_CHAT) }
         }
 
     var radialTap: Boolean
@@ -137,6 +168,16 @@ object HomeSettings {
         set(v) { if (v != pauseOverGame) { prefs?.edit()?.putBoolean("pauseOverGame", v)?.apply(); for (l in listeners) l() } }
 
     /**
+     * SPELL RANK BADGES (the user, 2026-11-20: "I dont personally love the rank icon so put that as a toggle in the settings, off by
+     * default"): true = every ranked spell picture wears #471's "R3" chip ([SpellRanks.of]); false (the default) = none anywhere. App-wide,
+     * Settings > Bottom screen > Home's "Spell rank badges" tile (BottomTiles.RANK); app-only (the add-on draws no badge, no tag)
+     */
+    var rankBadges: Boolean
+        get() = prefs?.getBoolean(KEY_RANK_BADGES, false) ?: false
+        set(v) { if (v != rankBadges) { prefs?.edit()?.putBoolean(KEY_RANK_BADGES, v)?.apply(); for (l in listeners) l() } }
+    const val KEY_RANK_BADGES = "rankBadges"
+
+    /**
      * B: PET RECALL (the user, 2026-11-18: "I like the pet recall but I think we need to remove the pet smart attack, its obnoxious"; the
      * pick: ON by default for pet classes, a player's saved choice kept; PetRecall): PER CHARACTER ([who] = "Name-Realm",
      * GameUi.character), the row shows only for a pet class; no character known = Off (nothing to tell). A character's SAVED choice is
@@ -201,11 +242,23 @@ object HomeSettings {
      * rest's place and size: nothing on the page moves).
      */
     var combatGrow: Boolean
-        get() = prefs?.getBoolean(KEY_COMBAT_GROW, true) ?: true
+        get() = layout.fight == HomeLayout.FightBand.GROW            // movable Home: a facade on the record's "In fights" (D1: Grow)
         set(v) {
             if (v == combatGrow) return
             prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v)?.apply()
-            for (l in listeners) l()
+            HomeLayoutStore.update { it.copy(fight = if (v) HomeLayout.FightBand.GROW else HomeLayout.FightBand.SAME) }
+        }
+    /**
+     * MOVABLE HOME PHASE 3, "IN FIGHTS" (SPEC section 11; the user's D1: Grow stays the default, Top screen is OPT-IN, Same size stays): the
+     * band GROWs (today's), keeps its rest SAME size, or stays at rest while the controls show on the TOP screen as the add-on's Wings
+     * (TopCombatBar; CompanionHost sends the add-on's flag out of combat). The old key keeps Grow / Same size for an older build.
+     */
+    var fightBand: HomeLayout.FightBand
+        get() = layout.fight
+        set(v) {
+            if (v == fightBand) return
+            prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v == HomeLayout.FightBand.GROW)?.apply()
+            HomeLayoutStore.update { it.copy(fight = v) }
         }
 
     /** p-swing-timer (a player: "would rather turn this off"): the SWING line under the controller in a fight (batch 12: not the cast bar); true = shown (the
@@ -222,12 +275,20 @@ object HomeSettings {
      *  ... or off by default"): OFF, LEFT (under the chat), RIGHT (under the minimap), BOTH. Never chosen: the old Home row's On
      *  ("castStrip" true) reads as LEFT, anything else OFF ([CastStripModel.sideOf]); the first change writes the new key and drops the old */
     var castBarSide: CastStripModel.Side
-        get() = CastStripModel.sideOf(prefs?.getString(KEY_CAST_SIDE, null),
-            prefs?.takeIf { it.contains(KEY_CAST_STRIP) }?.getBoolean(KEY_CAST_STRIP, false))
+        get() = HomeLayoutRules.shown(layout).castSide                // movable Home: the record's dock as a screen side
         set(v) {
             if (v == castBarSide && prefs?.contains(KEY_CAST_SIDE) == true) return
             prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
-            for (l in listeners) l()
+            // an older route's screen side (Turn on = Both) means the dock under that column NOW (chat left or right)
+            if (!HomeLayoutStore.update { it.copy(cast = HomeLayout.dockOf(v, it.chatSide, keepTop = it.cast.top)) }) for (l in listeners) l()
+        }
+    /** movable Home: the bar's dock in words that follow the widgets (Off / Under or Above chat / Under or Above map / Across / Split) */
+    var castDock: HomeLayout.CastDock
+        get() = layout.cast
+        set(v) {
+            if (v == castDock && prefs?.contains(KEY_CAST_SIDE) == true) return
+            prefs?.edit()?.putString(KEY_CAST_SIDE, layout.copy(cast = v).castSide.name)?.remove(KEY_CAST_STRIP)?.apply()
+            if (!HomeLayoutStore.update { it.copy(cast = v) }) for (l in listeners) l()
         }
     /** THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the
      *  picks: its own section's row, "Hide in combat" by default): HIDE fades the bar out while Home shows a fight, STAY keeps it */
@@ -238,6 +299,12 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_COMBAT, v.name)?.apply()
             for (l in listeners) l()
         }
+    /** cb15 BAR IN PARTY MODE (the user, 2026-11-20, the Controller room's Option C): while Party mode is on the tap-to-cast bar shows, in
+     *  fights too, whatever [castBarCombat] says (party heals stay reachable), and its Party mode layer is armed; on by default. The
+     *  Controller room's Party mode chip writes it; the add-on is told (padtab 39, 38 then 2 / 3) and keeps a copy (castBarPShow) */
+    var castBarPartyShow: Boolean
+        get() = prefs?.getBoolean(KEY_CAST_PARTY, true) ?: true
+        set(v) { if (v != castBarPartyShow) { prefs?.edit()?.putBoolean(KEY_CAST_PARTY, v)?.apply(); for (l in listeners) l() } }
     /** THE ONE-TIME "TRY THE TAP-TO-CAST BAR?" QUESTION (the user, 2026-11-13: "For this new install, I want it to have a one time pop
      *  up asking people if they want to try the new touch input bar"): true once it was answered (or never owed); app-wide, per
      *  install. [CastBarAsk] decides; the host shows it on Home */
@@ -268,13 +335,14 @@ object HomeSettings {
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     /** a reset (ResetRun) removed saved values: every listener reads them again */
-    fun resetDone() { for (l in listeners) l() }
+    fun resetDone(layouts: Boolean = false) { HomeLayoutStore.resetDone(layouts); for (l in listeners) l() }
 
     /** cb2's On / Off Home row (read once for cb3's migration, then removed) */
     private const val KEY_CAST_STRIP = "castStrip"
     private const val KEY_CAST_SIDE = "castBarSide"
     private const val KEY_CAST_COMBAT = "castBarCombat"
     private const val KEY_CAST_ASKED = "castBarAsked"
+    private const val KEY_CAST_PARTY = "castBarPartyShow"
     private const val KEY = "rest"
     private const val KEY_CLOCK_HEARTH = "clockHearth"
     private const val KEY_CLOCK_TELEPORT = "clockTeleport"
@@ -646,9 +714,11 @@ class HomeSettingsSection(context: Context,
             listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest),
             listOf({ HomeSettings.rest = HomeRest.ROW }, { HomeSettings.rest = HomeRest.DIAMONDS }))
         // r-combat-anim-off (the user on batch2): in a fight the controller grows (today's) or keeps its size and place
-        y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, or keeps its size."),
-            listOf("Grow", "Same size"), if (HomeSettings.combatGrow) 0 else 1,
-            listOf({ HomeSettings.combatGrow = true }, { HomeSettings.combatGrow = false }))
+        // movable Home phase 3: "Top screen" keeps the rest size here and shows the controls on the game screen (D1: opt-in)
+        y = row(c, y + GAP, "Combat layout", listOf("In a fight the controller grows, keeps its size, or moves to the top screen."),
+            listOf("Grow", "Same size", "Top screen"), HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand),
+            listOf({ HomeSettings.fightBand = HomeLayout.FightBand.GROW }, { HomeSettings.fightBand = HomeLayout.FightBand.SAME },
+                { HomeSettings.fightBand = HomeLayout.FightBand.TOP }))
         // p-swing-timer: the swing line under the controller in a fight (batch 12: the cast bar is not this setting)
         y = row(c, y + GAP, "Swing timer", listOf("The swing line under the controller in a fight. The cast bar stays."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
@@ -671,7 +741,7 @@ class HomeSettingsSection(context: Context,
             sides.map { it.label }, sides.indexOf(HomeSettings.castBarSide), sides.map { sd -> { HomeSettings.castBarSide = sd } })
         // the bar in a fight (the user 2026-11-13: "a settings toggle to make them Hide/stay in combat"): Hide (the default) / Stay
         val modes = CastStripModel.Combat.values()
-        y = row(c, y + GAP, "In combat", listOf("Hide: the bar slides away in a fight."),
+        y = row(c, y + GAP, "Show in combat", listOf("Off: the bar slides away in a fight."),     // cb14 (D5b)
             modes.map { it.label }, modes.indexOf(HomeSettings.castBarCombat), modes.map { m -> { HomeSettings.castBarCombat = m } })
         // the focused quest's place (the user 2026-10-09): over the minimap (today's) or at the top of the chat
         y = row(c, y + GAP, "Focused quest", listOf("Where Home shows the quest you focus. Tap it to fold it."),
@@ -707,7 +777,7 @@ class HomeSettingsSection(context: Context,
             // HOLD TO TALK (the user, 2026-11-16, HoldTalk): under the toolbar while it is on; "On release" only while it is On
             if (d.want == true && d.colOn != null) {
                 val who = talkWho()
-                y = row(c, y + GAP, TALK_ROW, listOf("Hold D-pad Left to talk."), listOf("Off", "On"), if (HomeSettings.holdTalk(who)) 1 else 0,
+                y = row(c, y + GAP, TALK_ROW, listOf(if (HoldTalk.chatArrowRight(d.dirs)) "Hold D-pad Right to talk." else "Hold D-pad Left to talk."), listOf("Off", "On"), if (HomeSettings.holdTalk(who)) 1 else 0,
                     if (who == null) null else listOf({ HomeSettings.setHoldTalk(who, false) }, { HomeSettings.setHoldTalk(who, true) }))
                 if (HomeSettings.holdTalk(who)) y = row(c, y + GAP, RELEASE_ROW, listOf("To the last chat you used."),
                     listOf("Show, A sends", "Send now"), if (HomeSettings.talkSendNow(who)) 1 else 0,

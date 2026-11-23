@@ -36,6 +36,7 @@ AB = open(os.path.join(ADDONS, "WowCompanion", "ActionBar.lua"), encoding="utf-8
 BLOCK = re.search(r'-- CASTBAR-BEGIN[^\n]*\n(.*?)-- CASTBAR-END', AB, re.S).group(1)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wowstub import GAME  # noqa: E402
+from chooser_nav import Nav  # noqa: E402
 PARTY = open(os.path.join(ROOT, "tools", "test_party.py"), encoding="utf-8").read()
 WORLD_HELPERS = re.search(r"\nWORLD_HELPERS = r'''(.*?)'''", PARTY, re.S).group(1)
 STICKS = open(os.path.join(ROOT, "tools", "test_stick_binds.py"), encoding="utf-8").read()
@@ -133,29 +134,30 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p54"' in SRC["padtabctl"] and 'local BV = "b68"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
-      and 'local CBV = "cb12"' in BLOCK, "the versions: PadTabCtl p53, Book b60, PadMap m159, ActionBar cb9")
+check('local CV = "p58"' in SRC["padtabctl"] and 'local BV = "b76"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+      and 'local CBV = "cb16"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code,
       "the cast bar code writes nothing of the player's (no binding, macro, bar slot or CVar)")
 
-# ================================================================ 1. the tab, shown only while the app's setting is on
+# ================================================================ 1. p55: the page is WoW Defaults > Tap to cast (no top tab; D1 / D2)
 W = boot()
 check(list(W.eval('ERRS').values()) == [], "the world loads", list(W.eval('ERRS').values())[:2])
 W.execute('WowCompanion.padTabCtl.enter("tabs")')
-padtab(W, 39, 29)
-check(ctl(W).get('view') == 'normal', "the setting off: padtab 39 then 29 does not open the tab", ctl(W).get('view'))
-W.execute('pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
-check(ctl(W).get('view') != 'castbar', "RB never reaches it while hidden", ctl(W).get('view'))
-padtab(W, 39, 30)
-check(W.eval('WowCompanionSpellsDB.castBarTab') is True, "padtab 39 then 30: the setting on (kept)")
-W.execute('WowCompanion.padTabCtl.touchTab(1); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
-check(ctl(W).get('view') == 'castbar', "with it on, RB steps onto the Cast bar tab (the last one)", ctl(W).get('view'))
+W.execute('pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER"); pp("PADRSHOULDER")')
+check(ctl(W).get('view') not in ('castbar', 'cbfight'), "p55 (D1): RB never steps onto a Tap to cast page (no top tab)", ctl(W).get('view'))
 padtab(W, 39, 31)
-check(ctl(W).get('view') == 'normal' and W.eval('WowCompanionSpellsDB.castBarTab') is None,
-      "padtab 39 then 31: off again, the tab on show goes back to WoW Defaults", ctl(W).get('view'))
-padtab(W, 39, 30, 39, 29)
+check(W.eval('WowCompanionSpellsDB.castBarTab') is False, "padtab 39 then 31: the bar Off (kept as told: false)")
+padtab(W, 39, 29)
+check(ctl(W).get('view') == 'castbar' and ctl(W).get('cboff') == 1 and ctl(W).get('top') == 'normal',
+      "p55 (D2): with the bar Off padtab 39 then 29 still opens the page (dimmed: cboff), under WoW Defaults", ctl(W))
+W.execute('WowCompanion.padTabCtl.touchPos(2); pp("PAD1")')
+c = ctl(W)
+check(not c.get('chooser') and c.get('note') == 'cb-turn-on' and c.get('cbon') == 1, "p55 (D2): A there = Turn on (counted), no chooser", c)
+padtab(W, 39, 30)
+check(W.eval('WowCompanionSpellsDB.castBarTab') is True and ctl(W).get('cboff') is None, "padtab 39 then 30: the setting on (kept)")
+padtab(W, 39, 29)
 c = ctl(W)
 check(c.get('view') == 'castbar' and c.get('focus') == 'buttons', "padtab 39 then 29: the Cast bar tab, the cursor on its slots", c)
 
@@ -166,24 +168,23 @@ check(ctl(W).get('pos') == 8, "Right walks the 8 slots and stops at 8", ctl(W).g
 W.execute('for _ = 1, 10 do pp("PADDLEFT") end')
 check(ctl(W).get('pos') == 1, "Left back to slot 1 and stops", ctl(W).get('pos'))
 W.execute('pp("PADDUP")')
-check(ctl(W).get('focus') == 'tabs', "Up = the tab row", ctl(W).get('focus'))
-W.execute('pp("PADDDOWN")')
-check(ctl(W).get('focus') == 'buttons', "Down = the slots again")
+check(ctl(W).get('view') == 'normal' and ctl(W).get('focus') == 'buttons', "Up = the controller over slot 1 (p56: no sub-tabs)", ctl(W))
+W.execute('WowCompanion.padTabCtl.touchPos(9); pp("PADDDOWN"); pp("PADDLEFT"); pp("PADDLEFT"); pp("PADDLEFT")')
+check(ctl(W).get('view') == 'castbar' and ctl(W).get('focus') == 'buttons' and ctl(W).get('pos') == 1, "Down = the slots again (slot 1)", ctl(W))
 W.execute('pp("PAD1")')
 c = ctl(W)
 check(c.get('chooser') and c['chooser'].get('list') == 'spells', "A on an empty slot: the chooser on Spells", c.get('chooser'))
 seen = []
+NAV = Nav(W, ctl)
+NAV.to_tabs()                                               # p57: the grid walks its cells; the tab row pages the tabs
 for i in range(5):
     seen.append((ctl(W).get('chooser') or {}).get('list'))
     if i < 4:
         W.execute('pp("PADDRIGHT")')
-check(seen == ["spells", "general", "professions", "extra", "dstool"], "all five tabs", seen)
-W.execute('pp("PADDLEFT")')                                  # Extra
-ids = []
-for i in range(60):
-    ch = ctl(W).get('chooser') or {}
-    ids.append(ch.get('id'))
-    W.execute('pp("PADDDOWN")')
+check(seen == ["spells", "general", "professions", "extra", "macros"], "all five tabs (p57: DS is Extra's category, Macros the 5th)", seen)
+W.execute('pp("PADDLEFT"); pp("PADDDOWN")')                  # Extra
+NAV.open_all()
+ids = NAV.rows()
 check(not any(x in ("JUMP", "INTERACTTARGET", "TOGGLEAUTORUN", "TOGGLERUN") for x in ids) and "TARGETNEARESTENEMY" in ids,
       "Extra lists the commands, mounts and items, not the game bindings (a key is no cast)", [x for x in ids if x][:6])
 W.execute('pp("PAD2"); pp("PAD1")')                       # B closes the chooser, A opens it again (Spells, row 1)
@@ -237,7 +238,7 @@ if bi is not None:
     W.eval('WowCompanion.padTabCtl.touchExtra(%d)' % (bi % 40))
     check(store(W).get(8) is None and ctl(W).get('note') == 'cb-bind', "a game binding by touch is refused (cb-bind)", ctl(W).get('note'))
 e, d = bar(W)
-check(d.get('v') == 'cb12' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
+check(d.get('v') == 'cb16' and d.get('any') == 1, "the document: cb9, any = 1", d.get('v'))
 check(e[1].get('id') == 403 and 'k' not in e[1] and e[1].get('c') == 0, "slot 1: a spell as before (no k)", e[1])
 check(e[3].get('k') == 'command' and e[3].get('key') == 'TARGETNEARESTENEMY' and e[3].get('n') and e[3].get('i') == 132212 and e[3].get('c') == 2,
       "slot 3: kind command, key, name, icon, its cell", e[3])
@@ -258,10 +259,7 @@ check(W.eval('RAN and RAN.kind') == "item" and W.eval('RAN and RAN.item') == "it
 
 # ================================================================ 4. Replace / Clear boxes, Move
 W.execute('WowCompanion.padTabCtl.touchPos(1); pp("PAD1")')
-for _ in range(3):
-    if (ctl(W).get('chooser') or {}).get('id') == 331:
-        break
-    W.execute('pp("PADDDOWN")')
+NAV.goto(331)
 W.execute('pp("PAD1")')
 check((ctl(W).get('box') or {}).get('kind') == 'replace' and store(W).get(1) == ('spell', 403),
       "a filled slot asks Replace first (nothing changed yet)", ctl(W).get('box'))
@@ -269,11 +267,7 @@ W.execute('pp("PAD1")')
 check(store(W).get(1) == ('spell', 331) and store(W).get(2) is None,
       "A: Healing Wave on slot 1 (off slot 2: one copy per bar)", store(W))
 W.execute('pp("PAD1")')
-for _ in range(80):
-    ch = ctl(W).get('chooser') or {}
-    if ch.get('id') == 'clear':
-        break
-    W.execute('pp("PADDDOWN")')
+NAV.goto('clear')
 W.execute('pp("PAD1")')
 check((ctl(W).get('box') or {}).get('kind') == 'clear', "Clear asks", ctl(W).get('box'))
 W.execute('pp("PAD1")')

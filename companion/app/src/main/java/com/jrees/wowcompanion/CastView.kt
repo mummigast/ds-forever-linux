@@ -100,6 +100,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         var kitAlpha = 255         // Party mode: the kit picture alone faded (an arrow the box cannot take: 28 %)
         var noBadge = false        // Party mode: the D-pad slots are emptied (no glyph badge, no toolbar mark)
         var talk = false           // the D-pad toolbar's Chat: hold to talk's microphone shows on it ([talk])
+        var rk = 0                 // #471: an override's spell id for its rank badge (a fight face / D-pad / trigger fight spell; 0 = [id])
         var bmp: Bitmap? = null
         var shader: BitmapShader? = null
         val empty get() = k.isEmpty()
@@ -240,6 +241,18 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      *  no SWING (its fill and its restart flash); the CAST bar and its flashes stay (Settings > Home "Swing timer") */
     var swingOn = true
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** P4 (the user's ruling 2026-11-22): Home's edit mode previews the fight look - with no swing of the game's running, a stand-in swing
+     *  loops along the line ([PREVIEW_SWING_MS]) so Swing timer On / Off shows; false (always outside edit mode) = nothing changes */
+    var swingPreview = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** P1 (edit mode's top bar pieces): slot [pos]'s box (0..3 the D-pad L / U / R / D, 4..7 the faces) in this view's px into [out] */
+    fun slotRect(pos: Int, out: RectF) {
+        bandSlot(pos, slotRectBox)
+        val h = slotRectBox[2] / 2f
+        out.set(slotRectBox[0] - h, slotRectBox[1] - h, slotRectBox[0] + h, slotRectBox[1] + h)
+    }
+    private val slotRectBox = FloatArray(3)
 
     /**
      * DIAMONDS only (Home's band; LATER 16 + 18, UI Art's HARMONY_SPEC): ZL / ZR wells low under the LB / RB plates
@@ -248,6 +261,14 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var triggerStrip = false
         set(v) { if (field != v) { field = v; invalidate() } }
+    /**
+     * IN FIGHTS = TOP SCREEN (TopSlide): Home's band slid up off the bottom screen for the fight (the add-on's Wings hold the controls on
+     * the top screen). The view stays VISIBLE - its pad reader keeps running (B, the radial, the triggers come through it) - but draws
+     * nothing and runs no frame clock, and its cast bar is not shown ([ownCastBarShown]: the rooms' bar takes the cast). Set by Home at
+     * the up-slide's end, cleared at the down-slide's start
+     */
+    var away = false
+        set(v) { if (field != v) { field = v; invalidate(); onCastState?.invoke() } }
 
     /** while true the band draws NO presses (no push-down, no flash): Home's Select cursor owns the pad then
      *  (user 2026-09-30, LATER item 23a). Layers and the triggers still follow the pad. */
@@ -380,10 +401,42 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * turns it off in fights, when the game's D-pad is back). The base layer's D-pad then draws as its own "Room bar" group.
      */
     var roomBar: Map<Int, String>? = null
-        set(v) { if (field != v) { field = v; roomBtns.fill(null); invalidate() } }
+        set(v) { if (field != v) { roomMotionStart(field, v); field = v; roomBtns.fill(null); invalidate() } }
     var roomBarOn = false
         set(v) { if (field != v) { field = v; invalidate() } }
     private val roomBtns = arrayOfNulls<Btn>(4)
+
+    /**
+     * movable Home fix round 1 (SPEC section 10): the toolbar's Left / Right pictures never jump. A SWAP (Left <-> Right: edit mode's
+     * draft preview, Save's mirror) slides each picture from the other slot to its own over [roomSlideMs] on the page's curve, crossing
+     * in the gap between Up and Down; any other change of Left / Right cross-fades over ROOM_FADE_MS. Only while the room bar is drawn.
+     */
+    var roomSlideMs: Long = Motion.MODULE_OPEN
+    private val roomPrev = arrayOfNulls<Btn>(4)
+    private var roomMotionAt = 0L
+    private var roomMotionMs = 0L
+    private var roomSwap = false
+    private var roomFadeNext = false
+    /** [roomBar] = [v] with the cross-fade even for a swap (fix round 3: Home's Save hold given up, the pictures go back to `d`) */
+    fun roomBarFade(v: Map<Int, String>?) { roomFadeNext = true; try { roomBar = v } finally { roomFadeNext = false } }
+    private fun roomMotionStart(old: Map<Int, String>?, new: Map<Int, String>?) {
+        roomMotionMs = 0L
+        if (!roomBarOn || old == null || new == null || layout == Layout.FULL) return
+        if (old[1] == new[1] && old[3] == new[3]) return
+        roomSwap = !roomFadeNext && old[1] == new[3] && old[3] == new[1]
+        for (i in 0 until 4) roomPrev[i] = roomBtns[i]
+        roomMotionAt = SystemClock.elapsedRealtime()
+        roomMotionMs = if (roomSwap) roomSlideMs else ROOM_FADE_MS
+    }
+    /** the room bar's motion now (0 .. 1 on the curve), null = none running */
+    fun roomMotionK(now: Long = SystemClock.elapsedRealtime()): Float? {
+        if (roomMotionMs <= 0L) return null
+        val u = (now - roomMotionAt).toFloat() / roomMotionMs
+        if (u >= 1f || u < 0f) { roomMotionMs = 0L; for (i in 0 until 4) roomPrev[i] = null; return null }
+        return roomCurve.getInterpolation(u)
+    }
+    val roomMotionSwap: Boolean get() = roomSwap
+    private val roomCurve by lazy { Motion.curve() }
 
     /**
      * p35 (the user 2026-11-10: "change the left and right D-pad button Icons to move the bar left or right. until the home bar is
@@ -692,10 +745,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (li != N || src > 3) return null
         val icon = fightDpad?.get(src + 1)?.takeIf { it > 0 } ?: return null
         val cached = dpadFightBtns[src]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, false); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, false); cached.rk = fightRanks?.get(src + 1) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, false)
+        b.rk = fightRanks?.get(src + 1) ?: 0
         dpadFightBtns[src] = b
         return b
     }
@@ -719,10 +773,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val at = li * 8 + src
         val icon = trigFights?.get(at)?.first?.takeIf { it > 0 } ?: return null
         val cached = trigBtns[at]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, src >= 4); cached.rk = trigRanks?.get(at) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, src >= 4)
+        b.rk = trigRanks?.get(at) ?: 0
         trigBtns[at] = b
         return b
     }
@@ -758,6 +813,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * as the game's own buttons are.
      */
     var fightIds: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** #471: base-set game position 1..8 -> the SPELL id of the fight picture there (HomeFightFace.rankIds), for its rank badge */
+    var fightRanks: Map<Int, Int>? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** #471: [trigFights]' buttons ([HomeFightFace.cmdKey]) -> the SPELL id there (HomeFightFace.trigRankIds) */
+    var trigRanks: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
     private val fightStates = HashMap<Int, St>()
     private val fightCt = HashMap<Int, Int>()
@@ -835,10 +896,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val icon = fightFace?.get(src + 1) ?: return null
         if (icon <= 0) return null
         val cached = fightBtns[src]
-        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, true); return cached }
+        if (cached != null && cached.icon == icon) { if (cached.shader == null) resolve(cached, true); cached.rk = fightRanks?.get(src + 1) ?: 0; return cached }
         val b = Btn().apply { p = src + 1; k = "spell"; this.icon = icon; e = true }
         classify(b)
         resolve(b, true)
+        b.rk = fightRanks?.get(src + 1) ?: 0
         fightBtns[src] = b
         return b
     }
@@ -1525,7 +1587,10 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     // ---- icons decoded off the UI thread (Icons.get is thread-safe: synchronized LruCache + pack, a duplicated buffer)
-    private val iconReady = HashMap<Int, Bitmap>()      // main thread
+    // memory work #56 (D2, the user's yes 2026-11-19): never cleared before (3 - 10 MB and growing over a session); now the least recently
+    // drawn go past the Thor's icon budget (LowMemCuts.iconsKept); one drawn again is asked of Icons again (its own LRU, or the pack)
+    private val iconBudget = LowMemCuts.iconsKeptNow()
+    private val iconReady = LowMemCuts.SizedLru<Int, Bitmap> { iconBudget }      // main thread
     private val iconAbsent = HashSet<Int>()             // main thread: the pack has no such icon (retried with the pack)
     private val iconWanted = LinkedHashSet<Int>()       // main thread: queued for the next batch
     private var iconBatchQueued = false
@@ -2165,6 +2230,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     }
 
     override fun onDraw(c: Canvas) {
+        if (away) return                                                   // off the page: no paint, no next frame asked for
         fonts()
         c.drawColor(Theme.ink)
         groundPainter?.invoke(c, width, height)
@@ -2644,6 +2710,11 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!(drawCollapsed && keyText == null) && b?.noBadge != true) drawGlyphBadge(c, gx, gy, pos, keyText, outOfRange, pressed)
         // the companion mark: a small gold "two screens" tag in the lower-left corner (the slot drives the bottom screen)
         if (b != null && b.ds) drawDsMark(c, cx - iconHalf * 0.62f, cy + iconHalf * 0.62f, iconHalf * 0.34f)
+        // #471 the rank badge, top LEFT (the glyph is top right, a reagent count bottom right, the DS mark a macro's): a ranked spell only
+        if (b != null && !empty && b.k == "spell" && !(drawCollapsed && keyText == null)) SpellRanks.of(if (b.rk > 0) b.rk else b.id)?.let { rb ->
+            rect.set(cx - iconHalf, cy - iconHalf, cx + iconHalf, cy + iconHalf)
+            UiKit.spellRank(c, rect, rb)
+        }
         if (talkNow != null && talkNow.mode == TalkFace.Mode.READY) drawTalkBadge(c, cx, cy, iconHalf, talkNow)
         return next
     }
@@ -2885,6 +2956,12 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 }
             }
             if (sel) aRadHi?.let { hl -> val hw = slot / 2f; drawBox(c, hl, px - hw, py - hw, px + hw, py + hw) }
+            // #471: a ranked spell's badge, bottom left inside the round icon (its inscribed square: the key glyphs sit outside the icon)
+            if (has) SpellRanks.of(r.ids[i])?.let { rb ->
+                val q = 49f * sc * 0.74f
+                rect.set(px - q, py - q, px + q, py + q)
+                UiKit.spellRank(c, rect, rb, UiKit.RANK_BOTTOM_LEFT)
+            }
             // pa1 / q62: a pet spell that may cast itself: the game's corners, the marching shine while it does (live: PetAuto, then
             // the layout's word); a command whose mode is on: the gold ring (UI Art)
             if (has && r.autoA[i]) UiKit.autoCastRing(c, px, py, 56f * sc, classAutoOn(r, i))
@@ -3197,6 +3274,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         CastBarPlace.slot(pos, layout == Layout.DIAMONDS, t, sx, xo, yo, width.toFloat(), out)
     }
     private val bandBox = FloatArray(3)
+    private val roomFromBox = FloatArray(3)
 
     /**
      * SPEC part 5: the 8 slots at their table positions, each drawn by [drawSlot] at the fixed [BAND_K]
@@ -3222,9 +3300,23 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             bandSlot(pos, bandBox)
             val circle = pos >= 4
             val scale = bandBox[2] / ((if (circle) 38f else 40f) * k)
+            // fix round 1: the toolbar's Left / Right picture in motion (a swap slides it in from the other slot, a change cross-fades)
+            val rk = if (fb != null && fb === roomBtns.getOrNull(src) && (src == 0 || src == 2)) roomMotionK(now) else null
+            var cx = bandBox[0]; var cy = bandBox[1]
+            if (rk != null) {
+                next = 0L
+                if (roomSwap) { bandSlot(2 - pos, roomFromBox); cx = lerp(roomFromBox[0], cx, rk); cy = lerp(roomFromBox[1], cy, rk) }
+                else roomPrev[src]?.let { pb ->
+                    val ps = c.save(); c.translate(cx, cy); c.scale(scale, scale)
+                    c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * (1f - rk)).toInt())
+                    drawSlot(c, pos, 0f, 0f, circle, pb, fightStateOf(pb, src), -1, now, false, 0f, null, -1f)
+                    c.restoreToCount(ps)
+                }
+            }
             val slotSave = c.save()
-            c.translate(bandBox[0], bandBox[1])
+            c.translate(cx, cy)
             c.scale(scale, scale)
+            if (rk != null && !roomSwap) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * rk).toInt())
             if (fb != null && fb.drawAlpha < 255) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, fb.drawAlpha)
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, st,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
@@ -3534,7 +3626,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
     private var roomNamePaint: Paint? = null
 
     /** Home draws this cast bar itself now (on screen, its band layout, a layout to draw): the rooms' bar leaves it out */
-    fun ownCastBarShown(): Boolean = isShown && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
+    fun ownCastBarShown(): Boolean = isShown && !away && bottomLine && layout != Layout.FULL && hud != null && k > 0f && width > 0
 
     /**
      * review fix: when this view leaves the screen or comes back (a room opens, a Home module covers the band, Home returns) the answer
@@ -3606,9 +3698,13 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val fa = if (offPass) now - offFlashAt else now - flashAtMs
         val fk = if (!offPass) flashKind else if (offFlashAt > 0L && fa >= 0 && fa < SWING_FLASH_MS) FLASH_SWING else 0
         val flashLen = when (fk) { FLASH_SWING -> SWING_FLASH_MS; FLASH_FAIL -> CastFx.FAIL_MS; else -> CastFx.FINISH_MS }
+        // P4: edit mode's fight preview with no real swing: the stand-in loops (the main hand's line only)
+        val standIn = swingPreview && !offPass && swingStartMs.isNaN()
         val parts = SwingLine.parts(swingOn && !castOnly && !roomPass && !into, now.toDouble(), castStartMs, castEndMs,
-            if (offPass) offStartMs else swingStartMs, if (offPass) offDurMs else swingDurMs, SWING_GRACE,
+            if (standIn) (now - now % PREVIEW_SWING_MS).toDouble() else if (offPass) offStartMs else swingStartMs,
+            if (standIn) PREVIEW_SWING_MS.toDouble() else if (offPass) offDurMs else swingDurMs, SWING_GRACE,
             fk != 0, fk == FLASH_SWING, fa, flashLen)
+        if (standIn && swingOn) postInvalidateOnAnimation()
         val flashing = parts.flash
         val casting = parts.cast
         val swingP = parts.swing
@@ -4248,6 +4344,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private val NO_KEYS = IntArray(ClassPetKeys.SPOTS) { -1 }
         // layers: the four trigger layers carry state, the three shoulder layers do not
         private const val N = 0; private const val LT = 1; private const val RT = 2; private const val LR = 3
+        /** the toolbar's Left / Right pictures cross-fade on a change that is not a swap (SPEC section 10: after Save, the new `d`) */
+        const val ROOM_FADE_MS = 120L
         private const val FR = 4; private const val HO = 5; private const val SC = 6
         private const val LAYERS = 7
         private const val STATE_LAYERS = 4
@@ -4327,6 +4425,8 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         private const val BAR_H = 14f                  // the bar's height at 1240 wide (UI Art)
         private const val DS_MACRO_PREFIX = "DS Bar"   // Spellbook's companion macros: DS Bar Left / Open / Right
         private const val SWING_GRACE = 0.5      // swing lengths the line waits dimmed for the next swing
+        /** P4: the fight preview's stand-in swing (ms; edit mode only: [swingPreview]) */
+        const val PREVIEW_SWING_MS = 2600L
         private const val FOCUS_MS = 330L          // *ShadowFocus alpha 1 -> 0.4
         private const val GLOW_TOP_MS = 300f       // trigger GlowTop alpha 1 -> 0
         private const val GLOW_BOTTOM_MS = 500L    // trigger GlowBottom alpha 0.7 -> 0.2

@@ -1,0 +1,191 @@
+package com.jrees.wowcompanion
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.view.MotionEvent
+import android.view.View
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * THE GAME'S AUCTION HOUSE, THE BOTTOM SCREEN'S KEYBOARD (Linux Streaming Edition 2026-11-21, Interact i180 / i181; the user: "AH in the
+ * bottom screen should go ... we will be using WoW's own interface, and basically nothing from the bottom screen. It could show non
+ * interactive stuff, like listed auctions, and recently bought items"; "we could use the screen below just for typing in AH").
+ *
+ * The auction house is the game's own window on the top screen, worked with WoW Forever's own controller navigation: the app never
+ * takes the controller for it (this panel is not in the host's "bottom wants the pad"). While the add-on's doc.ahinfo is there:
+ *  - the Chat keyboard (the host's, touch) types the game's search box: every letter goes into the field Chat.lua lent Interact
+ *    (chat22, [stream]: the typed rows, now one key per letter after the row's keys - TapPad pad34), and Done puts the words into the
+ *    game's box (SetText only: the search is the player's own press on the game's Search);
+ *  - [view] shows, read only: what is typed, your auctions and what you bought lately.
+ */
+class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private val padOf: () -> JSONObject?) {
+    val view = AhInfoView(ctx).apply { visibility = View.GONE }
+    private var kbOpen = false
+    private var typed = ""
+    private val stream = ChatStream({ cells, gap ->
+        TapBridge.tapsSpaced(ctx, padOf(), cells, gap) { why -> view.post { view.note = why; view.invalidate() } }
+    }, field = true).apply { onEvent = { view.post { view.invalidate() } } }
+    private val tick = object : Runnable {
+        override fun run() { stream.tick(); if (stream.sending) view.postDelayed(this, 500L) }
+    }
+
+    init { view.onTypeTap = { reopen() } }
+
+    /** every current interact document */
+    fun update(msg: JSONObject) {
+        val ah = msg.optJSONObject("ahinfo")
+        if (ah == null) { close(); return }
+        view.info = ah
+        if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
+        if (ah.optString("kbd") == "ahsearch") {
+            if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
+        } else if (kbOpen) closeKb()
+        view.typed = if (kbOpen) typed else ah.optString("text", "")
+        view.invalidate()
+    }
+
+    /** Chat.lua's answers ({"type":"chatt"}): the field's check and its hand-over */
+    fun onChatAnswer(msg: JSONObject) {
+        if (!kbOpen || msg.optString("type") != "chatt") return
+        stream.heard(ChatStream.Heard("chatt", msg.optString("op"), msg.optBoolean("ok"),
+            if (msg.has("why")) msg.optString("why") else null, msg.optString("ty", ""),
+            msg.optInt("len", -1), msg.optInt("h", -1), msg.optInt("tlen", -1), msg.optInt("th", -1), msg.optString("into")))
+    }
+
+    private fun openKb(text: String) {
+        kbOpen = true
+        typed = stream.clean(text, MAX)
+        stream.startField(typed)
+        kb.sendWord = "Done"
+        kb.text = { typed }
+        kb.onText = { t -> typed = stream.clean(t, MAX); stream.setBody(typed); view.typed = typed; view.invalidate() }
+        kb.onSend = { if (stream.send()) { view.removeCallbacks(tick); view.postDelayed(tick, 500L) } }
+        // the keyboard's own close: it goes down, the panel stays (a finger on the search line brings it back)
+        kb.onClose = { view.kbDismissed = true; closeKb(); view.invalidate() }
+        kb.voiceBox = true
+        kb.voiceAppend = false
+        kb.voiceMax = MAX
+        kb.copyLeftMs = { stream.copyLeftMs() }
+        kb.open(); kb.visibility = View.VISIBLE
+    }
+
+    private fun reopen() {
+        val ah = view.info ?: return
+        view.kbDismissed = false
+        if (!kbOpen && ah.optString("kbd") == "ahsearch") openKb(ah.optString("text", ""))
+        view.invalidate()
+    }
+
+    private fun closeKb() {
+        if (!kbOpen) return
+        kbOpen = false
+        kb.stopVoice(restore = false)
+        view.removeCallbacks(tick)
+        kb.visibility = View.GONE
+    }
+
+    private fun close() {
+        closeKb()
+        view.kbDismissed = false
+        view.info = null; view.note = null
+        if (view.visibility != View.GONE) view.visibility = View.GONE
+    }
+
+    companion object { const val MAX = 63 }
+}
+
+/** Read only: the search words, your auctions, what you bought lately. A finger on the search line only brings the keyboard back. */
+class AhInfoView(ctx: Context) : View(ctx) {
+    var info: JSONObject? = null
+    var typed = ""
+    var note: String? = null
+    var kbDismissed = false
+    var onTypeTap: () -> Unit = {}
+    private var searchBottom = 0f
+    private val bg = Paint().apply { color = Color.argb(235, 12, 10, 8) }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        // the search line only; everything else passes through (the panel has no functions)
+        if (e.y > searchBottom) return false
+        if (e.action == MotionEvent.ACTION_UP) onTypeTap()
+        return true
+    }
+
+    override fun onDraw(c: Canvas) {
+        val a = info ?: return
+        val w = width.toFloat()
+        c.drawRect(0f, 0f, w, height.toFloat(), bg)
+        val pad = w * 0.03f
+        var y = pad
+        val title = UiKit.titlePaint(w * 0.045f)
+        y += title.textSize
+        c.drawText("Auction House", pad, y, title)
+        val sub = UiKit.bodyPaint(w * 0.024f, Theme.dim)
+        c.drawText("on the top screen: the game's own window, with the controller", pad, y + sub.textSize * 1.4f, sub)
+        y += sub.textSize * 2.6f
+        val body = UiKit.bodyPaint(w * 0.03f)
+        val label = UiKit.bodyPaint(w * 0.026f, Theme.gold)
+        c.drawText("Search", pad, y + label.textSize, label)
+        val shown = typed.ifEmpty { if (kbDismissed) "tap here to type" else "" }
+        c.drawText(shown, pad + w * 0.14f, y + label.textSize, if (typed.isEmpty()) sub else body)
+        y += label.textSize * 1.9f
+        searchBottom = y
+        note?.let { c.drawText(it, pad, y, UiKit.bodyPaint(w * 0.022f, Color.rgb(230, 90, 70))); y += w * 0.03f }
+        val half = (w - pad * 3) / 2f
+        val owned = a.optJSONArray("owned") ?: JSONArray()
+        val bought = a.optJSONArray("bought") ?: JSONArray()
+        column(c, pad, y, half, "Your auctions (${a.optInt("nOwned", owned.length())})", owned, true)
+        column(c, pad * 2 + half, y, half, "Bought lately", bought, false)
+    }
+
+    private fun column(c: Canvas, x: Float, y0: Float, w: Float, head: String, rows: JSONArray, owned: Boolean) {
+        val label = UiKit.bodyPaint(width * 0.026f, Theme.gold)
+        val row = UiKit.bodyPaint(width * 0.024f)
+        val num = UiKit.numberPaint(width * 0.024f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
+        var y = y0 + label.textSize
+        c.drawText(head, x, y, label)
+        y += label.textSize * 0.6f
+        if (rows.length() == 0) {
+            c.drawText(if (owned) "none listed" else "nothing yet", x, y + row.textSize * 1.3f, UiKit.bodyPaint(width * 0.022f, Theme.dim))
+            return
+        }
+        val line = row.textSize * 1.55f
+        for (i in 0 until rows.length()) {
+            val r = rows.optJSONObject(i) ?: continue
+            y += line
+            if (y > height - line) break
+            val n = r.optInt("n", 1)
+            val name = r.optString("name", "?").let { if (n > 1) "$it ×$n" else it }
+            val price = r.optLong("price", 0L).takeIf { it > 0 } ?: r.optLong("bid", 0L)
+            val right = buildString {
+                append(gsc(price))
+                if (owned) append(if (r.optBoolean("sold")) "  sold" else "  " + left(r.optInt("left", -1)))
+            }
+            val rw = num.measureText(right)
+            c.drawText(fit(name, row, w - rw - width * 0.02f), x, y, row)
+            c.drawText(right, x + w, y, num)
+        }
+    }
+
+    private fun fit(s: String, p: Paint, max: Float): String {
+        if (p.measureText(s) <= max) return s
+        var t = s
+        while (t.length > 1 && p.measureText("$t…") > max) t = t.dropLast(1)
+        return "$t…"
+    }
+
+    companion object {
+        /** copper -> "1g 2s 3c" (the zero parts left out) */
+        fun gsc(copper: Long): String {
+            if (copper <= 0) return ""
+            val g = copper / 10000; val s = copper / 100 % 100; val cc = copper % 100
+            return listOfNotNull(if (g > 0) "${g}g" else null, if (s > 0) "${s}s" else null, if (cc > 0 || (g == 0L && s == 0L)) "${cc}c" else null)
+                .joinToString(" ")
+        }
+        /** the game's Enum.AuctionHouseTimeLeftBand: 0 short .. 3 very long */
+        fun left(band: Int): String = when (band) { 0 -> "<30m"; 1 -> "<2h"; 2 -> "<12h"; 3 -> "12-48h"; else -> "" }
+    }
+}

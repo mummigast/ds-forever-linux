@@ -190,10 +190,24 @@ object StartupDiag {
             out += "  ${p.flavorDir}: exe ${exe.name} ${if (exe.isFile) "present (${mb(exe.length())}, ${stamp(exe.lastModified())})" else "missing"}"
         }
         out += "Data: ${dataSize(File(root, "Data"))}"
+        // issue #571: has the game run in this folder (its first run, read from the folder itself)?
+        out += "Game runs: " + runCatching { DataStaleness.traces(root) }.getOrElse { "? (${it.message})" }
         // issue #57: the keys a copied folder brings (names only)
         out += "Config.wtf: " + runCatching {
             val p = choice?.product ?: WowProduct.of(root)
             GameConfigWtf.reportLine(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
+        }.getOrElse { "? (${it.message})" }
+        // bug 2026-11-20 (test 1513, the account list shown with Remembered): the last Play's game-account states and the file's shape
+        // now (what the game left at its exit); states and counts only, never a label
+        out += "Game account: " + runCatching {
+            val p = choice?.product ?: WowProduct.of(root)
+            GameAccountDiag.reportLine(GameAccountDiag.last, GameAccountDiag.shape(GameAccountDiag.configWtf(root, p)),
+                GameAccountDiag.logList) { stamp(it) }
+        }.getOrElse { "? (${it.message})" }
+        // #56 G2: what the low-memory keys hold now (numbers only), so a report shows whether the game kept them
+        out += "Low-memory keys: " + runCatching {
+            val p = choice?.product ?: WowProduct.of(root)
+            GameConfigWtf.lowMemoryValues(File(root, "${p.flavorDir}/WTF/Config.wtf").takeIf { it.isFile }?.readText())
         }.getOrElse { "? (${it.message})" }
         // the login triage (2026-11-13, #248): the portal the game signs in at beside the choice, the install's branch and the device
         out += runCatching {
@@ -203,6 +217,9 @@ object StartupDiag {
         }.getOrElse { "Region: ? (${it.message})" }
         out += "Active build (GameFiles): ${runCatching { GameFiles.activeBuild(root)?.let { "${it.first} ${it.second}" } }.getOrNull() ?: "none"}"
         out += "Last open problem: ${GameFiles.lastWhy ?: "(none)"}"
+        // #577: the last game run that closed as it started, with the guest program's own last lines (proot / box64 / Wine)
+        out += "Last quick close: " + (GuestOutput.lastQuickExit?.replace("\n", "\n    ") ?: "(none)")
+        out += "Last repair: ${GameRepair.last ?: "(none)"}"
         return out
     }
 
@@ -275,8 +292,14 @@ object StartupDiag {
         "Indoor maps in the background: ${runCatching { Settings.init(ctx); Settings.indoorBuild }.getOrDefault("?")}",
         // issue triage 2026-11-14 (the low-memory cluster #236 - #276): the reports could not say whether the game's smaller textures were on
         "Thor model: ${runCatching { DeviceTier.init(ctx); DeviceTier.model() }.getOrDefault("?")}; lighter mode ${runCatching { DeviceTier.lowMemory() }.getOrDefault(false)}; " +
-            "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}",
+            "low-memory graphics ${runCatching { Settings.init(ctx); if (Settings.lowMemGraphics) "on" else "off" }.getOrDefault("?")}" +
+            // Light 8 (LIGHT8_PLAN.md; the user's answer Q1: no switch, the report says it is on): on the 8 GB Thors only, so every other
+            // Thor's header is test build 1516's
+            light8Header(runCatching { DeviceTier.light8() }.getOrDefault(false)),
     )
+
+    /** the Thor model line's Light 8 part: "; 8 GB light: on" on the 8 GB Thors, nothing elsewhere. Pure */
+    fun light8Header(on: Boolean): String = if (on) "; 8 GB light: on" else ""
 
     /**
      * THE NEWEST CRASH RECORD IN SHORT (issue triage 2026-11-16, the 1.0.32 low-memory cluster #279 - #425: every report's excerpt
@@ -322,6 +345,14 @@ object StartupDiag {
             .filter { it.isFile && it.name.endsWith(".txt") }.sortedByDescending { it.lastModified() }
         out += "DS Forever crash files: ${files.size}" + (files.firstOrNull()?.let { ", the newest ${it.name} at ${ago(it.lastModified(), now)}" } ?: "")
         files.firstOrNull()?.let { f -> runCatching { f.bufferedReader().use { r -> crashExcerpt(r.lineSequence()).forEach { out += "  | $it" } } } }
+        // memory work #56 (D5): the newest record's memory in short, the #56 comments' key lines (tools/report-worker trackers.js)
+        var stamp: String? = null
+        if (Build.VERSION.SDK_INT >= 30) runCatching {
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            stamp = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 6).firstOrNull { it.reason == 3 }
+                ?.let { e -> runCatching { e.processStateSummary }.getOrNull()?.toString(Charsets.UTF_8) }
+        }
+        runCatching { out += memKeyLines(files.firstOrNull()?.let { f -> runCatching { f.readText() }.getOrNull() }, stamp) }
         if (Build.VERSION.SDK_INT >= 30) runCatching {
             val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val exits = am.getHistoricalProcessExitReasons(ctx.packageName, 0, 6)
@@ -331,6 +362,25 @@ object StartupDiag {
                 (e.description?.let { ": ${it.take(160)}" } ?: "")
         }
         return out
+    }
+
+    /**
+     * THE KILLED RUN'S MEMORY IN SHORT (memory work #56, D5, the user's yes 2026-11-19): what the #56 comments quote as key lines - the
+     * newest low-memory exit's own stamp ([stamp]: MemWatch.stateSummary, carried by Android's exit record; else the record's "State at
+     * the end" line), then the record's last 3 memory lines and its last trims and reliefs (MemWatch.keyLines), each "Mem ...: " and at
+     * most 230 characters (the comments cut at 240). [record] = the newest crash record's text, null = none. Pure (the tests).
+     */
+    fun memKeyLines(record: String?, stamp: String?): List<String> {
+        val out = ArrayList<String>()
+        val st = stamp?.filter { it.code in 32..126 }?.trim()?.takeIf { it.isNotEmpty() }
+            ?: record?.lineSequence()?.firstOrNull { it.startsWith("State at the end: ") }?.removePrefix("State at the end: ")?.trim()
+        st?.let { out += "Mem stamp: $it" }
+        val mem = record?.let { ReportUpload.splitMemory(it).second }
+        if (mem != null) for (l in MemWatch.keyLines(mem.lines().filter { it.isNotBlank() })) {
+            val e = l.length > 9 && MemWatch.isEvent(l.substring(9))
+            out += (if (e) "Mem event: " else "Mem line: ") + l
+        }
+        return out.map { it.take(230) }
     }
 
     private fun exitReason(r: Int): String = when (r) {

@@ -32,26 +32,20 @@ companion on the bottom screen. At home or over a VPN such as WireGuard.
 
 **Improved**
 - **Keyboard shortcuts instead of screen clicks** wherever possible: quests, vendors (buy, sell, repair), bags (in fights too),
-  a bag slot picked by touch, the top-screen switches. Streaming, a click lands where WoW
+  a bag slot picked by touch, the top-screen switches, the room switch, the Controller room and the tap-to-cast bar, typing
+  (one key per letter). Streaming, a click lands where WoW
   parks its cursor after controller play, so clicks often missed; shortcuts don't, and fewer automated inputs are sent.
 - **Less stutter while streaming:** the add-ons' big updates are built once and spread over frames (a fight's start ~32 + 20 ms
   instead of one ~110 ms frame).
 - **Chat item links** no longer stick on "Retrieving item information".
+- **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the
+  bottom screen is its keyboard (type the search, Done) and shows your auctions and what you bought lately.
 - **Settings show only what works when streaming.**
 
 **Removed / left out**
 - **No local game:** this edition only streams. No Local card, no Battle.net sign-in on the Thor, and the local runtime (Proton,
   DXVK, drivers, ...) is not packaged: the app is about 130 MB and installs beside the official one
   (`app.dsforever.companion.linux`). The Thor never downloads or updates WoW itself.
-
-**New in the current beta** (see *Stable and beta* below; not in the stable release yet)
-- **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the
-  app's own auction-house screen is gone. The bottom screen is its keyboard (type the search, Done) and shows your auctions and
-  what you bought lately.
-- **More keyboard shortcuts, fewer automated inputs:** typing is one key per letter (the auction-house search, the app's chat);
-  the room switch, the Auras pick and the Talents rows go as shortcuts.
-- **Less work per update inside the game:** ~6x fewer log writes per push, equipment and bag data reused instead of rebuilt,
-  unit events asked for only for the units the add-ons use.
 
 The full list, file by file: [FORK.md](FORK.md). What changed lately: [CHANGES.md](CHANGES.md).
 Each version is a [release](https://github.com/mummigast/ds-forever-linux/releases) (`linux-v<DS Forever version>.<n>`) with the APK, the
@@ -66,10 +60,7 @@ helper with its matching add-ons, `SHA256SUMS`, the source and its notes: watch 
   [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md), and every pre-release's own notes
   on the [releases page](https://github.com/mummigast/ds-forever-linux/releases). When a beta has proven itself it becomes the next
   stable release.
-- **Current beta: [linux-v1.0.37.5-beta.2](https://github.com/mummigast/ds-forever-linux/releases/tag/linux-v1.0.37.5-beta.2)**
-  (on top of stable 1.0.37.4): the auction house is the game's own window on the top screen (the bottom screen is its keyboard),
-  fewer automated inputs (typing is one key per letter), less work per update inside the game. Try it if you like testing, and
-  report what breaks.
+- **Current beta:** none right now; the next one starts from stable 1.0.38.1.
 - **Installing a beta:** download its APK and its `dsf-linux-helper-<version>.tar.gz` from the pre-release (both, the add-ons must
   match the app), install the APK over the stable one (same signing key, your settings stay) and run the helper's `./install.sh`.
   To go back, install the latest stable release's APK and helper the same way. The app's update check never offers a beta.
@@ -165,7 +156,7 @@ Authenticator challenges are manual; avoid repeated wrong-password tests.
 
 The companion shows observed NPCs, not database-only ghosts. No suggested spells.
 Old DS-created macros are removed silently, preserving user-created macros.
-Map probe defaults ON, tracking auto-switch OFF, sparkles OFF. Indoor legend:
+Herbs/ore: use the game's minimap tracking (live minimap dots are gone). Sparkles OFF by default. Indoor legend:
 **red main exit, green up, blue down**. Outdoors remains visible while a plan loads.
 
 ## Streaming From Your PC

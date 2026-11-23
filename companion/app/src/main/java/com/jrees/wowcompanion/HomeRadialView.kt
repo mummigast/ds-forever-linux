@@ -196,13 +196,15 @@ class HomeRadialView(
     private var who: String? = prefs.getString("who", null)
 
     /** the character now ("name-realm", from a current padmap); another character's kept lists go */
-    fun character(key: String) {
+    fun character(key: String?) {
         if (key == who) return
-        Log.i(TAG, "radial: character $key (kept lists were ${who ?: "unknown"}'s): kept lists dropped")
+        Log.i(TAG, "radial: character changed: kept lists dropped")       // the k6 review (item 10): never a name
         for (k in listOf("radial", "sradial")) if (k !in trustedOf) docs.remove(k)
         if ("sradial" !in trustedOf) spellRadials = null
         if (source !in trustedOf) { doc = docs[source]; if (isOpen) invalidate() }
         who = key
+        // the k6 review (item 2): null = a character with no realm yet: nothing kept under the previous one's name (nor a Reset's "who")
+        if (key == null) { prefs.edit().remove("doc").remove("sdoc").remove("who").apply(); return }
         prefs.edit().remove("doc").remove("sdoc").putString("who", key).apply()
         // what this app life already got from the game IS this character's: kept again under its name
         docsMsg.forEach { (k, m) -> prefs.edit().putString(if (k == "sradial") "sdoc" else "doc", m).apply() }
@@ -445,7 +447,8 @@ class HomeRadialView(
             val dim = left <= 0.0 && (if (spell) RadialModel.Cd.dim(i.id) else ItemCd.dim(i.id))
             UiKit.RadialItem(Icons.get(i.icon), i.name, RadialModel.countShown(spell, i), pinned = i.pinned, ranOut = i.ranOut,
                 noMana = spell && NoMana.has(i.id),        // m71: a spell wheel's spell out of mana
-                cdLeft = left.toFloat(), cdLen = len.toFloat(), cdDim = dim) } }
+                cdLeft = left.toFloat(), cdLen = len.toFloat(), cdDim = dim,
+                rank = if (spell) SpellRanks.of(i.id) else null) } }     // #471: a spell wheel's ranked spell
     }
 
     /** the stick goes back only from neutral, or [RadialModel.STICK_BACK_MS] after the close (the user 2026-10-09; the pause wheel's rule) */

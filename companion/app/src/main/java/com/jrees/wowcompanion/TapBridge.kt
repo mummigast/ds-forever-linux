@@ -72,7 +72,7 @@ object TapBridge {
 
     /** 2026-11-21 (key-only rows, TapPad pad30): whether [cells] would go as keys right now (a key-only row has no click fallback) */
     fun keysNow(pad: JSONObject?, cells: List<Pair<String, Int>>): Boolean =
-        KEYS_ON && InputSink.sink != null && !GameInput.typing && TapKeys.script(pad, cells, 0L, keySession) != null
+        KEYS_ON && InputSink.sink != null && !GameInput.typing && cells.all { (op, col) -> TapKeys.cellKeys(pad, op, col, keySession) != null }
     @Volatile private var askedAt = 0L
 
     /** CompanionHost routes every "padkeytest" document here. Only a CURRENT handshake answer counts (a replayed one proves nothing) */
@@ -409,6 +409,7 @@ object TapBridge {
                 RootShell.run(keyScript) { r ->
                     if (r.exit != 0) {
                         keySession = null                   // a new handshake before keys again
+                        TapKeys.forgetSticky()              // pad34: nothing of that line was pressed
                         Log.w(TAG, "keys refused (exit ${r.exit}): $what")
                         // ONE line refused = nothing was pressed (InputSink checks the whole line first): the same action as clicks
                         if (!keyScript.contains('\n')) send(ctx, pad, cells, gapMs, onFail) else onFail("keys were refused (exit ${r.exit})")

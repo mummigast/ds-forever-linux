@@ -58,7 +58,9 @@ object GameLife {
 
     fun started(now: Long = System.currentTimeMillis()) {
         startedAt = now; worldSeen = false; ended = false; note = null; closer = null; loads = 0; loadingAt = 0L; worldAt = 0L; loadEndAt = 0L
+        lastLoadAt = 0L
         leftAt = 0L
+        runCatching { LoadHold.windowStarted() }                   // Light 8: a new game's window (nothing to clear on another Thor)
         DiagLog.event("game", "started")
         LastRun.gameStarted(now)                                   // 1.0.17: kept across the app's own death
         // issue triage 2026-11-14 (the 1.0.29 - 1.0.31 low-memory cluster; the user: "yes on the triage things"): the game is about to
@@ -94,7 +96,7 @@ object GameLife {
      */
     fun worldLeft(now: Long = System.currentTimeMillis()) { if (worldNow) leftAt = now }
     /** the add-on's hello after a logout word ([worldLeft]): the world is back, its calm starts now */
-    fun worldBack(now: Long = System.currentTimeMillis()) { if (leftAt != 0L) { leftAt = 0L; worldAt = now } }
+    fun worldBack(now: Long = System.currentTimeMillis()) { if (leftAt != 0L) { leftAt = 0L; worldAt = now; runCatching { LoadHold.windowStarted() } } }
     /** the logout word came and the add-on's hello not yet */
     val awayNow: Boolean get() = worldNow && leftAt != 0L
     @Volatile private var leftAt = 0L
@@ -104,6 +106,7 @@ object GameLife {
         if (worldSeen || startedAt == 0L) return
         worldAt = now
         worldSeen = true
+        runCatching { LoadHold.windowStarted() }                   // Light 8: the world entry's own window
         DiagLog.event("game", "in the world after ${minutes(now - startedAt)}")
         LastRun.gameInWorld()
         // issue triage 2026-11-14: the reports' kills came 7 - 36 s after this, the game still loading the world: the same relief.
@@ -131,7 +134,8 @@ object GameLife {
     fun loadingScreen(on: Boolean, now: Long = System.currentTimeMillis()): String? {
         if (!worldNow) return null
         if (on) {
-            loadingAt = now; loads++
+            loadingAt = now; lastLoadAt = now; loads++
+            runCatching { LoadHold.windowStarted() }               // Light 8: this loading screen's window
             val why = "loading screen $loads"
             MemWatch.relieve(why)
             return why
@@ -144,6 +148,18 @@ object GameLife {
         runCatching { Scene.loadingOver("loading screen $loads over") }
         return l
     }
+    /**
+     * LIGHT 8'S LOAD-TIME WINDOW NOW (LoadHold.deferNow; LIGHT8_PLAN.md change 4): the login's (from [started] - pressing Play - until
+     * [inWorld]; [loadingScreen] fires only once in the world, so the login's own load keys off the game's start), the world entry's
+     * (until 30 s after [inWorld] or [worldBack]) and the last loading screen's in the world (until 5 s after its end). Nothing once
+     * the game has ended - a loading screen up when it died included (its "over" never comes then). Read by LoadHold only
+     */
+    fun holdWindow(now: Long = System.currentTimeMillis()): Boolean =
+        LoadHold.deferNow(if (ended) 0L else startedAt, if (worldSeen) worldAt else 0L, if (ended) 0L else lastLoadAt, loadingAt != 0L,
+            loadEndAt, now)
+    /** when the last loading screen in the world came (kept after its end; 0 = none in this game) */
+    @Volatile private var lastLoadAt = 0L
+
     /** the loading screens seen in the world in this game run, and when the one up now came (0 = none up) */
     @Volatile var loads = 0
         private set
@@ -161,8 +177,31 @@ object GameLife {
         val indoor = runCatching { IndoorSchedulerStep.status?.let { "${it.phase.name.lowercase()} ${it.ready}/${it.total}" } }.getOrNull() ?: "not running"
         DiagLog.event("game", "ended: ${describe(status, by)} (status $status) after ${minutes(ran)}${if (worldSeen) "" else ", before reaching the world"}; " +
             "MemAvailable $mem; indoor maps: $indoor")
-        note = if (abnormal(status, by)) noteText(status, ran) else null
+        // #577: closed as it started (proot / box64 / Wine gave up before the client ran): its own output into the log and the report
+        val quick = quickExit(status, ran, by, startedAt != 0L)
+        quickExits = if (quick) quickExits + 1 else 0
+        if (quick) runCatching {
+            val (lines, before) = GuestOutput.tail()
+            DiagLog.event("game", "closed as it started ($ran ms, status $status, $quickExits in a row); its output: " +
+                if (lines.isEmpty()) "none" else "${lines.size} lines${if (before > 0) " (and $before before them)" else ""}")
+            for (l in lines) DiagLog.event("game output", l)
+            val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(now))
+            GuestOutput.lastQuickExit = "status $status after $ran ms ($quickExits in a row, $at):\n" + GuestOutput.block(lines, before)
+        }
+        note = if (abnormal(status, by)) (if (quick) quickNoteText(status) else noteText(status, ran)) else null
     }
+
+    /** #577: a run that closed within this long, with an error and not by us, closed as it started (the client never ran) */
+    const val QUICK_EXIT_MS = 2_000L
+    /** the runs in a row that closed as they started (0 after any other end) */
+    @Volatile var quickExits = 0
+        private set
+    fun quickExit(status: Int, ranMs: Long, closer: String?, started: Boolean): Boolean =
+        started && status != 0 && closer == null && ranMs in 0 until QUICK_EXIT_MS
+
+    /** the note's words when the game closed as it started (#577) */
+    fun quickNoteText(status: Int): String =
+        "The game closed as it started (${describe(status)}). A problem report holds what it said: please send one."
 
     /** the launcher's screen is back (the game screen gone) */
     fun launcherBack() { if (startedAt != 0L) DiagLog.event("launcher", "back") }

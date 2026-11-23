@@ -65,8 +65,8 @@ android {
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 1506
-        versionName = "1.0.37"
+        versionCode = 1520
+        versionName = "1.0.38"
 
         buildConfigField("boolean", "GOLD", "false")
         // DS Forever's self-update (Track C, the user's rulings 2026-10-12): the PUBLIC release repo "owner/repo" whose latest GitHub
@@ -223,10 +223,22 @@ val checkSessionBridge = tasks.register("checkSessionBridge") {
     }
 }
 
+// Proton ships without its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android v2.4.4 55b0bd23):
+// the original download (tools/components.sha256) still runs and the APK is only ~60 MB bigger; tools/build_release.py refuses it
+val bundledProton = file("src/main/assets/bundled_components/proton-11.0-90624-arm64ec.wcp")
+val checkTrimmedProton = tasks.register("checkTrimmedProton") {
+    val wcp = bundledProton
+    doLast {
+        if (wcp.isFile && wcp.length() == 125_790_679L) {
+            logger.warn("DS Forever: ${wcp.name} still has its 32-bit Windows files (~60 MB): python tools/trim_proton_i386.py ${wcp.path}")
+        }
+    }
+}
+
 tasks.configureEach {
     // Linux Streaming Edition (2026-11-19, the 1.0.36 merge): the browser-login helper runs only in the local game's container, which a
     // streaming-only build leaves out (it is built with Windows tools, tools/wow-session-bridge); -PlocalRuntime=true checks it as upstream
-    if (localRuntime && name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge)
+    if (localRuntime && name.startsWith("merge") && name.endsWith("Assets") && !name.contains("Test")) dependsOn(checkSessionBridge, checkTrimmedProton)
     if (name == "preModernReleaseBuild") {
         doFirst {
             require(listOf("WC_KEYSTORE", "WC_KEYSTORE_PASS", "WC_KEY_ALIAS", "WC_KEY_PASS").all {

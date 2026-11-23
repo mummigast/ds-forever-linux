@@ -197,5 +197,123 @@ for k in ('DOWN', 'DOWN', cols[15], 'INSERT'):
     key(k)
 check(L.eval('#CURTAPS') == 2 and L.eval('CURTAPS[2]') == 36, "31: a key-only row's column 36 by INSERT", L.eval('CURTAPS[2]'))
 
+# pad31: a SECURE far row's "click" cells by keys (the dialogs' leave buttons, the backpack doors), columns 36-39 too
+L.execute("""
+local pad = WowCompanion.pad
+TGT_HITS = {}
+local function target(name) local f = CreateFrame("Button", name, UIParent); f:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = name end); return f end
+local t25, t38 = target("LeaveTarget25"), target("DoorTarget38")
+IDLGTAPS = {}
+pad.secureRow("idlg", 40, function(btn, col)
+    if col == 25 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", t25)
+    elseif col == 38 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", t38) end
+end, function(col) IDLGTAPS[#IDLGTAPS + 1] = col end)
+if pad.buildSecure then pad.buildSecure() end
+pad.bindKeys()
+if pad.keysFarRefresh then pad.keysFarRefresh() end
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('idlg') == 'DOWN DOWN ' + cols[19], "32: idlg = DOWN DOWN + selector 19", rows.get('idlg'))
+check(KT is not None and KT['sfx']['idlg'] is True and KT['sfx']['bag0'] is None, "33: sfx lists idlg (36-39 by keys), not bag0 (its doors stay clicks)", '')
+def hits():
+    n = int(L.eval('#TGT_HITS')); out = [L.eval('TGT_HITS[%d]' % i) for i in range(1, n + 1)]; L.execute('TGT_HITS = {}'); return out
+fired(); hits(); tick(1)
+for k in ('DOWN', 'DOWN', cols[19], cols[25]):
+    key(k)
+got = hits()
+check(got == ['LeaveTarget25'], "34: DOWN DOWN sel19 + column 25 clicks the leave cell's own target", got)
+check(L.eval('#IDLGTAPS') >= 1 and L.eval('IDLGTAPS[#IDLGTAPS]') == 25, "35: ... and the row's own tap work ran for column 25", L.eval('#IDLGTAPS'))
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], 'END'):
+    key(k)
+got = hits()
+check(got == ['DoorTarget38'], "36: column 38 by END (a COLX key) clicks that cell's target", got)
+check(fired() == [], "37: ... and no plain row fired with either", '')
+# a target re-aimed out of combat follows (OnAttributeChanged mirror)
+L.execute('local t = CreateFrame("Button", "NewTarget25", UIParent); t:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = "NewTarget25" end); WowCompanion.pad.rows.idlg.cells[25]:SetAttribute("clickbutton", t)')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], cols[25]):
+    key(k)
+got = hits()
+check(got == ['NewTarget25'], "38: a re-aimed cell's new target is the one clicked", got)
+# a cell with no action (type cleared, as a door when the bags show): nothing
+L.execute('WowCompanion.pad.rows.idlg.cells[38]:SetAttribute("type", nil)')
+tick(1)
+for k in ('DOWN', 'DOWN', cols[19], 'END'):
+    key(k)
+check(hits() == [], "39: a cell with no action: nothing clicked", '')
+
+# pad31b: the bag row's click cells (the backpack door reads modifiers) get no mirror: no key path for them
+L.execute("""
+local pad = WowCompanion.pad
+DOORHIT = 0
+local door = CreateFrame("Button", "DoorBackpack", UIParent); door:SetScript("OnClick", function() DOORHIT = DOORHIT + 1 end)
+pad.rows.bag0.cells[5]:SetAttribute("type", "click"); pad.rows.bag0.cells[5]:SetAttribute("clickbutton", door)
+pad.keysFarRefresh()
+""")
+tick(1)
+for k in ('DOWN', 'DOWN', cols[3], cols[5]):
+    key(k)
+check(L.eval('DOORHIT') == 0, "40: a bag row's click cell is not pressed by keys (no mirror)", L.eval('DOORHIT'))
+
+# pad32: the Auras pick and the Talents rows are far rows (selectors 20-22)
+L.execute("""
+local pad = WowCompanion.pad
+for _, n in ipairs({ "aurapick", "talents", "talentn" }) do
+    if not pad.rows[n] then pad.op(n, n, function() end) end
+    local r, name = pad.rows[n], n
+    local h = r.handler
+    if type(h) == "function" and not r.wcTest then r.wcTest = true; r.handler = function(k, c) FIRED[#FIRED + 1] = name .. ":" .. tostring(c); return h(k, c) end end
+end
+pad.bindKeys()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('aurapick') == 'DOWN DOWN ' + cols[20] and rows.get('talents') == 'DOWN DOWN ' + cols[21] and rows.get('talentn') == 'DOWN DOWN ' + cols[22],
+      "41: aurapick / talents / talentn = DOWN DOWN + selectors 20 / 21 / 22", (rows.get('aurapick'), rows.get('talents'), rows.get('talentn')))
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[22], cols[4]):
+    key(k)
+check(fired() == ['talentn:4'], "42: talentn column 4 by keys", '')
+
+# pad33: the chat rows as far rows (selectors 23-25), unless a row has its own row key
+L.execute("""
+local pad = WowCompanion.pad
+for _, n in ipairs({ "chr", "chs" }) do
+    if not pad.rows[n] then pad.op(n, n, function() end) end
+    local r, name = pad.rows[n], n
+    local h = r.handler
+    if type(h) == "function" and not r.wcTest then r.wcTest = true; r.handler = function(k, c) FIRED[#FIRED + 1] = name .. ":" .. tostring(c); return h(k, c) end end
+end
+pad.bindKeys()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('chr') == 'DOWN DOWN ' + cols[24] and rows.get('chs') == 'DOWN DOWN ' + cols[25], "43: chr / chs = DOWN DOWN + selectors 24 / 25",
+      (rows.get('chr'), rows.get('chs')))
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[25], 'INSERT', 'DOWN', 'DOWN', cols[24], cols[5]):
+    key(k)
+check(fired() == ['chs:36', 'chr:5'], "44: chs 36 (INSERT) then chr 5, by keys", '')
+
+# pad34: the typing rows stay picked: after the row's keys, one key per letter; "ll" is two letters; any row key ends it
+KT = L.eval('WowCompanion.pad.describe().keys')
+check(KT['sticky']['chr'] is True and KT['sticky']['qact'] is None, "45: keys.sticky lists the typing rows", '')
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[24], cols[5], cols[6], cols[6], cols[7]):
+    key(k)
+check(fired() == ['chr:5', 'chr:6', 'chr:6', 'chr:7'], "46: a word on chr: row keys once, then one key per letter (the double letter twice)", '')
+key('INSERT'); key(cols[3])
+check(fired() == ['qact:3'], "47: a row key (INSERT) right after typing is a row, never chr's column 36", '')
+tick(1)
+key(cols[5])
+check(fired() == [], "48: after the stickiness ran out a lone column key is nothing", '')
+for k in ('DOWN', 'DOWN', cols[24], cols[5]):
+    key(k)
+tick(3)
+key(cols[6])
+check(fired() == ['chr:5'], "49: 3 s later the row is no longer picked (KEY_STICKY_TTL 2 s)", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
                 if (PluviaApp.keepAlive) runCatching { PluviaApp.shutdownEnvironment() }
             }
             try { Thread.sleep(1_000L) } catch (_: InterruptedException) {}
+            com.jrees.wowcompanion.IndoorSchedulerStep.appExit()     // #568: the app's exit is one of the indoor maps' few stops
             com.jrees.wowcompanion.LastRun.ownExit(app)
             android.os.Process.killProcess(android.os.Process.myPid())
         }, "dsf-close-fallback").apply { isDaemon = true }.start()
@@ -213,6 +214,7 @@ class MainActivity : ComponentActivity() {
                 val am = app.getSystemService(android.app.ActivityManager::class.java)
                 if (am?.appTasks.isNullOrEmpty() && !PluviaApp.keepAlive) {
                     // issue #355: Android records this kill as "stopped by a signal" (9); the mark says it was ours (LastRun.ownKill)
+                    com.jrees.wowcompanion.IndoorSchedulerStep.appExit()     // #568: it outlives the bottom screen, not the app
                     com.jrees.wowcompanion.LastRun.ownExit(app)
                     android.os.Process.killProcess(android.os.Process.myPid())
                 }
@@ -240,6 +242,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         PluviaApp.isActivityInForeground = true
+        // the game may have finished booting while the app was in the background, when Android refuses to start a foreground
+        // service (upstream v2.4.4): before the move to the top screen below, which returns early
+        if (PluviaApp.xEnvironment != null) GameSessionService.ensureStarted(applicationContext)
         // DS Forever fork: an existing task brought back on the bottom screen (singleTop: no onCreate) moves to the top screen too
         if (com.jrees.wowcompanion.fork.DsForeverScreen.moveToTop(this, PluviaApp.xEnvironment != null)) return
         com.jrees.wowcompanion.fork.DsForeverScreen.current?.show()

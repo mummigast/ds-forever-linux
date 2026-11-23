@@ -62,7 +62,7 @@ class LowMemCutsTest {
         assertEquals(4, LowMemCuts.SCENE_MAX_HELD)
         assertEquals(listOf(1, 2), LowMemCuts.overCap(listOf(1, 2, 3, 4, 5, 6)))
         assertEquals(emptyList<Int>(), LowMemCuts.overCap(listOf(1, 2, 3)))
-        assertTrue(text("Scene.kt").contains("LowMemCuts.overCap(pics.keys.toList())"))
+        assertTrue(text("Scene.kt").contains("LowMemCuts.overCap(pics.keys.toList(), LowMemCuts.sceneMaxHeld(DeviceTier.light8()))"))
         assertTrue(text("Scene.kt").contains("inSampleSize = LowMemCuts.sampleFor(bounds.outWidth, bounds.outHeight)"))
         val scene = text("Scene.kt")
         assertTrue("RGB_565 asked (Android keeps ARGB_8888 for a picture with alpha)", scene.contains("inPreferredConfig = Bitmap.Config.RGB_565"))
@@ -163,10 +163,10 @@ class LowMemCutsTest {
         assertEquals("\"2000\"", conf(root)["farclip"])
     }
 
-    @Test fun theTwelveGigabyteThorAndLowMemoryOffNeverGetTheExtras() {
+    @Test fun theSixteenGigabyteThorAndLowMemoryOffNeverGetTheExtras() {
         val root = playersFolder()
         val before = conf(root)
-        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = true, lowMemory8 = false)    // the 12 GB Pro
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = true, lowMemory8 = false)    // the 16 GB Max (from #56 G2 the 12 GB Pro gets the cuts)
         for (k in GameConfigWtf.LOW_MEMORY_8GB.keys) assertEquals(k, before[k], conf(root)[k])
         assertFalse(saved(root).exists())
         GameConfigWtf.ensure(root, WowProduct.LAUNCH, us, lowMemory = false, lowMemory8 = true)    // an 8 GB Thor, the setting off

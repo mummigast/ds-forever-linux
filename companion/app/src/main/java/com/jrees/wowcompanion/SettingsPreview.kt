@@ -116,6 +116,7 @@ object SettingsPreview {
         // the Rooms tab: the player's own minimap, the real keyboard
         if (live != null && liveRooms(c, r, id, s, live)) return
         when (id) {
+            "Home layout" -> layoutPlan(c, r)
             "Controller on Home" -> homeLayout(c, r, s.diamonds)
             "Combat layout" -> combat(c, r, s.combatGrow, t)
             "Swing timer" -> swing(c, r, s.swing, t)
@@ -141,7 +142,7 @@ object SettingsPreview {
             "Gold" -> goldLine(c, r, s)
             "Hearthstone", "Class teleport", "Free bag slots", "Ammo" -> extras(c, r, id, s)
             "Tap-to-cast bar" -> castBar(c, r, s.castBar)
-            "In combat" -> castCombat(c, r, s, t)
+            "In combat", "Show in combat" -> castCombat(c, r, s, t)          // cb14 (D5b): the row renamed
             "World map" -> worldMap(c, r, s.worldMapAll)
             "Smart Y" -> smartY(c, r, s, t, glyph)
             "Party mode" -> partyMode(c, r, s.partyMode, t, glyph, s.glyphSet)
@@ -486,6 +487,32 @@ object SettingsPreview {
     }
 
     // ---- Home: the rows' own drawings (until the stage has a picture)
+
+    /**
+     * movable Home fix round 1: the Home layout tile's stand-in (no game picture yet: before WoW's first document) - the active record's
+     * boxes from the solver (HomeEditView's schematic look), the controller band's rest (diamonds / the thin row) in its box
+     */
+    fun layoutPlan(c: Canvas, r: RectF, l: HomeLayout = HomeSettings.layout) {
+        val res = HomeLayoutSolver.places(l, HomeLayoutSolver.State(card = l.card != HomeLayout.CardDock.OFF, cardH = 118f))
+        val pw = 1240f; val ph = 935f
+        val k = min((r.width() - 20f) / pw, (r.height() - 20f) / ph)
+        val ox = r.centerX() - pw * k / 2f; val oy = r.centerY() - ph * k / 2f
+        for ((p, b) in res.boxes) {
+            if (p == HomePart.AURAS) continue
+            val rr = RectF(ox + b.l * k, oy + b.t * k, ox + b.r * k, oy + b.b * k)
+            pFill.color = when (p) { HomePart.MAP -> Color.rgb(86, 98, 54); HomePart.QUESTS -> Color.rgb(70, 54, 22); HomePart.BARS -> Color.rgb(30, 26, 20)
+                HomePart.STRIP, HomePart.CAST2 -> Color.rgb(40, 52, 90); else -> Theme.panel }
+            c.drawRoundRect(rr, 5f, 5f, pFill)
+            pStroke.color = BRONZE; pStroke.strokeWidth = 1.5f; c.drawRoundRect(rr, 5f, 5f, pStroke)
+            when (p) {
+                HomePart.BARS -> if (l.rest == HomeRest.DIAMONDS) diamond(c, rr.centerX(), rr.centerY(), min(rr.height() / 6.5f, 12f), min(rr.height() / 3.2f, 26f))
+                    else thinRow(c, rr.centerX(), rr.centerY(), rr.width())
+                HomePart.CHAT -> { pFill.color = DIMC
+                    for (i in 0 until 4) { val y = rr.bottom - 10f - i * 9f; if (y > rr.top + 6f) c.drawRect(rr.left + 6f, y - 2f, rr.left + 6f + (rr.width() - 12f) * (0.9f - 0.15f * (i % 3)), y, pFill) } }
+                else -> {}
+            }
+        }
+    }
 
     private fun homeLayout(c: Canvas, r: RectF, diamonds: Boolean) {
         val h = RectF(r.left + 10f, r.top + 10f, r.right - 10f, r.bottom - 10f)
@@ -1020,7 +1047,7 @@ object SettingsPreview {
     private fun castCombat(c: Canvas, r: RectF, s: State, t: Float) {
         val side = if (s.castBar in 1..3) s.castBar else 1
         val k = (t % 2.4f) / 2.4f
-        twoWays(c, r, "Hide: the bar slides away", "Stay: the bar stays", s.castCombatHide, 300f) { box, hide ->
+        twoWays(c, r, "Off: the bar slides away", "On: the bar stays", s.castCombatHide, 300f) { box, hide ->
             val tw = minOf(box.width() * 0.5f, (box.height() - 16f) * 1.35f)
             val th = minOf(box.height() - 16f, tw / 1.35f)
             val tb = RectF(box.left + 12f, box.centerY() - th / 2f, box.left + 12f + tw, box.centerY() + th / 2f)

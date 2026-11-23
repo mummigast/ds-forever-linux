@@ -69,7 +69,7 @@ object GameUiTiles {
     /** a band row's label (short: the tile above names the element) */
     val EXTRA_NAMES: Map<String, String> = mapOf(
         GameUi.PET_ID to "Pet bar", GameUi.HUD_H_ID to "Height", GameUi.HUD_W_ID to "Width", GameUi.HUD_S_ID to "Scale",
-        GameUi.UFHP_ID to "Health text", GameUi.UFTOT_ID to "Target of target", GameUiSection.RINGS_ID to "Aggro tint", GameUiSection.DOTBOX_ID to "Box under the dot",
+        GameUi.UFHP_ID to "Health text", GameUi.UFTOT_ID to "Target of target", GameUiSection.RINGS_ID to "Aggro tint", GameUiSection.DOTBOX_ID to "Ranged tooltips",
         GameUiSection.COMPASS_CAM_ID to "Follows the camera",
         GameUi.CDM_ESS_ID to "Essential", GameUi.CDM_UTIL_ID to "Utility", GameUi.CDM_BICON_ID to "Buff icons", GameUi.CDM_BBAR_ID to "Buff bars")
 
@@ -111,6 +111,7 @@ object GameUiTiles {
     fun badge(r: GameUi.Row?): Badge = when {
         r == null || !r.known || r.note == "The game does not offer this yet" -> Badge.WAITING
         r.note.startsWith("The game refused") -> Badge.REFUSED
+        r.note == PadFit.NO_ROW_NOTE -> Badge.REFUSED            // #550: its pad row is not on the game's screen: "!", never the hourglass
         r.note == GameUi.GAME_OFF_NOTE -> Badge.GAME_OFF
         r.note in PENDING -> Badge.SENT
         r.id in ELEMENTS && r.note !in STEADY -> Badge.SENT

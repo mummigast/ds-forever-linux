@@ -195,6 +195,9 @@ class SpellbookView(
         }
     }
 
+    /** a tab key's skill line ("line:3" -> 3, "pet" -> the pet's book), as Book's tabs carry it (`k`) */
+    private fun lineOf(key: String): Int? = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toIntOrNull()
+
     // keep tab, page and choice on things that exist
     private fun settle() {
         val b = book ?: return
@@ -295,7 +298,7 @@ class SpellbookView(
             val st = SpellsModel.status(b, e)
             UiKit.bookEntry(c, entryRect(i, h), Icons.get(e.icon), e.name, SpellsModel.sub(b, e), kitState(st),
                 onBar = SpellsModel.onBar(b, e), chosen = !onTabs && isChosen(b, e), passive = e.passive,
-                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId))
+                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId), rank = rankOf(e))
         }
         val pages = pagesOf(tab)
         if (pages > 1) UiKit.bookPaging(c, 330f, (Y0 + 5f * rh(h) + h) / 2f, page, pages)
@@ -356,6 +359,10 @@ class SpellbookView(
                 x0 + 8f, top + 228f + i * 36f - pf.ascent(), pf)
     }
 
+    /** #471: a known spell's rank badge (SpellRanks: its family of ranks in this book); none for a spell not known yet */
+    private fun rankOf(e: SpellsModel.Entry): SpellRanks.Badge? =
+        if (e.kind == SpellsModel.Kind.SPELL) SpellRanks.of(e.spellId) else null
+
     private fun kitState(s: SpellsModel.Status) = when (s) {
         SpellsModel.Status.KNOWN -> UiKit.Spell.KNOWN
         SpellsModel.Status.LEVEL -> UiKit.Spell.LEVEL
@@ -367,7 +374,7 @@ class SpellbookView(
         val st = SpellsModel.status(b, e)
         val onBar = SpellsModel.onBar(b, e)
         UiKit.spell(c, Icons.get(e.icon), x0 + 36f, top + 16f, 96f, kitState(st), onBar, e.passive, autoCast = SpellsModel.autoCast(e),
-            noMana = NoMana.has(e.spellId))
+            noMana = NoMana.has(e.spellId), rank = rankOf(e))
 
         // the name: 42 px, smaller down to 30 to stay on one line, then two lines
         val nameLeft = x0 + 158f; val nameW = x1 - nameLeft
@@ -613,6 +620,13 @@ class SpellbookView(
                     tabKey = tabs[i].key; page = 1; descScroll = 0f
                     val onPage = pageOf(tabs[i])
                     chosenId = onPage.getOrNull(SpellsModel.firstKnown(b, onPage))?.let { idOf(it) }
+                    // the user, 2026-11-20 ("when touching a tab ... and pressing down after it goes back to the last tab that was open and
+                    // goes down"): the controller's cursor is told the tab too (Book b72), so its next press goes on in THIS tab
+                    if (held && ctl?.mode == "book") lineOf(tabs[i].key)?.let { CastStripModel.bookTabCells(it) }?.let { cells ->
+                        fingerSinceCtl = true
+                        val sent = padTabCells(cells)
+                        Log.i(TAG, "tab '${tabs[i].key}' by touch: ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+                    }
                 }
                 return
             }

@@ -222,7 +222,22 @@ object LsfgVkManager {
     @Volatile private var lastPresentedFrames: Long = -1L
     @Volatile private var lastPresentedAtMs: Long = 0L
 
+    /**
+     * #153: the presented-frame count takes the renderer's lock, which a frame-generation setup ([applyNativeRuntime], now on
+     * [runtimeExecutor]) can hold while it waits on the native renderer, and the performance HUD asks from the UI thread. The count is
+     * read on [runtimeExecutor] at most every 500 ms; the HUD gets the last value.
+     */
+    @Volatile private var nativeFpsAskedMs = 0L
     private fun readNativeMeasuredFps(): Float? {
+        val now = System.currentTimeMillis()
+        if (now - nativeFpsAskedMs >= 500L) {
+            nativeFpsAskedMs = now
+            runtimeExecutor.execute { runCatching { sampleNativeMeasuredFps() } }
+        }
+        return cachedMeasuredFps
+    }
+
+    private fun sampleNativeMeasuredFps(): Float? {
         val renderer = rendererRef?.get() ?: return null
         val now = System.currentTimeMillis()
         val frames = try {
@@ -299,34 +314,40 @@ object LsfgVkManager {
             ?.defaultDisplay?.refreshRate
     }.getOrNull()?.takeIf { it > 1f } ?: 60f
 
-    /** Push the container's LSFG settings into the host renderer's native pipeline. */
+    /**
+     * #153 (1.0.37: an ANR with the UI thread in nativeSetFrameGenerationShaders, waiting on the native renderer's lock while it drew):
+     * every push into the renderer runs here, in order, never on the UI thread. Its own thread, so a long wait never delays the vsync
+     * clock's writes ([vsyncWriteExecutor]).
+     */
+    private val runtimeExecutor by lazy {
+        Executors.newSingleThreadExecutor { r -> Thread(r, "lsfg-runtime").apply { isDaemon = true } }
+    }
+
+    /** Push the container's LSFG settings into the host renderer's native pipeline (the reads here, the pushes on [runtimeExecutor]). */
     @JvmStatic
     fun applyNativeRuntime(renderer: VulkanRenderer, container: Container, context: Context) {
         rendererRef = WeakReference(renderer)
         appContext = context.applicationContext
         val multiplier = multiplier(container)
         val enabled = isArmed(container) && isNativeBackend(container) && multiplier >= 2
-
-        renderer.setFrameGenerationMode(
-            multiplier.coerceAtLeast(2),
-            0,
-            (flowScale(container) * 100f).toInt(),
-        )
-        renderer.setFrameGenerationRefreshRate(displayRefreshRate(context))
-
-        val cachePath = nativeCachePath
-        if (cachePath == null && enabled) {
-            val ctx = context.applicationContext
-            vsyncWriteExecutor.execute {
-                val built = prepareNativeCache(ctx, container)
-                if (built != null) renderer.setFrameGenerationShaders(built)
-                renderer.setFrameGenerationEnabled(built != null)
-            }
-            return
+        val flowPct = (flowScale(container) * 100f).toInt()
+        val refreshHz = displayRefreshRate(context)
+        val ctx = context.applicationContext
+        runtimeExecutor.execute {
+            runCatching {
+                renderer.setFrameGenerationMode(multiplier.coerceAtLeast(2), 0, flowPct)
+                renderer.setFrameGenerationRefreshRate(refreshHz)
+                val cachePath = nativeCachePath
+                if (cachePath == null && enabled) {
+                    val built = prepareNativeCache(ctx, container)
+                    if (built != null) renderer.setFrameGenerationShaders(built)
+                    renderer.setFrameGenerationEnabled(built != null)
+                } else {
+                    if (cachePath != null) renderer.setFrameGenerationShaders(cachePath)
+                    renderer.setFrameGenerationEnabled(enabled)
+                }
+            }.onFailure { Timber.w(it, "frame generation: the renderer push failed") }
         }
-
-        if (cachePath != null) renderer.setFrameGenerationShaders(cachePath)
-        renderer.setFrameGenerationEnabled(enabled)
     }
 
     /** Re-push settings to the renderer captured by [applyNativeRuntime], if any. */
@@ -504,6 +525,9 @@ object LsfgVkManager {
             // vkDestroyDevice hook never finalizes, so the game's own device re-create (GxRestart "DeviceStateChanged", ~20 s
             // after the account pick) aborted Wow-ARM64.exe in Turnip's kgsl_bo_finish (bo->gem_handle). Keep it unloaded:
             // the manifest removed, and the manifest's own disable switch as a second guard.
+            // 2026-11-20 (B): that re-create's trigger at login, the server's new WORK_OPTIMS value, is now pre-written in Config.wtf
+            // (GameConfigWtf.WORK_OPTIMS_KEY), so the login-time rebuild no longer happens. This stays: the layer has nothing to do on
+            // this backend, and any later GxRestart (a new server value, a graphics option the player changes) would still abort.
             disableLayerInContainer(container)
             envVars.put(ENV_DISABLE, "1")
             Timber.tag(TAG).i("LSFG native backend: in-game layer not loaded (dll=%s)", dllPath)

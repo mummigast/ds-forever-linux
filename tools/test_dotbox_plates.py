@@ -64,5 +64,29 @@ L.execute('LIVE = {}; WowCompanion.dotBox.stepN = WowCompanion.dotBox.stepN + 1'
 got = L.eval('WowCompanion.dotBox.platePick()')
 check(got is None, "5: no plates: nothing", got)
 
+# hub75: the game's world tooltip of ANOTHER unit gives way to the box; the same unit's is the box; anyone else's stands (counted)
+L.execute('''
+local DB = WowCompanion.dotBox
+DB.pick = function() return "softenemy" end
+UnitIsUnit = function(a, b) if b == "player" then return false end; return a == b or (a == "mouseover" and b == "softenemy" and SAME) end
+UnitGUID = function(u) return "G-" .. u end
+WowCompanionDB = WowCompanionDB or {}; WowCompanionDB.dotBox = nil
+TT = { shown = true, owner = UIParent, unit = "mouseover", set = nil }
+GameTooltip = {
+    IsShown = function() return TT.shown end, GetOwner = function() return TT.owner end,
+    GetUnit = function() if TT.unit then return "Name", TT.unit end end,
+    SetOwner = function(_, o) TT.owner = o end, SetUnit = function(_, u) TT.set = u; TT.unit = u end,
+    Show = function() TT.shown = true end, Hide = function() TT.shown = false end, HookScript = function() end,
+}
+''')
+L.execute('SAME = false; WowCompanion.dotBox.step()')
+check(L.eval('TT.set') == 'softenemy', "6: the game's world tooltip of another unit: the box takes over", L.eval('TT.set'))
+L.execute('TT.set = nil; GameTooltip.wcDotBox = nil; WowCompanion.dotBox.mine = false; TT.owner = UIParent; TT.unit = "mouseover"; SAME = true; WowCompanion.dotBox.step()')
+check(L.eval('TT.set') is None, "7: the game already shows this very unit: left as it is", L.eval('TT.set'))
+L.execute('TT.set = nil; TT.owner = { GetName = function() return "ContainerFrame1Item3" end }; TT.unit = nil; SAME = false; WowCompanion.dotBox.step()')
+check(L.eval('TT.set') is None, "8: a bag slot's tooltip stands", L.eval('TT.set'))
+check(L.eval('WowCompanionDB.dotBox.block["ContainerFrame1Item3"]') == 1, "9: ... and the block is counted by its owner",
+      L.eval('WowCompanionDB.dotBox.block and WowCompanionDB.dotBox.block["ContainerFrame1Item3"]'))
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)

@@ -47,9 +47,29 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
     /** the tab's look and motion */
     val tab = SelectTab()
 
-    /** the module in this view's own px: the view's left is the screen's edge (the tab's place, m134) */
-    fun module(): PartyLayout.Module =
-        PartyLayout.module(mode, live.party?.view?.size ?: 1, pet = live.party?.viewPet == true, top = 0f, left = 0f, right = width.toFloat())
+    /** movable Home fix round 1: false while Home's edit mode runs - the picked row's gold box is not drawn (the party is never an edit
+     *  stop: its box must not read as a second cursor beside edit mode's golden box) */
+    var boxShown: () -> Boolean = { true }
+
+    /** movable Home (SPEC section 6 item 9): the chat's column is on the right, so the Select tab stands on the RIGHT screen edge */
+    var tabRight = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** THE PARTY BARS FILL THE AREA (the user's ruling C, 11-22): true while Home's Top-screen slide moves this module's box (set by
+     *  HomeView for the slide's length) - the rows follow the box's height every frame ([PartyLayout.rowsFit]), so the plates, their
+     *  touches, the notch and the pick grow and shrink with it (no jump between the filled rows and a Party fight's / the rest's) */
+    var stretch = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the module in this view's own px: the view's left (or, [tabRight], its right) is the screen's edge (the tab's place, m134); a
+     *  Party-mode Top fight ([PartyLayout.Mode.FIGHT_TOP]) or a slide ([stretch]): the rows fill the view's height */
+    fun module(): PartyLayout.Module {
+        val n = live.party?.view?.size ?: 1
+        val pet = live.party?.viewPet == true
+        val rowH = if ((mode == PartyLayout.Mode.FIGHT_TOP || stretch) && height > 0)
+            PartyLayout.rowsFit(PartyModel.rows(n.coerceIn(1, PartyModel.MAX_N), pet).size, height.toFloat()) else PartyLayout.plateH(mode)
+        return PartyLayout.module(mode, n, pet = pet, top = 0f, left = 0f, right = width.toFloat(), tabRight = tabRight, rowH = rowH)
+    }
 
     /** m150: a short word over the module (Smart Res refused in a fight), [NOTE_MS] */
     fun note(s: String) { noteText = s; noteUntil = SystemClock.uptimeMillis() + NOTE_MS; invalidate() }
@@ -76,9 +96,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         UiKit.module(c, RectF().of(m.well))
         val on = p.onLive
         // m150: the box is counted over the add-on's entries; drawn over the view (a dead pet entry moves the party one on)
-        val boxed = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
+        val boxedAt = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
+        val boxed = if (boxShown()) boxedAt else -1
         tab.setLook(SelectTab.lookOf(p), now)
-        tab.setNotch(if (on) PartyLayout.notchY(m, boxed + 1) else null, now)
+        tab.setNotch(if (on) PartyLayout.notchY(m, boxedAt + 1) else null, now)
         tab.groupSeen(p.grp, p.fight, now)
         // m150: Smart Res armed counts as a res to cast (the soft green edge on a dead member)
         val resOn = p.res || live.cfg?.slots?.values?.any { it != null && it.res && it.k } == true
@@ -171,7 +192,9 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
             c.drawRoundRect(RectF(p.l + 1.5f, p.t + 1.5f, p.r - 1.5f, p.b - 1.5f), 6f, 6f, pFill)
             pFill.style = Paint.Style.FILL
         }
-        val ib = PartyLayout.icon(p, mode)
+        // the 11-22 review (rulings C / D): a Top fight's filled rows and a Top-screen slide's size their parts from the row's height
+        val sized = PartyLayout.filledParts(mode, stretch)
+        val ib = PartyLayout.icon(p, mode, sized)
         // the pet: its portrait (the game's GetPetIcon, m134) or nothing - never a drawn dot; a person: the role, else the class icon
         val icon = if (mem.isPet) mem.ic?.let { Icons.get(it) } else {
             val roleArt = when (mem.role) { "TANK" -> "role_small_tank"; "HEALER" -> "role_small_heal"; "DAMAGER" -> "role_small_dps"; else -> null }
@@ -181,13 +204,13 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         else if (!mem.isPet) { pFill.color = col; c.drawCircle(ib.cx, ib.cy, ib.w * 0.34f, pFill) }
         // m134 (the user, 2026-11-11: "the a button glyph on them needs to be removed since highlighting it should target"): no button
         // glyph on a plate - the game's LB + button targeting hint (an A on your own plate) is gone with the chips; the pick targets
-        val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode)
-        val room = PartyLayout.nameRoom(p, mode) + (PartyLayout.nameX(p, mode) - nx)
-        nameP.textSize = PartyLayout.nameSize(mode)
+        val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode, sized)
+        val room = PartyLayout.nameRoom(p, mode, sized) + (PartyLayout.nameX(p, mode, sized) - nx)
+        nameP.textSize = PartyLayout.nameSize(mode, p.h, sized)
         nameP.color = if (mem.dead) Color.rgb(150, 150, 150) else col
         // the pet: its short name alone (m134: "its portrait/icon + short name"); a person: the level after the name
         val lv = if (mem.isPet) "" else mem.lv?.let { " $it" } ?: ""
-        lvP.textSize = PartyLayout.nameSize(mode) * 0.72f
+        lvP.textSize = PartyLayout.nameSize(mode, p.h, sized) * 0.72f
         val lvW = if (lv.isEmpty()) 0f else lvP.measureText(lv)
         // the skull / plug's room only when it is drawn
         val name = fit(Tr.t(mem.n), nameP, (room - lvW - (if (mem.dead || mem.off) 40f else 0f)).coerceAtLeast(40f))
@@ -227,7 +250,10 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         val pulse = tab.edgeAlpha(now)
         // the lit art: the wipe (on / off), else a pulse while it is off (a group formed: 0.5 .. 1 .. 0.5 shown as 0 .. 0.5 .. 0)
         val lit = if (w > 0f) w else if (pulse < 1f) (1f - pulse) else 0f
+        // movable Home: on the right edge the handle's art, its arrow and its notch are the left one's mirror image (the glyphs read as usual)
+        if (tabRight) { c.save(); c.scale(-1f, 1f, t.cx, 0f) }
         UiKit.sideHandle(c, RectF().of(t), lit, if (look == SelectTab.Look.UNBOUND) 170 else 255)
+        if (tabRight) c.restore()
         val tp = PartyLayout.tabParts(t)
         val gs = tp.glyph * tab.glyphScale(now)
         val ga = if (look == SelectTab.Look.UNBOUND) (255 * 0.4f).toInt() else 255
@@ -236,7 +262,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         // place (the user's decision 1, 2026-11-11: "B shown")
         val onLook = look == SelectTab.Look.ON
         if (!(onLook && tp.bOnArrow)) UiKit.tex("move_arrow_right")?.let { a ->
-            c.save(); c.rotate(tab.arrowDeg(now), tp.glyphCx, tp.arrowCy)
+            c.save(); if (tabRight) c.scale(-1f, 1f, tp.glyphCx, 0f); c.rotate(tab.arrowDeg(now), tp.glyphCx, tp.arrowCy)
             bmp(c, a, Box(tp.glyphCx - tp.arrow / 2f, tp.arrowCy - tp.arrow / 2f, tp.glyphCx + tp.arrow / 2f, tp.arrowCy + tp.arrow / 2f), ga)
             c.restore()
         }
@@ -246,7 +272,11 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         }
         // the pick on the tab's right edge (it slides with it): the game's small gold arrow (common-dropdown-icon-next), pointing in
         tab.notchY(now)?.let { ny ->
-            UiKit.tex("menu_next")?.let { a -> bmp(c, a, Box(t.r - tp.notch * 0.35f, ny - tp.notch / 2f, t.r + tp.notch * 0.65f, ny + tp.notch / 2f), 255) }
+            UiKit.tex("menu_next")?.let { a ->
+                if (tabRight) { c.save(); c.scale(-1f, 1f, t.cx, 0f) }
+                bmp(c, a, Box(t.r - tp.notch * 0.35f, ny - tp.notch / 2f, t.r + tp.notch * 0.65f, ny + tp.notch / 2f), 255)
+                if (tabRight) c.restore()
+            }
         }
     }
 

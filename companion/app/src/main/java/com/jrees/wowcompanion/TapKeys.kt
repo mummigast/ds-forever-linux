@@ -29,7 +29,7 @@ object TapKeys {
     /** the columns 36-39 that are navigation keys (TapPad KEY_COLX): never a far row's selector or cell */
     private val COLX = setOf("INSERT", "HOME", "END", "PAGEUP")
     /** TapPad's SECURE far rows (pad.secureRow): their columns 36-39 cannot go by keys */
-    private val SECURE_FAR = setOf("bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv")
+    private val SECURE_FAR = setOf("bag0", "bag1", "bag2", "bag3", "bag4", "bag5", "binv", "idlg")
     /** what Windows / Wine / the launcher treat as system keys (with any Alt or Meta, every F-key, the numpad, the controller) */
     private val SYSTEM = setOf("ESCAPE", "ESC", "TAB", "ENTER", "RETURN", "SPACE", "BACKSPACE", "DELETE", "PRINTSCREEN", "SCROLLLOCK",
         "PAUSE", "NUMLOCK", "CAPSLOCK", "LWIN", "RWIN", "APPS", "MENU", "ALT", "LALT", "RALT")
@@ -68,7 +68,9 @@ object TapKeys {
             if (sel !in COL_KEYS || sel in COLX || systemChord(MODS, sel)) return null
             // 2026-11-21 (the user: a bag slot pick "an awful lot of clicks"; bmvq:36 had no keys, so the whole pick went as 3 clicks):
             // only the SECURE far rows (the bags' use rows, worn gear) keep 36-39 as clicks; a plain far row's dispatcher reads them
-            if (ck !in COL_KEYS || (ck in COLX && op in SECURE_FAR) || systemChord(MODS, ck)) return null
+            // pad31 (keys.sfx = { row = true }): the secure far rows whose 36-39 "click" cells the add-on's router does itself (idlg)
+            val sfx = keys.optJSONObject("sfx")?.optBoolean(op, false) == true
+            if (ck !in COL_KEYS || (ck in COLX && op in SECURE_FAR && !sfx) || systemChord(MODS, ck)) return null
             return rk to ck
         }
         if (rks.size !in 1..2 || rks.toSet().size != 1) return null
@@ -85,9 +87,30 @@ object TapKeys {
     fun script(pad: JSONObject?, cells: List<Pair<String, Int>>, gapMs: Long, liveSession: String?): String? {
         if (cells.isEmpty()) return null
         val pairs = cells.map { (op, col) -> cellKeys(pad, op, col, liveSession) ?: return null }
-        if (gapMs <= 0L) return "wckeys $MODS " + pairs.joinToString(" ") { "${it.first} ${it.second}" }
-        return pairs.joinToString(gapLine(gapMs)) { "wckeys $MODS ${it.first} ${it.second}" }
+        // TapPad pad34 (the user, 2026-11-21: as few automated inputs as possible): a TYPING row (keys.sticky) stays picked in the
+        // add-on after a column, so the next letter on the same row is its column key alone. Only while this app knows the row is
+        // still picked: the last keys it sent ended on that row, less than STICKY_MS ago (the add-on keeps it KEY_STICKY_TTL, 2 s),
+        // and the column is a plain one (36-39's navigation keys are always row keys in that mode). Anything else sent forgets it.
+        val sticky = usable(pad, liveSession)?.optJSONObject("sticky")
+        fun isSticky(op: String) = sticky?.optBoolean(op, false) == true
+        val now = System.nanoTime() / 1_000_000L
+        var row: String? = synchronized(this) { if (now - stickyAt <= STICKY_MS) stickyRow else null }
+        val parts = cells.mapIndexed { i, (op, _) ->
+            val (rk, ck) = pairs[i]
+            val cont = row == op && isSticky(op) && ck !in COLX
+            row = if (isSticky(op)) op else null
+            if (cont) ck else "$rk $ck"
+        }
+        synchronized(this) { stickyRow = row; stickyAt = now + gapMs.coerceAtLeast(0L) * (cells.size - 1) }
+        if (gapMs <= 0L) return "wckeys $MODS " + parts.joinToString(" ")
+        return parts.joinToString(gapLine(gapMs)) { "wckeys $MODS $it" }
     }
+
+    private const val STICKY_MS = 1200L
+    private var stickyRow: String? = null
+    private var stickyAt = 0L
+    /** the row is no longer known to be picked (keys refused, a sweep, a handshake by other means) */
+    fun forgetSticky() = synchronized(this) { stickyRow = null }
 
     /**
      * THE SWEEP (before keys go live, on the user's word): every row key ALONE (a pick that just expires), then the add-on's own
@@ -95,6 +118,7 @@ object TapKeys {
      * add-on ("padkeytest") while its trace is on (the handshake's click starts it). Null without a live handshake or a keytest key.
      */
     fun sweep(pad: JSONObject?, gapMs: Long, liveSession: String?): String? {
+        forgetSticky()
         val keys = usable(pad, liveSession) ?: return null
         val rowsObj = keys.optJSONObject("rows") ?: return null
         val kt = rowsObj.optString("keytest", "")

@@ -111,13 +111,33 @@ class BottomTilesTest {
         assertEquals(0, BottomPictures.pendingCount())
     }
 
+    /** 1518 build 2: the XP bar on Home moved here from the room bar's edit-mode menu (gone: each room is an app): Show / Hide, this
+     *  character's record, Top's eye badge, the picture dimmed while hidden */
+    @Test fun theXpBarTile() {
+        HomeSettings.init(app); Settings.init(app)
+        HomeLayoutStore.set(HomeLayout())
+        val env = BottomTiles.Env(null, null)
+        assertEquals("XP bar", BottomTiles.NAMES[BottomTiles.XP])
+        assertEquals(listOf("Show", "Hide"), BottomTiles.lines(BottomTiles.XP, env).single().words)
+        assertEquals("Show", BottomTiles.value(BottomTiles.XP, env))
+        assertEquals(GameUiTiles.Badge.ON, BottomTiles.badge(BottomTiles.XP, env))
+        BottomTiles.press(BottomTiles.XP, BottomTiles.XP, 1, env) { }
+        assertFalse(HomeSettings.layout.xpBar)
+        assertEquals("Hide", BottomTiles.value(BottomTiles.XP, env))
+        assertEquals(1, BottomTiles.lines(BottomTiles.XP, env).single().picked)
+        assertTrue(BottomTiles.dimmed(BottomTiles.XP, env))
+        BottomTiles.press(BottomTiles.XP, BottomTiles.XP, 0, env) { }
+        assertTrue(HomeSettings.layout.xpBar)
+        assertEquals("a Classic record's text again", HomeLayoutJson.json(HomeLayout()), HomeLayoutJson.json(HomeSettings.layout))
+    }
+
     /** the model: Home's 8 (the toolbar's two only with the Spells add-on's word / the toolbar on), Map & chat's 3; lines that cannot act
      *  are not drawn; the writes are the rows' own setters */
     @Test fun theModel() {
         HomeSettings.init(app); Settings.init(app)
         val none = BottomTiles.Env(null, "Sample-Realm")
-        assertEquals(listOf(BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR),
-            BottomTiles.slots(SettingsTabs.Group.HOME, none))
+        assertEquals(listOf(BottomTiles.LAYOUT, BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.SWING, BottomTiles.QUEST, BottomTiles.CLOCK, BottomTiles.CASTBAR,
+            BottomTiles.RANK, BottomTiles.XP, BottomTiles.HOME_RESET), BottomTiles.slots(SettingsTabs.Group.HOME, none))
         var want: Boolean? = null
         val d = { on: Boolean -> PadMapModel.Dpad(on, emptyMap(), emptyList(), emptyList(), on, 1, 2, null, null) }
         assertEquals(BottomTiles.HOME_TILES.size - 1, BottomTiles.slots(SettingsTabs.Group.HOME, BottomTiles.Env(d(false), "Sample-Realm")).size)
@@ -142,7 +162,7 @@ class BottomTilesTest {
         assertEquals(1, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         BottomTiles.press(BottomTiles.CASTBAR, BottomTiles.CASTBAR, 3, on) { }
         assertEquals(CastStripModel.Side.BOTH, HomeSettings.castBarSide)
-        assertEquals(2, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
+        assertEquals("the place, its size (movable Home), Show in combat", 3, BottomTiles.lines(BottomTiles.CASTBAR, on).size)
         HomeSettings.castBarSide = CastStripModel.Side.OFF
         // the clock band: five On / Off lines with their icons
         assertEquals(5, BottomTiles.lines(BottomTiles.CLOCK, on).size)
@@ -156,6 +176,17 @@ class BottomTilesTest {
         BottomTiles.press(BottomTiles.ZOOM, "out", 1, on) { }
         assertEquals(Settings.stepYd(out, 1), Settings.minimapYd)
         Settings.minimapYd = out
+        // Spell rank badges (2026-11-20; Off by default: SpellRanksTest): one On / Off line, the rank index's own switch
+        HomeSettings.rankBadges = false
+        assertEquals("Off", BottomTiles.value(BottomTiles.RANK, on))
+        assertTrue(BottomTiles.dimmed(BottomTiles.RANK, on))
+        assertEquals(listOf(BottomTiles.RANK), BottomTiles.lines(BottomTiles.RANK, on).map { it.key })
+        BottomTiles.press(BottomTiles.RANK, BottomTiles.RANK, 0, on) { }
+        assertTrue(HomeSettings.rankBadges)
+        assertEquals("On", BottomTiles.value(BottomTiles.RANK, on))
+        assertEquals(GameUiTiles.Badge.ON, BottomTiles.badge(BottomTiles.RANK, on))
+        BottomTiles.press(BottomTiles.RANK, BottomTiles.RANK, 1, on) { }
+        assertFalse(HomeSettings.rankBadges)
         // the badge: Top's eye on the On / Off tiles only
         assertTrue(BottomTiles.badge(BottomTiles.SWING, on) != null && BottomTiles.badge(BottomTiles.REST, on) == null)
     }

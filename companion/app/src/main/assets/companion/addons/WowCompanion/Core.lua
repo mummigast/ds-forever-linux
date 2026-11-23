@@ -39,6 +39,22 @@ local function enc(v) if v == nil then return nil end return WC.encode(v) end
 WC.snapT = { n = 0 }
 local clockMs = debugprofilestop
 
+-- perf eq1: the worn pieces' document, kept between full documents; dirty on what can change it (gear, durability, its warning,
+-- an item's info arriving, the level, a weapon enchant via UNIT_INVENTORY_CHANGED), and at most EQ_MAX_AGE s old (timed text)
+local EQ = { json = nil, at = -1e9, dirty = true, MAX_AGE = 30 }
+local EQ_EVENTS = { "PLAYER_EQUIPMENT_CHANGED", "GET_ITEM_INFO_RECEIVED", "UPDATE_INVENTORY_DURABILITY", "UPDATE_INVENTORY_ALERTS",
+                    "PLAYER_LEVEL_UP", "UNIT_INVENTORY_CHANGED", "PLAYER_ENTERING_WORLD", "ITEM_DATA_LOAD_RESULT" }
+do
+    local f = CreateFrame("Frame")
+    for _, e in ipairs(EQ_EVENTS) do
+        if e ~= "UNIT_INVENTORY_CHANGED" or not pcall(f.RegisterUnitEvent, f, e, "player") then pcall(f.RegisterEvent, f, e) end
+    end
+    f:SetScript("OnEvent", function(_, e, unit)
+        if e == "UNIT_INVENTORY_CHANGED" and unit ~= "player" then return end
+        EQ.dirty = true
+    end)
+end
+
 function WC.snapshot(reason)
     local T = WC.snapT
     local t0 = clockMs()
@@ -81,8 +97,14 @@ function WC.snapshot(reason)
     end
     lastBar = json
     local t2 = clockMs()
-    equipped = equipped or WC.collectEquipped()
-    equipJson = equipJson or (equipped ~= nil and WC.encode(equipped) or nil)
+    -- perf eq1 (2026-11-21, the hitch docs: "eq" ~6.5 ms in every full document): what is worn is collected again only after an
+    -- event that changes it (EQ_EVENTS below) or EQ_MAX_AGE s; otherwise the last encoded equipment rides along unchanged
+    if equipJson == nil and not EQ.dirty and EQ.json and (GetTime() - EQ.at) < EQ.MAX_AGE then equipJson = EQ.json end
+    if equipJson == nil then
+        equipped = equipped or WC.collectEquipped()
+        equipJson = equipped ~= nil and WC.encode(equipped) or nil
+    end
+    if equipJson ~= EQ.json or EQ.dirty then EQ.json, EQ.at, EQ.dirty = equipJson, GetTime(), false end
     lastEquip = equipJson or WC.encode({})
     local t3 = clockMs()
     local player = enc(WC.collectPlayer())

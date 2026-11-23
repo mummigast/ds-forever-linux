@@ -1,13 +1,38 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.37 (upstream add-on set 413; this edition's set 417). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 426). What differs from DS Forever in general: [FORK.md](FORK.md).
+
+
+## 2026-11-23: linux-v1.0.38.1, DS Forever 1.0.38, add-on set 426 (the beta.2 line + upstream, tested)
+
+Tested on the Thor 2026-11-23: login and the key handshake, the top screen's restore, quests, a fight, the auction house, Edit Home,
+the Controller room and the tap-to-cast bar.
+
+- **Everything new in DS Forever 1.0.38** ([its notes](https://github.com/Jreese702/DS-Forever/releases/tag/v1.0.38)): edit Home like a
+  phone's home screen, *In fights: Top screen*, the rebuilt Controller room with your own macros and tap-to-cast slots for fights and
+  Party mode, Spell rank badges, voice typing language, lighter memory use and its fixes. The loading-screen wait this edition sent
+  upstream (PR #567) comes back in upstream's improved form.
+- **The auction house is the game's own window** on the top screen, worked with WoW Forever's own controller navigation; the app's
+  auction-house screen is gone. The bottom screen is its keyboard: type the search there and press Done (the words go into the
+  game's search box; press the game's Search with the controller), and see your auctions and what you bought lately (read only).
+- **Far fewer automated clicks** (keyboard shortcuts instead):
+  - the Controller room opens by keys (was 8 clicks); picking an item, mount, command or macro for the tap-to-cast bar is keys;
+  - **pressing a tap-to-cast slot is a key** that casts the slot's spell / item / macro itself (its clicks missed now and then);
+  - switching rooms closes the game's window by keys (was up to three clicks per switch);
+  - typing (the auction-house search, the app's chat) is the row's keys once, then one key per letter; the Auras pick and the
+    Talents rows go as keys too.
+- **"Box under the dot" is now called "Ranged tooltips"** (*Settings > Top screen > Tooltips*; `/wcbox` still switches it). It takes
+  over the game's leftover tooltip of another unit.
+- **Less work per update inside the game:** log lines up to 3600 characters (~17 log writes per push instead of ~118), worn gear and
+  the bags' part of an update collected / encoded only when they change, unit events only for the units the add-ons use.
 
 ## Known issues (main = the stable branch; bigger changes are tested on the `beta` branch first)
 
-- A few window actions still go as mouse clicks: opening the game's bags when you enter Bags, closing a game window when you switch
-  rooms, moving items between bags and Clean Up. Clicks can miss after controller play, and the aim is as few automated inputs as
-  possible (the beta moves the room switch to keyboard shortcuts; the bags door stays a click: the backpack button reads the shortcut's
-  Ctrl+Shift as a modifier).
+- A few actions still go as mouse clicks: opening the game's bags when you enter Bags (the backpack button reads the shortcut's
+  Ctrl+Shift as a modifier), moving items between bags and Clean Up, picking a spell from the spellbook for a button, and two
+  calibration taps at login. The aim is as few automated inputs as possible.
+- *In fights: Top screen* (new in 1.0.38): the buttons that move to the top screen can get the wrong layout.
+- The tap-to-cast bar by keys is tested out of combat; in a fight it is built to work the same way (as bag items do), not yet played.
 - The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).

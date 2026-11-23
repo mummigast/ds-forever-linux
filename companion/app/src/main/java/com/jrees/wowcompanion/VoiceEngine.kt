@@ -40,6 +40,8 @@ class VoiceEngine(context: Context) {
         fun error(code: Int)
         /** offline voice only ([WhisperEngine]): the recording stopped, the words are being worked out */
         fun working() {}
+        /** offline voice only (memory work #56, D4): the words wait for the voice model to load again ("Loading voice") */
+        fun loading() {}
     }
 
     private var rec: SpeechRecognizer? = null
@@ -148,7 +150,7 @@ class VoiceEngine(context: Context) {
         /** which recognizer the sheet can use with the setting [mode] ([Voice.avail]; offline voice first when its model is on disk) */
         fun avail(ctx: Context, mode: Voice.Mode): Voice.Avail {
             VoiceModels.init(ctx)
-            return Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx), WhisperEngine.on(), Tr.lang())
+            return Voice.avail(mode, Build.VERSION.SDK_INT, onDeviceFlag(ctx), services(ctx), WhisperEngine.on(), Tr.lang(), Settings.voiceLanguage)
         }
     }
 }
