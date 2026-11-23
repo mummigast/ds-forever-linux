@@ -3,6 +3,11 @@
 Play **WoW Forever** on an **AYN Thor**, streamed from a **Linux PC** (Steam/Proton + Sunshine), with DS Forever's two-screen
 companion on the bottom screen. At home or over a VPN such as WireGuard.
 
+**Streaming only, and getting leaner.** This edition is made for one way of playing: WoW Forever on your PC, streamed to the Thor.
+Parts of the app that don't fit streaming are being taken out, and features that don't work reliably over a stream yet are being
+reworked, such as a new auction house screen, with fewer automated clicks sent to the game (fewer missed clicks, less input that
+isn't yours).
+
 > **An unofficial, personal fork of [DS Forever](https://github.com/Jreese702/DS-Forever) by Jreese702.** Almost all of the app
 > is their work (and, before them, the WoW Forever for Android, GameNative, Pluvia and Winlator contributors). This edition adds
 > a Linux PC helper and a few streaming fixes on top, and follows upstream's releases.
