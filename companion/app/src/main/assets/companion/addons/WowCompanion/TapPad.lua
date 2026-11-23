@@ -892,7 +892,7 @@ local COLX_SNIP = [[
 -- CTRL-SHIFT, and a click delegated inside the key press sees them. The dialogs' cells (StaticPopup / trade / charter buttons, the
 -- per-window leaves -> Interact's secure leave -> the window's close) do; the backpack door does NOT (BagSlotOnClick: with a
 -- modifier held it runs IsModifiedClick("OPENALLBAGS") instead of ToggleBag), so bag0's doors stay clicks. Rows listed here only.
-local KEY_SFX = { idlg = true }
+local KEY_SFX = { idlg = true, ahr = true }     -- ahr: the AH remote (Interact i186): its targets read no modifier
 local function proxyFor(k, col)
     keys.proxy = keys.proxy or {}
     local p = keys.proxy[k]
