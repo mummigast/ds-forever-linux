@@ -3,6 +3,14 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 426). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## Beta 3 (in progress), add-on set 427
+
+On top of the stable linux-v1.0.38.1. Not published yet.
+
+- **Live typing in the auction house:** put the game's search box in focus with the controller, and the bottom screen's keyboard
+  types straight into it, letter by letter, as real keys (letters, digits and spaces). **Done** is the game's own Enter, so the
+  search runs by itself. Without the focus it works as before.
+
 ## 2026-11-23: linux-v1.0.38.1, DS Forever 1.0.38, add-on set 426 (the beta.2 line + upstream, tested)
 
 Tested on the Thor 2026-11-23: login and the key handshake, the top screen's restore, quests, a fight, the auction house, Edit Home,

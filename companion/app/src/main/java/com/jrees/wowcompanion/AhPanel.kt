@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import org.json.JSONArray
@@ -25,6 +26,11 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     val view = AhInfoView(ctx).apply { visibility = View.GONE }
     private var kbOpen = false
     private var typed = ""
+    /** beta 3 LIVE TYPING (Interact i182): the game's search box has the keyboard focus (doc.ahinfo.focus) - every change on the
+     *  keyboard goes straight into it as real keys ([InputSink.gameKeys]: letters, digits, space, Backspace), Done = the game's Enter
+     *  (its own search). [liveSent] = what the game's box holds by our keys (its text when the focus came) */
+    private var live = false
+    private var liveSent = ""
     private val stream = ChatStream({ cells, gap ->
         TapBridge.tapsSpaced(ctx, padOf(), cells, gap) { why -> view.post { view.note = why; view.invalidate() } }
     }, field = true).apply { onEvent = { view.post { view.invalidate() } } }
@@ -40,6 +46,14 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (ah == null) { close(); return }
         view.info = ah
         if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
+        val focus = ah.optBoolean("focus", false) && InputSink.sink != null
+        if (focus != live) {
+            live = focus
+            // the focus came: the box's own text is where our keys start (the keyboard shows it); it went: no key goes any more
+            if (live) { liveSent = ah.optString("text", "").filter { GameTyping.allowed(it) }; typed = liveSent; if (kbOpen) kb.open() }
+            view.note = if (live) LIVE_NOTE else null
+            Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on (the game's search box has the focus)" else "off"}")
+        }
         if (ah.optString("kbd") == "ahsearch") {
             if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
         } else if (kbOpen) closeKb()
@@ -61,8 +75,15 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         stream.startField(typed)
         kb.sendWord = "Done"
         kb.text = { typed }
-        kb.onText = { t -> typed = stream.clean(t, MAX); stream.setBody(typed); view.typed = typed; view.invalidate() }
-        kb.onSend = { if (stream.send()) { view.removeCallbacks(tick); view.postDelayed(tick, 500L) } }
+        kb.onText = { t ->
+            typed = stream.clean(t, MAX)
+            if (live) liveType(typed) else stream.setBody(typed)
+            view.typed = typed; view.invalidate()
+        }
+        kb.onSend = {
+            if (live) InputSink.gameEnter()           // the game's own Enter in its search box: its search
+            else if (stream.send()) { view.removeCallbacks(tick); view.postDelayed(tick, 500L) }
+        }
         // the keyboard's own close: it goes down, the panel stays (a finger on the search line brings it back)
         kb.onClose = { view.kbDismissed = true; closeKb(); view.invalidate() }
         kb.voiceBox = true
@@ -70,6 +91,15 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         kb.voiceMax = MAX
         kb.copyLeftMs = { stream.copyLeftMs() }
         kb.open(); kb.visibility = View.VISIBLE
+    }
+
+    /** the keyboard's text [t] into the focused game box: Backspaces for what differs, then the new letters (a character the game may
+     *  not be typed - not a letter, digit or space - is left out, and [liveSent] says what the box really got) */
+    private fun liveType(t: String) {
+        val ops = GameTyping.diff(liveSent, t)
+        if (ops.back == 0 && ops.type.isEmpty()) return
+        InputSink.gameKeys(ops.back, ops.type)
+        liveSent = liveSent.dropLast(ops.back) + ops.type
     }
 
     private fun reopen() {
@@ -94,7 +124,10 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (view.visibility != View.GONE) view.visibility = View.GONE
     }
 
-    companion object { const val MAX = 63 }
+    companion object {
+        const val MAX = 63
+        const val LIVE_NOTE = "Typing live into the game's search box (Done = Search)"
+    }
 }
 
 /** Read only: the search words, your auctions, what you bought lately. A finger on the search line only brings the keyboard back. */
