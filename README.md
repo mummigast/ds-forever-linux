@@ -69,7 +69,7 @@ keyboard shortcut per action you take, only while WoW is the window in front. It
 [Open an issue](https://github.com/mummigast/ds-forever-linux/issues): what you did, what you expected and what happened.
 The helper's log helps: `journalctl --user -u dsf-bridge`.
 
-Want to try new things first? Betas are published as pre-releases: [how betas work](docs/BETA.md).
+Want to try new things first? Betas are published as pre-releases: [how betas work](BETA.md).
 
 ## Credits
 
