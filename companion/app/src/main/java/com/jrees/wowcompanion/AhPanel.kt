@@ -31,6 +31,8 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
      *  (its own search). [liveSent] = what the game's box holds by our keys (its text when the focus came) */
     private var live = false
     private var liveSent = ""
+    /** which focus the add-on reported last (its fid; -1 = none): another box = start again from that box's text */
+    private var liveFid = -1
     private val stream = ChatStream({ cells, gap ->
         TapBridge.tapsSpaced(ctx, padOf(), cells, gap) { why -> view.post { view.note = why; view.invalidate() } }
     }, field = true).apply { onEvent = { view.post { view.invalidate() } } }
@@ -46,13 +48,20 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (ah == null) { close(); return }
         view.info = ah
         if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
-        val focus = ah.optBoolean("focus", false) && InputSink.sink != null
-        if (focus != live) {
-            live = focus
-            // the focus came: the box's own text is where our keys start (the keyboard shows it); it went: no key goes any more
-            if (live) { liveSent = ah.optString("text", "").filter { GameTyping.allowed(it) }; typed = liveSent; if (kbOpen) kb.open() }
-            view.note = if (live) LIVE_NOTE else null
-            Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on (the game's search box has the focus)" else "off"}")
+        // i183: ANY of the game's AH text boxes in focus ("search", or "other" = the filter's level range ...): each box its own text
+        val fkind = if (InputSink.sink != null) ah.optString("focus", "") else ""
+        val fid = if (fkind.isNotEmpty()) ah.optInt("fid", 0) else -1
+        if (fid != liveFid) {
+            liveFid = fid
+            live = fkind.isNotEmpty()
+            // the focus came (or moved to another box): that box's own text is where our keys start; it went: no key goes any more
+            if (live) {
+                liveSent = ah.optString("ftext", ah.optString("text", "")).filter { GameTyping.allowed(it) }
+                typed = liveSent
+                if (kbOpen) kb.open()
+            }
+            view.note = if (live) (if (fkind == "search") LIVE_NOTE else LIVE_NOTE_OTHER) else null
+            Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on ($fkind box in focus)" else "off"}")
         }
         if (ah.optString("kbd") == "ahsearch") {
             if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
@@ -127,6 +136,7 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     companion object {
         const val MAX = 63
         const val LIVE_NOTE = "Typing live into the game's search box (Done = Search)"
+        const val LIVE_NOTE_OTHER = "Typing live into the game's text box (Done = Enter)"
     }
 }
 
