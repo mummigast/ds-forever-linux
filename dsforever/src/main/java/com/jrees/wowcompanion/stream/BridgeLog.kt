@@ -202,6 +202,7 @@ class BridgeLog(
                         runCatching { build()?.let { c.send(it.toString()) } }.onFailure { svLog("pc add-ons: list not sent (${it.javaClass.simpleName})") }
                     }, "addons-want").apply { isDaemon = true; start() } }
                     c.send(BridgeProtocol.focus())
+                    PcFront.reset(); PcFront.asker = { runCatching { c.send(BridgeProtocol.focus()) } }
                     streamMode()?.let { (w, h, fps) -> c.send(BridgeProtocol.streamMode(w, h, fps)) }
                 }
                 is BridgeMsg.Doc -> emit(m)
@@ -216,6 +217,7 @@ class BridgeLog(
                     if (m.form == null && m.why.isNotEmpty()) onStatus("PC: ${m.why}")
                     onBnetReady(m.form)
                 }
+                is BridgeMsg.PcFocus -> PcFront.set(m.wow, m.what)
                 is BridgeMsg.FocusResult -> {
                     if (m.state.isNotEmpty()) onWow(m.state, m.why)
                     m.pc?.let(onPc)

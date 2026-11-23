@@ -924,10 +924,28 @@ async def main():
                 tls_port = tls_srv.sockets[0].getsockname()[1]
             door = await front_door(plain_port, tls_port)
             async with door:
-                await asyncio.gather(tail_loop(), wow_loop(), mdns_watch())
+                await asyncio.gather(tail_loop(), wow_loop(), mdns_watch(), focus_watch())
     finally:
         if mdns:
             mdns.terminate()
+
+async def focus_watch():
+    """Linux Streaming Edition (2026-11-23): while a Thor is connected and WoW runs, tell it whether WoW has the PC's focus
+    ({"t":"pcfocus","wow":bool,"what":class}): the app holds its keys and clicks back while another window (Battle.net) is in front."""
+    last, last_n = None, 0
+    while True:
+        await asyncio.sleep(0.5)
+        if not sessions or not wow_running():
+            last, last_n = None, 0
+            continue
+        cls = await asyncio.to_thread(wow_linux.active_window_class)
+        if cls is None:
+            continue                                   # unknown: say nothing (nothing is held back)
+        front = "wow" in cls
+        if front != last or len(sessions) != last_n:
+            last, last_n = front, len(sessions)
+            log(f"PC focus: {'WoW' if front else (cls or 'a non-WoW window')} in front")
+            await broadcast([{"t": "pcfocus", "wow": front, "what": cls}])
 
 # ---------------------------------------------------------------- command line
 def doctor():

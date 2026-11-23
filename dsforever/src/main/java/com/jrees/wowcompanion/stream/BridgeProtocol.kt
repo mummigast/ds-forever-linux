@@ -108,6 +108,8 @@ sealed class BridgeMsg {
                        val caps: List<String> = emptyList()) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
+    /** Linux Streaming Edition: which window has the PC's focus (the helper's "pcfocus") */
+    data class PcFocus(val wow: Boolean, val what: String) : BridgeMsg()
     data class Error(val code: String, val detail: String = "") : BridgeMsg()
     /** one add-on document, already joined by the bridge (its own WCB1 reassembly of the PC's General.log) */
     data class Doc(val seq: Int, val gt: Long, val text: String) : BridgeMsg()
@@ -263,6 +265,7 @@ object BridgeProtocol {
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
                 o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty(), strings(o.optJSONArray("caps")))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
+            "pcfocus" -> BridgeMsg.PcFocus(o.optBoolean("wow", true), o.optString("what"))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))
             "doc" -> BridgeMsg.Doc(o.optInt("seq", -1), o.optLong("gt", -1L), o.optString("doc"))
             "lines" -> BridgeMsg.Lines((o.optJSONArray("l") ?: JSONArray()).let { a -> List(a.length()) { a.optString(it) } })

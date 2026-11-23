@@ -42,6 +42,7 @@ class StreamKeys(
         // never the key itself in the log: the player may be typing a Battle.net password through the stream (the user, 2026-10-28)
         val vk = XToVk.vk(xKeycode) ?: run { refused("unknown key"); return }
         if (down && blocked(vk)) { refused("blocked key 0x${Integer.toHexString(vk)}"); return }
+        if (down && !PcFront.allowed()) return                 // Linux Edition: another window has the PC's focus (Battle.net's Play)
         if (!down && vk !in held) return                       // the release of a refused (or never pressed) key
         if (down) held.add(vk) else held.remove(vk)
         input.key(vk, down, mods())
@@ -58,6 +59,7 @@ class StreamKeys(
     }
 
     override fun tap(fx: Float, fy: Float) {
+        if (!PcFront.allowed()) return                          // Linux Edition: another window has the PC's focus
         // Linux Edition diagnostic (2026-11-17): who asked for this click (finding the 2 s ghost-click source)
         try {
             val who = Throwable().stackTrace.drop(1).filter { !it.className.contains("InputSink") && !it.className.contains("RootShell") &&
