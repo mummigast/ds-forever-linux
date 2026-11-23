@@ -857,6 +857,7 @@ local COL_SNIP = [[
             if not self:GetAttribute("wcok_" .. sel) then return false end
             self:SetAttribute("wcrow", sel)
             self:SetAttribute("wcn", (self:GetAttribute("wcn") or 0) + 1)
+            if owner:GetAttribute("lb_" .. sel) then return "LeftButton" end   -- pad35e: the target gets a plain left click
             return "wcc_" .. sel
         end
         -- "*": the game looks up <modifiers><name><suffix> first, and CTRL-SHIFT is held for every key of ours (the review)
@@ -893,6 +894,11 @@ local COLX_SNIP = [[
 -- per-window leaves -> Interact's secure leave -> the window's close) do; the backpack door does NOT (BagSlotOnClick: with a
 -- modifier held it runs IsModifiedClick("OPENALLBAGS") instead of ToggleBag), so bag0's doors stay clicks. Rows listed here only.
 local KEY_SFX = { idlg = true, ahr = true }     -- ahr: the AH remote (Interact i186): its targets read no modifier
+-- pad35e (2026-11-23, the user: a result row tapped on the bottom screen did not select it): a "click" delegate is clicked with the
+-- proxy's button name ("wcc_<row>"), and the auction house's result lines act on "LeftButton" only. Rows listed here are clicked as
+-- "LeftButton": the snippet returns it and the proxy's "*type1" / "*clickbutton1" carry the cell's target (no key binding of ours
+-- ever clicks a proxy as LeftButton - each is bound with its key's own name - so those attributes are this row's alone).
+local KEY_LB = { ahr = true }
 local function proxyFor(k, col)
     keys.proxy = keys.proxy or {}
     local p = keys.proxy[k]
@@ -1006,6 +1012,10 @@ function pad.keysMirror(name, c, cell)
     pcall(p.SetAttribute, p, "*type-wcc_" .. name, tg and "click" or nil)
     pcall(p.SetAttribute, p, "*clickbutton-wcc_" .. name, tg)
     pcall(p.SetAttribute, p, "wcok_" .. name, tg and true or nil)
+    if KEY_LB[name] then
+        pcall(p.SetAttribute, p, "*type1", tg and "click" or nil)
+        pcall(p.SetAttribute, p, "*clickbutton1", tg)
+    end
     if not cell.wcMirror then
         cell.wcMirror = true
         pcall(cell.HookScript, cell, "OnAttributeChanged", function(self, an)
@@ -1019,6 +1029,7 @@ function pad.keysFarRefresh()
         local r, col = pad.rows[name], i - 1
         local sec = r and r.secure and not keys.keyOf[name] and true or false
         pcall(keys.hdr.SetAttribute, keys.hdr, "far" .. col, sec and name or nil)
+        pcall(keys.hdr.SetAttribute, keys.hdr, "lb_" .. name, (sec and KEY_LB[name]) and true or nil)
         if sec then
             pcall(keys.hdr.SetAttribute, keys.hdr, "on_" .. name, (fits(r.row) and onRow(r)) and true or nil)
             pcall(keys.hdr.SetAttribute, keys.hdr, "n_" .. name, math.min(r.n or 0, COLS))
