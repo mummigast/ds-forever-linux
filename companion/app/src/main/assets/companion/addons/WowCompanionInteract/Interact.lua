@@ -2870,6 +2870,16 @@ N.ahk.watch:SetScript("OnUpdate", function(self, el)
     N.ahk.watchT = 0
     if frameShown("auction") ~= true then self:Hide(); N.ahk.lastFocus = nil; return end
     local f = N.ahFocusBox()
+    -- i183b TRACE (the level range was never seen in focus): what the game calls focused, whatever it is, and what the mouse is over
+    local okR, raw = pcall(function() return GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() end)
+    raw = okR and raw or nil
+    if raw ~= N.ahk.lastRaw then
+        N.ahk.lastRaw = raw
+        local okT, t = pcall(function() return raw and raw:GetObjectType() end)
+        local okN, n = pcall(function() return raw and raw:GetDebugName() end)
+        N.ahk.fdbg = raw and ((okT and t or "?") .. ":" .. (okN and type(n) == "string" and n:sub(-80) or "?")) or "none"
+        N.n = N.n + 1; emitSoon()
+    end
     if f ~= N.ahk.lastFocus then N.ahk.lastFocus = f; N.ahk.fid = (N.ahk.fid or 0) + 1; N.n = N.n + 1; emitSoon() end
 end)
 function N.ahInfo()
@@ -2880,7 +2890,7 @@ function N.ahInfo()
     local okFT, ftext = pcall(function() return fb and fb:GetText() end)
     local out = { kbd = N.ahk.open and "ahsearch" or nil, text = (okT and type(text) == "string") and text or "", owned = {}, bought = N.ahk.bought,
                   focus = fb and (fb == box and "search" or "other") or nil,
-                  ftext = fb and okFT and type(ftext) == "string" and ftext or nil, fid = fb and (N.ahk.fid or 0) or nil }
+                  ftext = fb and okFT and type(ftext) == "string" and ftext or nil, fid = fb and (N.ahk.fid or 0) or nil, fdbg = N.ahk.fdbg }
     local n = TN(function() return C_AuctionHouse.GetNumOwnedAuctions() end) or 0
     for i = 1, math.min(n, N.ahk.OWNED_N) do
         local ok, r = CALL(function() return C_AuctionHouse.GetOwnedAuctionInfo(i) end)
