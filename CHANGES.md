@@ -7,7 +7,7 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 - **Buying in the auction house works again:** the confirm (OK) did nothing. The add-ons no longer listen in on the game's own buy
   calls (that is what stopped them on WoW Forever); what you bought is read when the game says the purchase went through.
-- **"Your auctions" on the bottom screen** shows your listings when the auction house opens.
+- Known: a listing you post shows under "Your auctions" on the bottom screen the next time you open the auction house.
 
 ## 2026-11-23 (afternoon): linux-v1.0.38.2, add-on set 431 (beta 3, tested)
 
