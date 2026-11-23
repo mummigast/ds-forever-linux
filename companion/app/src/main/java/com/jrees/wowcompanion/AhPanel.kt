@@ -44,7 +44,12 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     }
 
     init {
-        view.onTypeTap = { reopen() }
+        // i187: a finger on the search line puts the game's cursor in its search box (one key); the keyboard follows the focus
+        view.onTypeTap = {
+            val col = view.info?.optInt("fsearch", -1) ?: -1
+            if (col >= 0) TapBridge.taps(ctx, padOf(), listOf("iact" to col)) { why -> view.post { view.note = why; view.invalidate() } }
+            view.kbDismissed = false
+        }
         // i184: "Min level" / "Max level": one key (iact ahlv min|max) puts the game's focus in that box, then the keyboard types live
         // i186 THE AH REMOTE: a button or a result line = one key on the secure row "ahr" (the game's own button clicked by that key);
         // a box (Quantity / Price) = one key on iact (its focus), then the keyboard types into it live
@@ -89,11 +94,13 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
                 if (kbOpen) kb.open()
             }
             view.note = if (live) (if (fkind == "search") LIVE_NOTE else LIVE_NOTE_OTHER) else null
-            if (!live) { typed = ah.optString("text", ""); if (kbOpen) kb.open() }      // the keyboard shows the game's search text again
+            if (!live) { typed = ah.optString("text", ""); view.kbDismissed = false }       // the panel shows the game's search text again
             Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on ($fkind box in focus)" else "off"}")
         }
-        if (ah.optString("kbd") == "ahsearch") {
-            if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
+        // i187 (the user: "the keyboard is always up"): the keyboard is up only while one of the game's text boxes has the focus
+        // (live typing); it goes down when the focus goes (Done / the game's Enter)
+        if (live) {
+            if (!kbOpen && !view.kbDismissed) openKb(ah.optString("ftext", ah.optString("text", "")))
         } else if (kbOpen) closeKb()
         view.typed = if (kbOpen) typed else ah.optString("text", "")
         view.invalidate()
@@ -145,7 +152,7 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     private fun reopen() {
         val ah = view.info ?: return
         view.kbDismissed = false
-        if (!kbOpen && ah.optString("kbd") == "ahsearch") openKb(ah.optString("text", ""))
+        if (!kbOpen && live) openKb(ah.optString("ftext", ah.optString("text", "")))     // i187: only with a game box in focus
         view.invalidate()
     }
 
@@ -219,7 +226,7 @@ class AhInfoView(ctx: Context) : View(ctx) {
         val body = UiKit.bodyPaint(w * 0.03f)
         val label = UiKit.bodyPaint(w * 0.026f, Theme.gold)
         c.drawText("Search", pad, y + label.textSize, label)
-        val shown = typed.ifEmpty { if (kbDismissed) "tap here to type" else "" }
+        val shown = typed.ifEmpty { "tap here to type" }
         c.drawText(shown, pad + w * 0.14f, y + label.textSize, if (typed.isEmpty()) sub else body)
         // i184: the game's Filter menu open: its level range's two boxes, a finger each
         if (a.optBoolean("lv", false)) {

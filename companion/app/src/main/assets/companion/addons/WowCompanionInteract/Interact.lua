@@ -1484,6 +1484,7 @@ local function assignSlots(doc)
     end
     if doc.ahinfo then                                       -- i186: the sell form's / the buy quantity's boxes
         doc.ahinfo.fqty, doc.ahinfo.fgold, doc.ahinfo.fbuyqty = slot("iact", "ahfocus qty"), slot("iact", "ahfocus gold"), slot("iact", "ahfocus buyqty")
+        doc.ahinfo.fsearch = slot("iact", "ahfocus search")
     end
     slot("iact", "alive")       -- the app's sign of life for hidden dialogs (Dialogs.lua reads its column)
     -- the app's no-action self-heal for a stuck "npc" hold (Home, 2026-09-30: one rule for every room)
@@ -9507,7 +9508,9 @@ N.ahrSig = AHR.sig
 -- the sell form's boxes: the app puts the game's focus there (a key on iact, as the level range's), then types live
 function ACT.ahfocus(which)
     local box
-    if which == "qty" then
+    if which == "search" then
+        box = ahF("SearchBar.SearchBox")
+    elseif which == "qty" then
         box = vis(ahF("CommoditiesSellFrame")) and ahF("CommoditiesSellFrame.QuantityInput.InputBox") or ahF("ItemSellFrame.QuantityInput.InputBox")
     elseif which == "gold" then
         local pi = vis(ahF("CommoditiesSellFrame")) and ahF("CommoditiesSellFrame.PriceInput.MoneyInputFrame") or ahF("ItemSellFrame.PriceInput.MoneyInputFrame")
