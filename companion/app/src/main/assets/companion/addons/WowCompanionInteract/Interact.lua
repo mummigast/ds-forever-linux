@@ -9414,6 +9414,11 @@ function AHR.lineInfo(fr, kind)
         local okL, link = pcall(function() return d.itemLink end)
         if okL and type(link) == "string" then name = TS(function() return link:match("%[(.-)%]") end) end
     end
+    if not name and kind == "commodity" then               -- the offers' lines carry no item: the buy frame's own item
+        local okI, id = pcall(function() return _G.AuctionHouseFrame.CommoditiesBuyFrame:GetItemID() end)
+        local okN, nm = pcall(function() return okI and id and C_Item.GetItemNameByID(id) end)
+        if okN and type(nm) == "string" then name = nm end
+    end
     local q = TN(function() return d.totalQuantity or d.quantity end)
     local p = TN(function() return d.minPrice or d.unitPrice or d.buyoutAmount or d.bidAmount end)
     return { t = name or "?", q = q, p = p }
