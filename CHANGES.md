@@ -1,11 +1,11 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 433). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 438). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
-## Beta 4 (on the beta branch), add-on set 437
+## 2026-11-23 (late): linux-v1.0.38.4, add-on set 438 (beta 4, tested)
 
-On top of linux-v1.0.38.3.
+On top of linux-v1.0.38.3. Tested on the Thor 2026-11-23: the remote's buttons, a buy and a sale through it, the keyboard.
 
 - **The auction house remote on the bottom screen:** the game's own buttons that are shown now (Buy / Sell / Auctions, Search,
   Filter, Favorites, Back, Buy now, Buyout, Bid, OK, Cancel, Post, Cancel auction, scroll) and the visible result rows, a finger each.
@@ -14,6 +14,7 @@ On top of linux-v1.0.38.3.
 - **No keys or clicks into the wrong window:** the PC helper tells the Thor which window is in front; while it is not WoW (e.g.
   Battle.net, whose Play button once got our Enter and started a second WoW), the app holds its keys and clicks back and asks for
   WoW to be brought to the front.
+- "Bought lately" lists a stackable buy once, with its count.
 
 ## 2026-11-23 (evening): linux-v1.0.38.3, add-on set 433 (bugfix)
 
