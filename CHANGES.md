@@ -1,7 +1,19 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 426). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 431). What differs from DS Forever in general: [FORK.md](FORK.md).
 
+
+## 2026-11-23 (afternoon): linux-v1.0.38.2, add-on set 431 (beta 3, tested)
+
+On top of linux-v1.0.38.1. Tested on the Thor 2026-11-23.
+
+- **Live typing in the auction house:** put the game's search box in focus with the controller, and the bottom screen's keyboard
+  types straight into it, letter by letter, as real keys (letters, digits and spaces). **Done** is the game's own Enter, so the
+  search runs by itself. The game's controller cannot reach the Filter's level range boxes, so the bottom screen shows **Min level** /
+  **Max level** while the Filter is open: a finger puts the game's cursor in that box (one key), and the game's own Tab switches
+  between them. Without a game text box in focus the keyboard sends nothing (the old typed rows pressed many keys per word).
+- **Fewer clicks after a /reload:** the keyboard link with the add-ons is checked again by keys, not by up to four clicks, and the
+  stream's tap calibration tries once (2 clicks) instead of three times.
 
 ## 2026-11-23: linux-v1.0.38.1, DS Forever 1.0.38, add-on set 426 (the beta.2 line + upstream, tested)
 
@@ -33,6 +45,8 @@ the Controller room and the tap-to-cast bar.
   calibration taps at login. The aim is as few automated inputs as possible.
 - *In fights: Top screen* (new in 1.0.38): the buttons that move to the top screen can get the wrong layout.
 - The tap-to-cast bar by keys is tested out of combat; in a fight it is built to work the same way (as bag items do), not yet played.
+- In the first seconds of a session, before the app's keyboard link with the add-ons is up, a few setting taps still go as clicks.
+- Live typing types letters, digits and spaces (not yet å, ä, ö or symbols), in the auction house only; the chat types as before.
 - The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).

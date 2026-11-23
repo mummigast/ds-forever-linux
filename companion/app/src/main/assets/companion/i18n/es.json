@@ -1,5 +1,12 @@
 {
 "plain": {
+"Press Done first, then pick the level box": "Pulsa primero Listo y luego elige la casilla de nivel",
+"Min level": "Nivel mín.",
+"Max level": "Nivel máx.",
+"The game gave this no key": "El juego no dio ninguna tecla para esto",
+"Select a text box in the game first": "Selecciona primero un cuadro de texto en el juego",
+"Typing live into the game's text box (Done = Enter)": "Escribiendo en directo en el cuadro de texto del juego (Listo = Intro)",
+"Typing live into the game's search box (Done = Search)": "Escribiendo en directo en la búsqueda del juego (Listo = Buscar)",
 "Ready. Close other apps for smoother play": "Listo. Cierra otras apps para jugar con más fluidez",
 "In fights": "En combate",
 "Combat bar": "Barra de combate",

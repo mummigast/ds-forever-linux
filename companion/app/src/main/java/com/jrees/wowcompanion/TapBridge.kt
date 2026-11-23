@@ -108,7 +108,10 @@ object TapBridge {
     // the pad token of the newest CURRENT document (CompanionHost.noteLivePad); cleared by a "hello" (the add-ons (re)started)
     @Volatile private var liveToken: String? = null
     @Volatile private var liveTokenAt = 0L
-    private const val LIVE_TOKEN_MS = 5_000L
+    // beta 3 (2026-11-23, the user: clicks "when its trying to get rid of the UI" = after a /reload; the log: keytest asked as a CLICK
+    // 4 times, 2 s apart, because the pad's token was older than 5 s - pad documents are not sent that often): the token of a CURRENT
+    // document since the last hello stays good for 2 minutes (a hello still clears it), so the handshake after a /reload goes by keys
+    private const val LIVE_TOKEN_MS = 120_000L
     fun noteLivePad(pad: JSONObject?, current: Boolean, hello: Boolean) {
         if (!current) return
         if (hello) { liveToken = null; return }

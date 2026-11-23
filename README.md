@@ -38,7 +38,7 @@ isn't yours).
 **Improved**
 - **Keyboard shortcuts instead of screen clicks** wherever possible: quests, vendors (buy, sell, repair), bags (in fights too),
   a bag slot picked by touch, the top-screen switches, the room switch, the Controller room and the tap-to-cast bar, typing
-  (one key per letter). Streaming, a click lands where WoW
+  (one key per letter), and **live typing** into the auction house's search and level boxes, as if a keyboard were plugged in. Streaming, a click lands where WoW
   parks its cursor after controller play, so clicks often missed; shortcuts don't, and fewer automated inputs are sent.
 - **Less stutter while streaming:** the add-ons' big updates are built once and spread over frames (a fight's start ~32 + 20 ms
   instead of one ~110 ms frame).
@@ -65,7 +65,7 @@ helper with its matching add-ons, `SHA256SUMS`, the source and its notes: watch 
   [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md), and every pre-release's own notes
   on the [releases page](https://github.com/mummigast/ds-forever-linux/releases). When a beta has proven itself it becomes the next
   stable release.
-- **Current beta:** none right now; the next one starts from stable 1.0.38.1.
+- **Current beta:** none right now; the next one starts from stable 1.0.38.2.
 - **Installing a beta:** download its APK and its `dsf-linux-helper-<version>.tar.gz` from the pre-release (both, the add-ons must
   match the app), install the APK over the stable one (same signing key, your settings stay) and run the helper's `./install.sh`.
   To go back, install the latest stable release's APK and helper the same way. The app's update check never offers a beta.

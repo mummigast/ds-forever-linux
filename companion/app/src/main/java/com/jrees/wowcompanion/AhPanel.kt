@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import org.json.JSONArray
@@ -25,6 +26,16 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
     val view = AhInfoView(ctx).apply { visibility = View.GONE }
     private var kbOpen = false
     private var typed = ""
+    /** beta 3 LIVE TYPING (Interact i182): the game's search box has the keyboard focus (doc.ahinfo.focus) - every change on the
+     *  keyboard goes straight into it as real keys ([InputSink.gameKeys]: letters, digits, space, Backspace), Done = the game's Enter
+     *  (its own search). [liveSent] = what the game's box holds by our keys (its text when the focus came) */
+    private var live = false
+    private var liveSent = ""
+    /** which focus the add-on reported last (its fid; -1 = none): another box = start again from that box's text */
+    private var liveFid = -1
+    private var lastDbg = ""
+    /** the box in focus as the add-on says: "search", "min", "max", "other" or "" */
+    private var focusKind = ""
     private val stream = ChatStream({ cells, gap ->
         TapBridge.tapsSpaced(ctx, padOf(), cells, gap) { why -> view.post { view.note = why; view.invalidate() } }
     }, field = true).apply { onEvent = { view.post { view.invalidate() } } }
@@ -32,7 +43,24 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         override fun run() { stream.tick(); if (stream.sending) view.postDelayed(this, 500L) }
     }
 
-    init { view.onTypeTap = { reopen() } }
+    init {
+        view.onTypeTap = { reopen() }
+        // i184: "Min level" / "Max level": one key (iact ahlv min|max) puts the game's focus in that box, then the keyboard types live
+        view.onLevel = { which ->
+            val col = view.info?.optInt(if (which == "max") "lvmax" else "lvmin", -1) ?: -1
+            val inBox = if (live) focusKind else ""
+            // a text box has the game's focus: it takes the keys, so our key would land IN it (the user: Min then Max closed the
+            // window). Between the level boxes the game's own Tab moves the focus (their template links them); from another box
+            // nothing is sent - the player leaves it first (Done)
+            if (inBox == which) { /* already there */ }
+            else if (inBox == "min" || inBox == "max") InputSink.signInTab()
+            else if (inBox.isNotEmpty()) { view.note = "Press Done first, then pick the level box"; view.invalidate() }
+            else if (col >= 0) {
+                TapBridge.taps(ctx, padOf(), listOf("iact" to col)) { why -> view.post { view.note = why; view.invalidate() } }
+                reopen()
+            } else { view.note = "The game gave this no key"; view.invalidate() }
+        }
+    }
 
     /** every current interact document */
     fun update(msg: JSONObject) {
@@ -40,6 +68,24 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (ah == null) { close(); return }
         view.info = ah
         if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE
+        // i183: ANY of the game's AH text boxes in focus ("search", or "other" = the filter's level range ...): each box its own text
+        val fkind = if (InputSink.sink != null) ah.optString("focus", "") else ""
+        focusKind = fkind
+        ah.optString("fdbg", "").let { d -> if (d.isNotEmpty() && d != lastDbg) { lastDbg = d; Log.i("WCHOME", "ah keyboard: game focus = $d") } }
+        val fid = if (fkind.isNotEmpty()) ah.optInt("fid", 0) else -1
+        if (fid != liveFid) {
+            liveFid = fid
+            live = fkind.isNotEmpty()
+            // the focus came (or moved to another box): that box's own text is where our keys start; it went: no key goes any more
+            if (live) {
+                liveSent = ah.optString("ftext", ah.optString("text", "")).filter { GameTyping.allowed(it) }
+                typed = liveSent
+                if (kbOpen) kb.open()
+            }
+            view.note = if (live) (if (fkind == "search") LIVE_NOTE else LIVE_NOTE_OTHER) else null
+            if (!live) { typed = ah.optString("text", ""); if (kbOpen) kb.open() }      // the keyboard shows the game's search text again
+            Log.i("WCHOME", "ah keyboard: live typing ${if (live) "on ($fkind box in focus)" else "off"}")
+        }
         if (ah.optString("kbd") == "ahsearch") {
             if (!kbOpen && !view.kbDismissed) openKb(ah.optString("text", ""))
         } else if (kbOpen) closeKb()
@@ -61,8 +107,17 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         stream.startField(typed)
         kb.sendWord = "Done"
         kb.text = { typed }
-        kb.onText = { t -> typed = stream.clean(t, MAX); stream.setBody(typed); view.typed = typed; view.invalidate() }
-        kb.onSend = { if (stream.send()) { view.removeCallbacks(tick); view.postDelayed(tick, 500L) } }
+        kb.onText = { t ->
+            typed = stream.clean(t, MAX)
+            // beta 3: in the auction house the keyboard only types LIVE (a game box in focus); without one nothing is sent (the old
+            // typed rows pressed many keys for every word, and their text went into the search box whatever box was meant)
+            if (live) liveType(typed) else { view.note = NO_FOCUS_NOTE; view.invalidate() }
+            view.typed = typed; view.invalidate()
+        }
+        kb.onSend = {
+            if (live) InputSink.gameEnter()           // the game's own Enter in its search box: its search
+            else { view.note = NO_FOCUS_NOTE; view.invalidate() }
+        }
         // the keyboard's own close: it goes down, the panel stays (a finger on the search line brings it back)
         kb.onClose = { view.kbDismissed = true; closeKb(); view.invalidate() }
         kb.voiceBox = true
@@ -70,6 +125,15 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         kb.voiceMax = MAX
         kb.copyLeftMs = { stream.copyLeftMs() }
         kb.open(); kb.visibility = View.VISIBLE
+    }
+
+    /** the keyboard's text [t] into the focused game box: Backspaces for what differs, then the new letters (a character the game may
+     *  not be typed - not a letter, digit or space - is left out, and [liveSent] says what the box really got) */
+    private fun liveType(t: String) {
+        val ops = GameTyping.diff(liveSent, t)
+        if (ops.back == 0 && ops.type.isEmpty()) return
+        InputSink.gameKeys(ops.back, ops.type)
+        liveSent = liveSent.dropLast(ops.back) + ops.type
     }
 
     private fun reopen() {
@@ -94,7 +158,12 @@ class AhPanel(private val ctx: Context, private val kb: ChatKeyboard, private va
         if (view.visibility != View.GONE) view.visibility = View.GONE
     }
 
-    companion object { const val MAX = 63 }
+    companion object {
+        const val MAX = 63
+        const val LIVE_NOTE = "Typing live into the game's search box (Done = Search)"
+        const val LIVE_NOTE_OTHER = "Typing live into the game's text box (Done = Enter)"
+        const val NO_FOCUS_NOTE = "Select a text box in the game first"
+    }
 }
 
 /** Read only: the search words, your auctions, what you bought lately. A finger on the search line only brings the keyboard back. */
@@ -104,13 +173,23 @@ class AhInfoView(ctx: Context) : View(ctx) {
     var note: String? = null
     var kbDismissed = false
     var onTypeTap: () -> Unit = {}
+    var onLevel: (String) -> Unit = {}
     private var searchBottom = 0f
+    private val lvMin = android.graphics.RectF()
+    private val lvMax = android.graphics.RectF()
     private val bg = Paint().apply { color = Color.argb(235, 12, 10, 8) }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         // the search line only; everything else passes through (the panel has no functions)
         if (e.y > searchBottom) return false
-        if (e.action == MotionEvent.ACTION_UP) onTypeTap()
+        if (e.action == MotionEvent.ACTION_UP) {
+            val lv = info?.optBoolean("lv", false) == true
+            when {
+                lv && lvMin.contains(e.x, e.y) -> onLevel("min")
+                lv && lvMax.contains(e.x, e.y) -> onLevel("max")
+                else -> onTypeTap()
+            }
+        }
         return true
     }
 
@@ -131,6 +210,18 @@ class AhInfoView(ctx: Context) : View(ctx) {
         c.drawText("Search", pad, y + label.textSize, label)
         val shown = typed.ifEmpty { if (kbDismissed) "tap here to type" else "" }
         c.drawText(shown, pad + w * 0.14f, y + label.textSize, if (typed.isEmpty()) sub else body)
+        // i184: the game's Filter menu open: its level range's two boxes, a finger each
+        if (a.optBoolean("lv", false)) {
+            val bw = w * 0.17f; val bh = label.textSize * 1.6f; val top = y - label.textSize * 0.3f
+            lvMax.set(w - pad - bw, top, w - pad, top + bh)
+            lvMin.set(lvMax.left - pad - bw, top, lvMax.left - pad, top + bh)
+            val fill = Paint().apply { color = Color.argb(255, 60, 48, 28) }
+            val txt = UiKit.bodyPaint(w * 0.024f).apply { textAlign = Paint.Align.CENTER }
+            for ((r, t) in listOf(lvMin to "Min level", lvMax to "Max level")) {
+                c.drawRoundRect(r, bh * 0.25f, bh * 0.25f, fill)
+                c.drawText(t, r.centerX(), r.centerY() + txt.textSize * 0.35f, txt)
+            }
+        } else { lvMin.setEmpty(); lvMax.setEmpty() }
         y += label.textSize * 1.9f
         searchBottom = y
         note?.let { c.drawText(it, pad, y, UiKit.bodyPaint(w * 0.022f, Color.rgb(230, 90, 70))); y += w * 0.03f }
