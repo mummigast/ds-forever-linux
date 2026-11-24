@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m185"               -- bump on every change; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m186"               -- bump on every change; m186 (the user 2026-11-24, WSG: flags and corpses not taken by X in a fight): a bare X with a soft-interact target is Forever's Interact in fights too; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -1530,6 +1530,14 @@ local PRE = [=[
             end
         end
         if rb and sw and dest and ft then rb = nil end
+        -- m186 X INTERACTS IN A FIGHT TOO (the user, 2026-11-24 in Warsong Gulch: "I cannot pick up or take flags in wsg with X button",
+        -- "or loot player corpses with X"; the game showed its X prompt): in a fight a bare X cast the In-combat spell on X. Something to
+        -- interact with comes first, as m60 does for fishing: with the game's soft-interact target present (a flag, a corpse to loot, a
+        -- node; the secure conditional parser only) X is Forever's own Interact, in fights as well. No soft-interact target: as before
+        if bare and mode ~= "room" and role ~= "back" and self:GetAttribute("wc-interact") and SecureCmdOptionParse
+            and SecureCmdOptionParse("[@softinteract,exists] 1") == "1" then
+            fight = false; ft = nil
+        end
         -- m59 FISHING ON X (the user: "When the fishing pole is equipped I want to change X from the auto attack / interact to be fishing /
         -- interact"): a bare X out of the fight switch with a pole in the main hand ("wc-fish" = the Fishing spell's name, set out of
         -- combat) casts Fishing; while Fishing channels (the bobber is out) it stays Forever's Interact, so the same X loots the bobber
