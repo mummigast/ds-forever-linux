@@ -51,6 +51,8 @@ class HomePauseView(
     var onPick: (HomePauseModel.Slice) -> Unit = {}
     /** pk1: Polestar's Skip / Previous can be pressed now (the Map's state, read at each open and each frame) */
     var polestar: () -> Pair<Boolean, Boolean> = { false to false }
+    /** a9: the pinned buffs (name, castbar cell) from Home's auras */
+    var pins: () -> List<Pair<String, Int>> = { emptyList() }
     /** feat/pause-power: a stream runs (the prompt's line says the PC closes and is put back) */
     var streaming: () -> Boolean = { false }
     /** feat/pause-power: why the power button can't be used now (a fight), null = it can */
@@ -453,6 +455,7 @@ class HomePauseView(
                     }
                     pvpArmedAt = 0L
                 }
+                if (pinCancel(cmd)) return
                 game(cmd)
             }
             HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close("a room picked") }
@@ -465,6 +468,16 @@ class HomePauseView(
      * "pressing the sit button from the pause menu should close the pause menu"; it stayed open up to 1.0.32, as the game's radial
      * does after its D-pad Sit). The Game Menu: the game's own menu
      */
+    /** a9: a pinned buff's cancel: ONE key press on the castbar's pin cell (its macro armed out of combat); false = not a pin pick */
+    private fun pinCancel(cmd: String): Boolean {
+        if (cmd != HomePauseModel.PIN1.cmd && cmd != HomePauseModel.PIN2.cmd) return false
+        val p = runCatching { pins() }.getOrDefault(emptyList()).getOrNull(if (cmd == HomePauseModel.PIN1.cmd) 0 else 1)
+        val ok = p != null && TapBridge.tap(context, questsPad(), "castbar", p.second) { why -> Log.i(TAG, "pause: pin cancel refused ($why)") }
+        Log.i(TAG, "pause: $cmd ${p?.first} ${if (ok) "sent" else "NOT sent"}")
+        if (ok) { lastActAt = SystemClock.uptimeMillis(); close("a pin cancel") } else say("Comes with the next add-on update")
+        return true
+    }
+
     private fun game(cmd: String) {
         if (cmd == "menu") {
             // 1.0.21 (the user: "showing the escape menu on the bottom screen was a mistake since we have to reopen it on the top screen for
@@ -633,6 +646,7 @@ class HomePauseView(
     private fun psState() {
         val (sk, pv) = runCatching { polestar() }.getOrDefault(false to false); flow.psSkip = sk; flow.psPrev = pv
         flow.inBg = PvpModel.queues.any { it.status == "active" }
+        flow.pinNames = runCatching { pins().map { it.first } }.getOrDefault(emptyList())
     }
 
     override fun onDraw(c: Canvas) {

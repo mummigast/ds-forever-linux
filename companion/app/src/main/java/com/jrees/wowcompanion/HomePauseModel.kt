@@ -49,6 +49,10 @@ object HomePauseModel {
     /** Linux Streaming Edition (the user, 2026-11-24: "i cannot leave the BG"): page 3's Leave Battle, shown only while a battleground is
      *  active ([Flow.inBg], PvpModel's queues), asks first like PvP; the pause row's column 11 runs the game's LeaveBattlefield */
     val LEAVE_BG = game("leavebg", "Leave Battle", "leavebg", confirm = true)
+    /** a9 (the user, 2026-11-24: "pin buffs for fight"): page 3's two pinned buffs, "Cancel <name>" (hidden while none is pinned); the
+     *  view taps the `castbar` cell the auras doc names for the pin (ActionBar cb17: "/cancelaura", by keys, fights too) */
+    val PIN1 = game("pin1", "Cancel", "pin1")
+    val PIN2 = game("pin2", "Cancel", "pin2")
 
     /** pk1: Polestar's Skip step / Undo skip (pm3: the undo is "Undo skip"; Home picks: MapView.polestarSkip) */
     val PS_SKIP = Slice(PolestarSkip.KEY_SKIP, PolestarSkip.SKIP_WORD, Kind.HOME)
@@ -93,7 +97,7 @@ object HomePauseModel {
             MACROS,
             PS_SKIP, PS_PREV,
             game("pvp", "PvP", "pvp", confirm = true),
-            LEAVE_BG, null, null,
+            LEAVE_BG, PIN1, PIN2,
         )),
     )
 
@@ -189,12 +193,16 @@ object HomePauseModel {
         var psPrev = false
         /** a battleground is active (Leave Battle shows) - set by the view at each open from PvpModel */
         var inBg = false
+        /** a9: the pinned buffs' names (PIN1 / PIN2 show with "Cancel <name>") - set by the view at each open */
+        var pinNames: List<String> = emptyList()
 
         fun slices(): List<Slice?> = if (page == EMOTE_PAGE) EMOTES else PAGES[page].map { s ->
             when (s?.key) {
                 PolestarSkip.KEY_SKIP -> s.takeIf { psSkip }
                 PolestarSkip.KEY_PREV -> if (!psSkip) null else if (psPrev) s else s.copy(off = true, offLine = NOTHING_LINE)
                 LEAVE_BG.key -> s.takeIf { inBg }
+                PIN1.key -> pinNames.getOrNull(0)?.let { s.copy(label = "Cancel $it") }
+                PIN2.key -> pinNames.getOrNull(1)?.let { s.copy(label = "Cancel $it") }
                 else -> s
             }
         }

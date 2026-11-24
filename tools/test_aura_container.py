@@ -390,7 +390,7 @@ def part2(chk):
     src = open(os.path.join(ADDONS, "WowCompanionCharacter", "Auras.lua"), encoding="utf-8").read()
     L.execute(src)
     W = G.WowCompanion.auras
-    chk("Auras.lua a8", W.version == "a8", W.version)
+    chk("Auras.lua a9", W.version == "a9", W.version)
     W.emit(True)
     d = G.LASTDOC
     chk("out of a fight: the lists as before (2 buffs, 1 debuff), read from the game", len(lst(d.b)) == 2 and len(lst(d.d)) == 1

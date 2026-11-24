@@ -203,7 +203,7 @@ check('WC.KERNEL = "k12"' in TEXT["safety"] and "-- k11 (the k10 review, round 1
       "0. Safety k12 (k6-k11's notes kept): WC.charKey, the sticky realm, the note quotes the user")
 check('local BV = "b76"' in SRC["book"] and "b74 THE STICKY REALM'S QUESTION" in SRC["book"] and "P3[9] = function()" in SRC["book"],
       "0. Book b74: the third page's 9 / 10-19 (the sticky realm's question)")
-check('local PV = "m187"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
+check('local PV = "m187"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb17"' in AB and 'local SV = "s18"' in TEXT["spells"]
       and 'local RV = "r28"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p28"' in TEXT["prof"] and 'p26 NO PARTIAL CHARACTER KEY' in TEXT["prof"]
       and 'local PADV = "pad38"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub77"' in TEXT["hub"]
       and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m182, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p27 (its p26 note kept), TapPad pad27, Trail prd21, Hub hub77, Map pq2")
@@ -403,7 +403,7 @@ check(C.eval('WowCompanion.pad.rows.castbar') is not None and C.eval('WowCompani
       "f. the realm empty: the cast bar's row casts the REAL castBar's spell (403), not the orphan's")
 check(C.eval('WowCompanionSpellsDB.castBar["Korvash-?"]') is None, "f. the castBar \"Korvash-?\" orphan folded away")
 cb = [d for d in docs(C, 'castbar')]
-check(cb and cb[-1].get('v') == 'cb16', "f. the cast bar document: cb16", cb[-1].get('v') if cb else None)
+check(cb and cb[-1].get('v') == 'cb17', "f. the cast bar document: cb16", cb[-1].get('v') if cb else None)
 clean(C, "f")
 
 # ================================================================ g the realm back (live) with orphans from before

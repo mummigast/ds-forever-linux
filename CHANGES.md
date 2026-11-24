@@ -5,6 +5,9 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
+- **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start, page
+  3) shows **Cancel <buff>** for each: one press cancels it, by keys (for an accidental Divine Shield or Ice Block). **Unpin** in the
+  same list.
 - **Problem reports go to this project:** Send opens a pre-filled issue on this repository (the direct upload went to upstream's
   tracker).
 - **Settings > Help > Keyboard link:** shows whether your presses reach the game as keys (green), which rooms still use clicks

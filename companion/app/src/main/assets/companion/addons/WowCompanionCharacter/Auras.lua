@@ -46,7 +46,7 @@ if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function
 local CALL, isPlain = WC.CALL, WC.isPlain
 local format = string.format
 
-local AV = "a8"     -- bump on every change; the app shows it, so a stale build is visible
+local AV = "a9"     -- bump on every change; a9 (2026-11-24): pinned buffs for fights (pins, the castbar's cells 25-26); the app shows it, so a stale build is visible
 -- a8 (#558 / #476, the user 2026-11-19: "Just remove them during fights"): IN A FIGHT the bottom screen's buffs / debuffs are hidden
 -- entirely, so nothing is read: the document says hide = true with empty lists (no aura read, no tooltip, no enchant read, the pad's
 -- aura slots kept as they were) and the app draws none of them - no frozen list, no estimate, no note. The fight: PLAYER_REGEN_DISABLED
@@ -256,11 +256,40 @@ local function inFight()
     return okl and l == true
 end
 
+-- a9 PINNED BUFFS FOR FIGHTS (Linux Streaming Edition, 2026-11-24, the user: "pin buffs for fight"; the research's recovery strip: a
+-- Divine Shield cast by accident could not be cancelled, the cancel cell above is disarmed at a fight's start). Up to PINS buff
+-- names per character (WowCompanionDB.auraPins["Name-Realm"]), picked out of combat in the buff list (pick, then "pin"); their
+-- cancels live on the castbar's secure far row (ActionBar cb17 cells 25-26: "/cancelaura <name>", armed out of combat), so a key
+-- press cancels them in a fight. The document carries pins = { {n, col} } always (in fights too) and the pin / unpin cells.
+local PINS = { n = 2 }
+function PINS.list()
+    local db = rawget(_G, "WowCompanionDB")
+    local who = type(WC.charKey) == "function" and WC.charKey() or nil
+    if type(db) ~= "table" or not who then return nil end
+    db.auraPins = db.auraPins or {}
+    db.auraPins[who] = db.auraPins[who] or {}
+    return db.auraPins[who]
+end
+WC.auraPinName = function(i)
+    local l = PINS.list()
+    local n = l and l[i]
+    return (type(n) == "string" and n ~= "") and n or nil
+end
+function PINS.arm() if type(WC.castBarPinsArm) == "function" then pcall(WC.castBarPinsArm) end end
+function PINS.doc()
+    local out = {}
+    for i = 1, PINS.n do
+        local n = WC.auraPinName(i)
+        local col = type(WC.castBarPinCol) == "function" and WC.castBarPinCol(i) or nil
+        if n then out[#out + 1] = { n = n, col = col, i = i } end
+    end
+    return out
+end
 local function emit(force)
     tally.secret, tally.threw = 0, 0
     -- a8: in a fight nothing is read; the app hides every aura display until the fight's end
     if inFight() then
-        local doc = { type = "auras", v = AV, b = {}, d = {}, e = {}, hide = true, combat = true }
+        local doc = { type = "auras", v = AV, b = {}, d = {}, e = {}, hide = true, combat = true, pins = PINS.doc() }
         if WC.pad then local okp, g = pcall(WC.pad.describe); if okp then doc.pad = g end end
         local okk, key = pcall(WC.encode, doc)
         if not okk then return false end
@@ -272,7 +301,7 @@ local function emit(force)
         return true
     end
     local locked = secretNow()
-    local doc = { type = "auras", v = AV }
+    local doc = { type = "auras", v = AV, pins = PINS.doc() }
     local vb, vd, wb, wd
     local ok = pcall(function()
         doc.b, vb, wb = list("HELPFUL", locked)
@@ -295,6 +324,11 @@ local function emit(force)
             if type(a.id) == "number" then a.slot = pad.slotFor("aura", a.id); present[a.id] = true end
         end
         present.open, present.close = true, true          -- the Character room's two fixed cells are never freed
+        -- a9: the pin / unpin cells (plain: no game action), kept for the session
+        doc.pinCell = pad.slotFor("aura", "pin")
+        doc.unpinCells = {}
+        for i = 1, PINS.n do doc.unpinCells[i] = pad.slotFor("aura", "unpin" .. i); present["unpin" .. i] = true end
+        present.pin = true
         pad.retain("aura", present)
     end
     if pad then local okp, g = pcall(pad.describe); if okp then doc.pad = g end end
@@ -393,6 +427,23 @@ local function onPick(key)
         return
     end
     if InCombatLockdown() then return ack("pick", key, false, "in combat") end
+    -- a9: "pin" pins the buff the last pick armed; "unpinN" lets pin N go (out of combat: the castbar cells change)
+    if key == "pin" then
+        local a, l = armed, PINS.list()
+        if not (a and a.name and l) then return ack("pin", nil, false, "pick a buff first") end
+        for i = 1, PINS.n do if l[i] == a.name then disarm(); return ack("pin", a.id, true, "already pinned", { n = a.name }) end end
+        if #l >= PINS.n then return ack("pin", a.id, false, "two buffs are pinned already: unpin one") end
+        l[#l + 1] = a.name
+        disarm(); PINS.arm()
+        return ack("pin", a.id, true, nil, { n = a.name })
+    end
+    if type(key) == "string" and key:match("^unpin%d$") then
+        local i, l = tonumber(key:sub(6)), PINS.list()
+        if not (l and l[i]) then return ack("unpin", nil, false, "nothing pinned there") end
+        local n = table.remove(l, i)
+        PINS.arm()
+        return ack("unpin", nil, true, nil, { n = n })
+    end
     if type(key) ~= "number" then return ack("pick", nil, false, "unknown slot") end
     if not cell then return ack("pick", key, false, "no cancel cell") end
     local name, why = buffName(key)
@@ -468,7 +519,11 @@ end
 local g = CreateFrame("Frame")
 pcall(g.RegisterEvent, g, "PLAYER_REGEN_DISABLED")
 pcall(g.RegisterEvent, g, "PLAYER_REGEN_ENABLED")
-g:SetScript("OnEvent", function() if armed then disarm() end end)
+g:SetScript("OnEvent", function(_, e)
+    if armed then disarm() end
+    if e == "PLAYER_REGEN_ENABLED" or e == "PLAYER_ENTERING_WORLD" then PINS.arm(); soon() end     -- a9: the pins re-armed out of combat
+end)
+pcall(g.RegisterEvent, g, "PLAYER_ENTERING_WORLD")
 
 -- RIDE THE CORE HEARTBEAT (as Character.lua and Quests do): the whole list again, marked "full".
 local RIDE = { heartbeat = true, login = true, zone = true, manual = true }

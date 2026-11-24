@@ -1317,7 +1317,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pauseView.streaming = { SetupBridge.endSession != null }
         pauseView.powerRefusal = { if (homeView.inFight()) PausePower.FIGHT_LINE else null }
         pauseView.onPower = { powerOff.run() }
-        pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
+        pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }
+        pauseView.pins = { homeView.auraPins() }                                             // a9: the pinned buffs' Cancel slices      // pk1: its Skip / Previous step slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
         targetRadial = TargetRadialView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         // Quests q69: the pet's Rename types on its own keyboard (Chat's borrowed field, as the Macros room's), over the wheel

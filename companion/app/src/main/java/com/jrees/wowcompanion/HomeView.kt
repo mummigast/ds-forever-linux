@@ -1439,6 +1439,9 @@ class HomeView(
         }
     }
 
+    /** a9: the pinned buffs (name, the castbar cell that cancels it) for the pause wheel */
+    fun auraPins(): List<Pair<String, Int>> = auras.pins.map { it.name to it.col }
+
     /** character's `auras` document (a1): the player's buffs, debuffs and weapon enchants */
     fun onAuras(msg: JSONObject, current: Boolean) {
         if (auras.update(msg, current, System.currentTimeMillis())) auraPane.invalidate()
@@ -1449,6 +1452,10 @@ class HomeView(
         when (val a = auras.ack(msg, System.currentTimeMillis())) {
             AuraAck.Cancel -> if (!GameInput.tap(context, auras.pad, "auracancel", 0)) {
                 auras.sendFailed(); auraPane.note("The game has not published its tap pad")
+            }
+            AuraAck.Pin -> {
+                val cell = auras.pinCell
+                if (cell == null || !GameInput.tap(context, auras.pad, "aurapick", cell)) { auras.sendFailed(); auraPane.note("The game has not published its tap pad") }
             }
             is AuraAck.Note -> auraPane.note(a.text)
             AuraAck.Idle -> {}
@@ -4535,6 +4542,8 @@ class HomeView(
         }
         private val buffBox = RectF(); private val debuffBox = RectF()
         private val panel = RectF(); private val removeBox = RectF()
+        /** a9: Pin for fights / Unpin, left of Remove */
+        private val pinBox = RectF()
         private val zoomIn = RectF(); private val zoomOut = RectF()
         private var zoomTouchAt = 0L
         private var zoomDown = 0                     // the zoom button under the finger: -1 = in (+), +1 = out (-), 0 = none
@@ -4572,7 +4581,7 @@ class HomeView(
 
         private fun drawPane(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat(); val now = System.currentTimeMillis()
-            rows.clear(); buffBox.setEmpty(); debuffBox.setEmpty(); panel.setEmpty(); removeBox.setEmpty()
+            rows.clear(); buffBox.setEmpty(); debuffBox.setEmpty(); panel.setEmpty(); removeBox.setEmpty(); pinBox.setEmpty()
             zoomIn.setEmpty(); zoomOut.setEmpty()
             val full = fullMap()
             if (!full && (open == null || !auras.live(now))) zoom(c, w, h, now)      // the open list covers that corner
@@ -4939,6 +4948,7 @@ class HomeView(
             UiKit.divider(c, r.left + 8f, r.top + 2f, r.right - 8f, r.top + 2f)
             val removable = !debuff && !a.enchant
             val textRight = if (removable) r.right - REMOVE_W - 20f else r.right - 12f
+            pinBox.setEmpty()
             val text = when {
                 a.tip.isNotEmpty() -> a.tip.joinToString("\n")
                 greyed -> "Hidden by the game in combat"
@@ -4960,7 +4970,29 @@ class HomeView(
                 val label = if (waiting) "Removing" else "Remove"
                 val state = if (can) UiKit.Button.UP else UiKit.Button.DISABLED
                 if (padHeld) UiKit.button(c, removeBox, label, aGlyph(), state) else UiKit.button(c, removeBox, label, state)
+                // a9 (the user, 2026-11-24: "pin buffs for fight"): this buff cancelled from the pause wheel in a fight (by keys)
+                if (auras.pinCell != null) {
+                    val pinned = auras.pinOf(a.name)
+                    pinBox.set(removeBox.left, removeBox.top - REMOVE_H - 8f, removeBox.right, removeBox.top - 8f)
+                    val ok = !greyed && auras.pending(now) == null && (pinned != null || auras.pins.size < 2)
+                    UiKit.button(c, pinBox, if (pinned != null) "Unpin" else "Pin for fights", if (ok) UiKit.Button.UP else UiKit.Button.DISABLED)
+                }
             }
+        }
+
+        /** a9: pin the buff for fights (the pick, then the pin cell on its ok), or unpin it (one tap) */
+        private fun pinOrUnpin(id: Int) {
+            val now = System.currentTimeMillis()
+            val a = auras.shownBuffs.firstOrNull { it.id == id } ?: return
+            val pinned = auras.pinOf(a.name)
+            if (pinned != null) {
+                val cell = auras.unpinCell(pinned) ?: return note("Update the add-ons to pin buffs")
+                if (!GameInput.tap(context, auras.pad, "aurapick", cell)) note("The game has not published its tap pad")
+            } else when (val t = auras.pin(id, GameInput.live(now), now)) {
+                is AuraTap.Send -> if (!GameInput.tap(context, auras.pad, "aurapick", t.slot)) { auras.sendFailed(); note("The game has not published its tap pad") }
+                is AuraTap.Refused -> note(t.why)
+            }
+            invalidate()
         }
 
         private fun remove(id: Int) {
@@ -5130,6 +5162,7 @@ class HomeView(
                     else { sel = hit; open = debuff; resetCursor(); scroll = hitScroll(debuff, hit); invalidate() }
                 }
                 removeBox.contains(x, y) -> sel?.let { remove(it) }
+                pinBox.contains(x, y) -> sel?.let { pinOrUnpin(it) }
                 // a finger's choice moves the controller's cursor with it (the A goes to Remove, as A would)
                 panel.contains(x, y) -> rows.firstOrNull { it.first.contains(x, y) }?.let { sel = it.second; cur = it.second; invalidate() }
                 else -> close()                                             // outside the open list: close it

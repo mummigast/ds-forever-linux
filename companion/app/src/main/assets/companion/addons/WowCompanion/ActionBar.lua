@@ -1005,13 +1005,18 @@ end
 -- party set is never armed and a party-layer edit is refused "cb-phidden"; the party slots are KEPT (the D5 rule). The document says
 -- `p` (the party slots, their cells 17-24 while built), `ps` = 1 while Bar in Party mode is on, `pl` = 1 (this add-on has the layer).
 do
-local CBV = "cb16"     -- cb16 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() put castBar / castBarFight / castBarParty under "Name-?"): cbWho() is Safety k6's WC.charKey(), nil until the realm is known; cb15 THE PARTY MODE LAYER (header: castBarParty, 25 cells, the secure Party > In combat > own swap, unit = Party mode's pick, `p` / `ps` / `pl`); cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
+local CBV = "cb17"     -- cb17: cells 25 / 26 cancel the two pinned buffs (Auras pins), by keys in fights too; cb16 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() put castBar / castBarFight / castBarParty under "Name-?"): cbWho() is Safety k6's WC.charKey(), nil until the realm is known; cb15 THE PARTY MODE LAYER (header: castBarParty, 25 cells, the secure Party > In combat > own swap, unit = Party mode's pick, `p` / `ps` / `pl`); cb14 THE IN-COMBAT LAYER (header: castBarFight, 17 cells, the secure [combat] swap, `f` / `show`); cb13 A PLAYER'S MACRO (#553): { k = "macro", n } by name, its own text as our cell's macrotext (Book b69 puts it, WC.castBarMacro); cb12 PET RECALL ONLY (header: cb11's Smart pet casts removed, cb10's cells again); cb10 PET SPELLS (#234, the user: "build it"): a pet's spell on the bar (the Bind box's Cast bar tab, the Controller room's chooser) is cast by its NAME (CastSpellByName, the game's own /cast; WC.spellsPetName from Spells s10), never CastSpellByID
 local CB_PADTAB_PICK = { 39, 19 }        -- cb2: padtab 39 (the one-shot pick) then 19 (its cast bar code): Book b55 -> WC.castBarPick
 local CB_N, CB_PICK_COL, CB_PICK_S = 8, 8, 2   -- cb6: 8 slots (cells 0-7), the pick cell 8
 local CB_OLD_N = 12                      -- cb3: the slots a cb1 / cb2 store may hold (cb6: migrated to the first 8)
 local CB_F0 = CB_N                       -- cb14: fight slot i's cell = CB_F0 + i (9-16)
 local CB_P0 = CB_N + CB_N                -- cb15: party slot i's cell = CB_P0 + i (17-24)
-local CB_CELLS = CB_N + 1 + CB_N + CB_N  -- cb15: 25 cells (the slots, the pick, the fight slots, the party slots); cb14's 17
+-- cb17 (Linux Streaming Edition, 2026-11-24, the user: "pin buffs for fights"): two more cells after the party slots, 25 / 26, each
+-- "/cancelaura <a pinned buff>" (Auras.lua's pins, WC.auraPinName), armed out of combat: the castbar is a SECURE FAR ROW, so a key
+-- press copies the macro onto its proxy and cancels the buff in a fight too (CancelAura is protected; a macro set before the fight
+-- is the game's own allowed way). No layer wrap on them.
+local CB_PIN0, CB_PINS = CB_N + 1 + CB_N + CB_N, 2
+local CB_CELLS = CB_PIN0 + CB_PINS       -- cb17: 27 cells (cb15's 25 + the two pins)
 local CB_FIELD = { f = "castBarFight", p = "castBarParty" }  -- cb14 / cb15: the layer's store (nil = the out-of-combat bar, castBar)
 local CB_PAD = "WowCompanionPartyPad"    -- cb15: Party mode's pad (PadMap m77): "wc-party" on / off, "wc-u" the pick
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
@@ -1299,6 +1304,13 @@ local function cbWrap(btn)
     if h and pcall(SecureHandlerWrapScript, btn, "OnClick", h, CB.SWAP) then CB.wrapped[btn] = true end
 end
 local function cbInit(btn, col)
+    if col >= CB_PIN0 then                                             -- cb17: a pinned buff's cancel
+        local name = type(WC.auraPinName) == "function" and WC.auraPinName(col - CB_PIN0 + 1) or nil
+        btn:SetAttribute("type", name and "macro" or nil)
+        btn:SetAttribute("macrotext", name and ("/cancelaura " .. name) or nil)
+        btn:SetAttribute("spell", nil); btn:SetAttribute("item", nil); btn:SetAttribute("unit", nil)
+        return
+    end
     local w = CB.want[col]
     local nt, ns, ni, nm = cbAttrs(w and w.e, w and w.line)
     local ft, fs, fi, fm = cbAttrs(w and w.fe, w and w.fline)
@@ -1330,6 +1342,18 @@ local function cbInit(btn, col)
 end
 local function cbClick(col)
     if col == CB_PICK_COL then CB.pick = cbNow() end
+end
+-- cb17: the pin cells' columns (the app taps "castbar" there) and their re-arm after a pin change / the fight's end
+WC.castBarPinCol = function(i) if i >= 1 and i <= CB_PINS then return CB_PIN0 + i - 1 end end
+WC.castBarPinsArm = function()
+    if InCombatLockdown() then return false end
+    local r = WC.pad and WC.pad.rows and WC.pad.rows.castbar
+    if not (r and r.cells) then return pcall(CB.sync) end          -- no row yet (an empty bar): the sync builds it for the pins
+    for i = 1, CB_PINS do
+        local b = r.cells[CB_PIN0 + i - 1]
+        if b then pcall(cbInit, b, CB_PIN0 + i - 1) end
+    end
+    return true
 end
 -- the thing's signature on its cell (a macro kind's line in it: a changed line builds again)
 local function cbSig(e, line)
@@ -1363,9 +1387,16 @@ function CB.sync()
         end
     end
     -- cb15: Party mode's pad made since the last build (PadMap makes it out of combat, maybe after this row): built again for its ref
-    local sig = table.concat(parts, ",") .. ((anyP and cbPad()) and "|P" or "")
+    -- cb17: the pinned buffs ride the signature (a pin change builds the row again: cbInit arms cells 25 / 26), and pins alone
+    -- are reason enough for the row (an empty bar with a pinned buff still needs its cancel cells)
+    local pinSig = ""
+    if type(WC.auraPinName) == "function" then
+        for i = 1, CB_PINS do pinSig = pinSig .. "|" .. (WC.auraPinName(i) or "") end
+        if not pinSig:find("[^|]") then pinSig = "" end
+    end
+    local sig = table.concat(parts, ",") .. ((anyP and cbPad()) and "|P" or "") .. pinSig
     if CB.row and sig == CB.sig then return true end
-    if not CB.row and #parts == 0 then                   -- cb2: an empty bar takes no pad row
+    if not CB.row and #parts == 0 and pinSig == "" then  -- cb2: an empty bar takes no pad row
         CB.want, CB.sig, CB.frozen = {}, nil, {}
         return false
     end

@@ -121,7 +121,9 @@ object ResetPlan {
             // Linux Edition 2026-11-20: the stutter diagnostics (Sink perf2 / perf3: the last fight starts and hitch frames)
             "perf", "hitch",
             // Linux Edition 2026-11-24: the Lua error log of this session and the one before (ErrLog.lua)
-            "luaErr", "luaErrPrev", "taintLogReset1"),
+            "luaErr", "luaErrPrev", "taintLogReset1",
+            // Linux Edition 2026-11-24 (a9): the buffs pinned for fights, per character (the player's own picks: a reset keeps them)
+            "auraPins"),
     )
 
     /** a character key as the add-on writes it ("Name-Realm"; [CharKey]: never a partial "Name-?" / "Name-_" one) */
