@@ -19,9 +19,10 @@
 - **Smoother fights.** Less work per frame inside the game, so fewer hitches when a fight starts.
 - **Streaming only.** The game runs on the PC, never on the Thor, so the app is smaller and installs next to the official one.
 
-## Latest: 1.0.38.4
+## Latest: 1.0.39.1
 
-The auction house remote, live typing, buying fixed, and keys never land in Battle.net or another window.
+DS Forever 1.0.39, party invites and battleground pop-ups on the bottom screen, X takes flags in fights, no more
+"blocked" pop-ups in battlegrounds, and the Map room works again.
 [All changes](CHANGES.md)
 
 ## What you need
@@ -52,7 +53,7 @@ More detail, commands and troubleshooting: [the helper's guide](linux-helper/REA
 - A few actions still go as clicks: opening your bags, moving items between bags, picking a spell from the spellbook.
 - *In fights: Top screen* can put the moved buttons in the wrong layout.
 - Live typing works in the auction house only, and types letters, digits and spaces (no å, ä or ö yet).
-- A listing you post shows on the bottom screen the next time you open the auction house.
+- No dungeon map inside the Stockades (being looked at).
 - The full list: [CHANGES.md](CHANGES.md#known-issues-main--the-stable-branch-bigger-changes-are-tested-on-the-beta-branch-first).
 
 ## FAQ

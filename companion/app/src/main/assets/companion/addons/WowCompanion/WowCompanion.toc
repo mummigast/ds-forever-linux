@@ -4,7 +4,7 @@
 ## Category: DS Forever
 ## Notes: Bottom-screen companion bridge for the AYN Thor
 ## Author: DS Forever
-## Version: Set 455
+## Version: Set 456
 ## DefaultState: enabled
 ## SavedVariables: WowCompanionDB
 ErrLog.lua

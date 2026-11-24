@@ -57,10 +57,16 @@ f:SetScript("OnEvent", function(self, event, name, fn)
         return
     end
     pcall(quiet)        -- Blizzard_DebugUtil loading after us would put the game's own back
-    -- TEMPORARY (2026-11-24 taint hunt; the Thor cannot type /console): the game's taint log on (Logs/taint.log), level 2
+    -- the 2026-11-24 taint hunt left the game's taint log on (taintLog 2, a CVar the client keeps): put back to off ONCE per account
     if event == "PLAYER_LOGIN" then
         pcall(function()
-            if type(C_CVar) == "table" and C_CVar.SetCVar then C_CVar.SetCVar("taintLog", "2") elseif SetCVar then SetCVar("taintLog", "2") end
+            local db = rawget(_G, "WowCompanionDB")
+            if type(db) ~= "table" or db.taintLogReset1 then return end
+            db.taintLogReset1 = true
+            local get = (type(C_CVar) == "table" and C_CVar.GetCVar) or GetCVar
+            if get and get("taintLog") == "2" then
+                if type(C_CVar) == "table" and C_CVar.SetCVar then C_CVar.SetCVar("taintLog", "0") else SetCVar("taintLog", "0") end
+            end
         end)
     end
     if name ~= "WowCompanion" then return end
