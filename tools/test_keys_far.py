@@ -257,6 +257,32 @@ for k in ('DOWN', 'DOWN', cols[3], cols[5]):
     key(k)
 check(L.eval('DOORHIT') == 0, "40: a bag row's click cell is not pressed by keys (no mirror)", L.eval('DOORHIT'))
 
+# pad36 / pad36b (2026-11-24, the user: Start wheel -> Map "the game kept the controller"): the Map room's row is a secure far row
+# (selector 29) whose action-less cells are HANDLER cells (KEY_HND): the hold cell 0 by keys runs the row's handler, nothing clicked
+L.execute("""
+local pad = WowCompanion.pad
+MAPTAPS = {}
+local close = CreateFrame("Button", "MapCloseTarget", UIParent); close:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = "MapCloseTarget" end)
+pad.secureRow("mapw", 40, function(btn, col)
+    if col == 5 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", close) end
+end, function(col) MAPTAPS[#MAPTAPS + 1] = col end, { onPress = true })
+if pad.buildSecure then pad.buildSecure() end
+pad.bindKeys()
+pad.keysFarRefresh()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('mapw') == 'DOWN DOWN ' + cols[29], "40a: mapw = DOWN DOWN + selector 29", rows.get('mapw'))
+hits(); tick(1)
+for k in ('DOWN', 'DOWN', cols[29], cols[0]):
+    key(k)
+check(L.eval('#MAPTAPS') >= 1 and L.eval('MAPTAPS[#MAPTAPS]') == 0 and hits() == [],
+      "40b: the hold cell (no action) by keys runs the Map row's handler for column 0, nothing clicked", L.eval('#MAPTAPS'))
+tick(1)
+for k in ('DOWN', 'DOWN', cols[29], cols[5]):
+    key(k)
+check(hits() == ['MapCloseTarget'], "40c: the close cell by keys clicks the map's close button", '')
+
 # pad32: the Auras pick and the Talents rows are far rows (selectors 20-22)
 L.execute("""
 local pad = WowCompanion.pad
