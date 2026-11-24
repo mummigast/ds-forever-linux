@@ -106,6 +106,17 @@ chk("dungeon role check: Tank (the spec's) ticked, Accept as Tank and on", rt.ch
     and BTN(x, 1).label == "Accept as Tank" and BTN(x, 1).on == true)
 rc.shown = false
 DOC()
+-- d39: THE MATCH RESULTS (PVPMatchResults: leaveButton / requeueButton, no words of its own)
+local mr = CreateFrame("Frame", "PVPMatchResults"); mr.shown = false
+mr.leaveButton = CreateFrame("Button"); mr.leaveButton.GetText = function() return "Leave Battle" end
+mr.requeueButton = CreateFrame("Button"); mr.requeueButton.GetText = function() return "Requeue" end
+mr.shown = true
+FIRE("PVP_MATCH_COMPLETE")
+doc = DOC(); x = doc and FIND(doc, "PVP_RESULTS")
+chk("match results mirrored: Leave Battle (A) / Requeue, with words", x ~= nil and BTN(x, 1).label == "Leave Battle"
+    and BTN(x, 2).label == "Requeue" and x.text == "The battle is over." and _G.WowCompanionDlgA.attr.clickbutton == mr.leaveButton)
+mr.shown = false
+DOC()
 return table.concat(out, "\n")
 '''
 
