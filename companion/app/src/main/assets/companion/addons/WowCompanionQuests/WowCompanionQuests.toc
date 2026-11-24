@@ -5,7 +5,7 @@
 ## Group: WowCompanion
 ## Notes: Feeds the Quests room on the Thor's bottom screen
 ## Author: DS Forever
-## Version: Set 452
+## Version: Set 453
 ## DefaultState: enabled
 ## Dependencies: WowCompanion
 ## OptionalDeps: QuestieDB

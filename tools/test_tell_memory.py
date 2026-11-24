@@ -52,7 +52,8 @@ def pf_on(L):
 L, errs = boot('{ dpad = { ["%s"] = false } }' % KEY)
 check(not errs, "a0: the world loads", errs)
 w = start_words(L)
-check(w and w[-1] == "game", "a1: toolbar OFF -> Quests says 'game' at login by itself", w)
+# the 1.0.39 merge (upstream issue 588, PadMap m186+: Start is our wheel with the toolbar off too; Quests q71): 'rooms' either way
+check(w and w[-1] == "rooms", "a1: toolbar OFF -> Quests says 'rooms' at login by itself (1.0.39: Start is our wheel either way)", w)
 L, errs = boot('{ dpad = { ["%s"] = true } }' % KEY)
 w = start_words(L)
 check(w and w[-1] == "rooms", "a2: toolbar ON -> 'rooms'", w)
