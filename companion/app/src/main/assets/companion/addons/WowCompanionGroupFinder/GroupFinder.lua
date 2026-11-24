@@ -116,7 +116,8 @@ end
 local function numbers(fn)
     local out = {}
     local ok, t = CALL(fn)
-    if ok and type(t) == "table" then
+    -- 2026-11-24 (taint.log in a battleground: ~1000 blocked length reads): a SECRET table is not read at all
+    if ok and type(t) == "table" and (type(WC.isPlain) ~= "function" or WC.isPlain(t)) then
         local n = SN(function() return #t end) or 0
         for i = 1, n do
             local v = TN(function() return t[i] end)
@@ -509,7 +510,8 @@ local function results(canInvite)
                 self = TB(function() return r.hasSelf end) or nil,
                 del = TB(function() return r.isDelisted end) or nil,
                 npf = TB(function() return r.newPlayerFriendly end) or nil,
-                note = TB(function() return r.comment ~= "" end) or nil,  -- protected text: presence only
+                note = (function() local c = S(function() return r.comment end)        -- protected text: presence only (2026-11-24:
+                    return (type(c) == "string" and WC.isPlain(c) and c ~= "") or nil end)(),  -- a secret one is not compared)
                 fr = ((TN(function() return r.numCharFriends end) or 0)
                       + (TN(function() return r.numBNetFriends end) or 0)),
                 gm = TN(function() return r.numGuildMates end),

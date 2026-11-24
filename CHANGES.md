@@ -1,7 +1,35 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.38 (upstream add-on set 423; this edition's set 439). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 456). What differs from DS Forever in general: [FORK.md](FORK.md).
 
+
+## 2026-11-24: linux-v1.0.39.1, DS Forever 1.0.39, add-on set 456 (tested)
+
+On top of linux-v1.0.38.4. Tested on the Thor 2026-11-24: party invites with roles, the battleground entry pop-up, no "blocked" pop-up in a battleground, the Map room from the Start wheel, general play with no Lua errors. Not tested yet in a battleground: X on flags and corpses in a fight, Leave Battle.
+
+- **DS Forever 1.0.39** (upstream): fewer freezes, sign-in fixes, Start opens the pause wheel with the toolbar off too, the auction
+  house Sell list scrolls and shows the items the game won't take (greyed, with why), crate picks list trade goods.
+- **Party and group pop-ups on the bottom screen:** an invite from a group with roles (it showed only on the top screen, with Accept
+  greyed), battleground "Enter Battle", PvP and dungeon role checks, dungeon finder "Enter", ready checks, premade group invites,
+  wargames and pet battles. Tap the buttons or use A / B. With no role ticked, your spec's role is ticked for you.
+- **Leaving a battleground:** the end-of-match results show Leave Battle / Requeue on the bottom screen, and the pause wheel (Start)
+  has Leave Battle on its third page while you are in a battleground (pick it twice).
+- **X takes flags and loots corpses in a fight:** with something to interact with in front of you, X interacts instead of casting
+  your In-combat X spell.
+- **No "WowCompanion has been blocked" on every button press in battlegrounds:** a range check the game forbids in combat is no
+  longer made in a fight.
+- **No "large number of errors" warning in the middle of a fight:** that warning (its first button disables all add-ons) no longer
+  pops up; Lua errors are kept in the add-on's save file for bug reports instead. Several errors in dungeons and battlegrounds fixed.
+- **The Map room takes the controller again** (Start wheel → Map): it asks by keys instead of a click that often got lost on the
+  stream, so the map scrolls with the stick and by touch.
+- Smoother play: no 45 ms hitch every 5 seconds (the settings save runs every 30 s and never in a fight).
+
+### Known issues in this release
+- Chat commands typed in the app's chat (`/reload`, ...) aren't sent: use the game's own chat for those.
+- A few actions still go as clicks: opening your bags, moving items between bags, picking a spell from the spellbook.
+- *In fights: Top screen* can put the moved buttons in the wrong layout.
+- Live typing works in the auction house only (letters, digits and spaces; no å, ä or ö yet).
+- No dungeon map inside the Stockades (being looked at).
 
 ## 2026-11-23 (late): linux-v1.0.38.4, add-on set 439 (beta 4, tested)
 
@@ -70,6 +98,8 @@ the Controller room and the tap-to-cast bar.
 - The quest turn-in "?" can be missing on Home's small map while the big map shows it (seen once, not looked into yet).
 - Rarely "nothing received from the game" for a moment; it recovers by itself.
 - The tooltip for an enemy under the dot cannot be forced on (WoW Forever owns those settings).
+- No dungeon map inside the Stockades (seen 2026-11-24, being looked at; upstream 1.0.39's indoor-map work may cover it).
+- In a battleground, X on flags / corpses in a fight and the pause wheel's Leave Battle are built and tested off-device, not played yet.
 
 ## 2026-11-21: linux-v1.0.37.4, add-on set 417 (the beta.1 line, tested)
 

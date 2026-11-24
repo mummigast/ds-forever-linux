@@ -934,7 +934,7 @@ async def focus_watch():
     ({"t":"pcfocus","wow":bool,"what":class}): the app holds its keys and clicks back while another window (Battle.net) is in front."""
     last, last_n = None, 0
     while True:
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0)                       # 0.5 s cost the helper ~10% CPU (two xprop runs per pass)
         if not sessions or not wow_running():
             last, last_n = None, 0
             continue

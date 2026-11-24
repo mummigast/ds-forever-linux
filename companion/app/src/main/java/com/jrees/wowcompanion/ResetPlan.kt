@@ -119,7 +119,9 @@ object ResetPlan {
             // Linux Edition: the soft-target put-back record and the dot box's trace (Hub hub71-72)
             "softTgt", "dotBox",
             // Linux Edition 2026-11-20: the stutter diagnostics (Sink perf2 / perf3: the last fight starts and hitch frames)
-            "perf", "hitch"),
+            "perf", "hitch",
+            // Linux Edition 2026-11-24: the Lua error log of this session and the one before (ErrLog.lua)
+            "luaErr", "luaErrPrev", "taintLogReset1"),
     )
 
     /** a character key as the add-on writes it ("Name-Realm"; [CharKey]: never a partial "Name-?" / "Name-_" one) */

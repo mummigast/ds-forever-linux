@@ -88,12 +88,14 @@ object StartupDiag {
         sec("Device") { device(ctx) },
         sec("GPU and container") { container(ctx) },
         sec("Game folder") { gameFolder(ctx) },
-        sec("Start-up screen") { startScreen() },
+        sec("Start-up screen") { startScreen(runCatching { HomeLoginStore.has(ctx) }.getOrNull()) },
         sec("Start-up stages (time since the app started)") { StartupTrace.lines().ifEmpty { listOf("(none recorded in this run)") } },
         sec("Updates") { updates(now) },
         sec("Game art") { art(ctx, now) },
         sec("Interiors") { interiors(ctx) },
         sec("Crashes and exits") { crashes(ctx, now) },
+        // issues 580 / 539 (11-23): where the last controller presses went, and what the add-on refused (PressLog)
+        sec("Controller (the last presses and refusals)") { PressLog.lines() },
         sec("Log (our start-up tags, newest last)") { log(now) },
     )
 
@@ -126,6 +128,7 @@ object StartupDiag {
             "App running for ${dur(up)}; the device up for ${dur(SystemClock.elapsedRealtime())}",
             "Installed ${ago(pkg?.firstInstallTime ?: 0, now)}; this version since ${ago(pkg?.lastUpdateTime ?: 0, now)}",
             "Report made ${stamp(now)} (${java.util.TimeZone.getDefault().id})",
+            line { NetStall.summary() },                              // issues 582 / 560 (11-23): the stalls' count and the longest
         )
     }
 
@@ -235,11 +238,21 @@ object StartupDiag {
         return "${gb(bytes)} in $n files (" + sub.entries.sortedByDescending { it.value }.take(6).joinToString { "${it.key} ${mb(it.value)}" } + ")"
     }
 
-    private fun startScreen(): List<String> {
+    /**
+     * issue 585: the report's "Login saved" is the device's NOW ([now], HomeLoginStore.has at the report), not the start-up screen's
+     * last publish ([atStart]: the launcher stops refreshing it while the game runs, so a login saved over the game read "false"); the
+     * start-up screen's own value follows when it differs. Pure.
+     */
+    fun loginSavedWords(atStart: Boolean, now: Boolean?): String = when (now) {
+        null, atStart -> "Login saved $atStart"
+        else -> "Login saved $now (the start-up screen's last word: $atStart)"
+    }
+
+    private fun startScreen(savedNow: Boolean?): List<String> {
         val i = SetupBridge.inputs ?: return listOf("(the start-up screen published nothing in this run)", bottomLine(bottomAtReport))
         return listOf(
             "Folder found ${i.folderFound}, wrong game ${i.wrongGame}, product ${i.product.ifEmpty { "?" }}, storage ${i.storage}",
-            "Login saved ${i.loginSaved}, skipped ${i.loginSkipped}, sign-in ${i.signIn}, restart offered ${i.restartOffered}, restarting ${i.restarting}",
+            "${loginSavedWords(i.loginSaved, savedNow)}, skipped ${i.loginSkipped}, sign-in ${i.signIn}, restart offered ${i.restartOffered}, restarting ${i.restarting}",
             "Art ${i.art} ${i.artPercent}%${if (i.artWhat.isNotBlank()) " (${i.artWhat})" else ""}${if (i.artWhy.isNotBlank()) ", why: ${i.artWhy}" else ""}",
             "Add-ons installed ${i.addonsInstalled}; problem: ${i.addonsProblem ?: "none"}; dependencies: ${i.dependencies ?: "(not checked)"}",
             "Interiors: ${i.indoor ?: "(no step)"}; icons: ${i.iconsLine ?: "?"}; maps: ${when (i.maps) { true -> "ready"; false -> "still to build"; null -> "?" }}",
@@ -378,7 +391,8 @@ object StartupDiag {
         val mem = record?.let { ReportUpload.splitMemory(it).second }
         if (mem != null) for (l in MemWatch.keyLines(mem.lines().filter { it.isNotBlank() })) {
             val e = l.length > 9 && MemWatch.isEvent(l.substring(9))
-            out += (if (e) "Mem event: " else "Mem line: ") + l
+            val o = l.length > 9 && MemWatch.isOwners(l.substring(9))         // #56 (11-23): DS Forever's memory by owner
+            out += (if (e) "Mem event: " else if (o) "Mem owners: " else "Mem line: ") + l
         }
         return out.map { it.take(230) }
     }

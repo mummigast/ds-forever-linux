@@ -124,6 +124,14 @@ object NativeLogin {
     private const val REARM_LIFE_MS = 300_000L
     /** the client run left the world (a logout, or its traffic stopped) and has not come back: a re-login file may be waiting */
     @Volatile var outOfWorld = false; private set
+    /** issue 560 (the review): the world back by its traffic while [outOfWorld] (AddonSilence.WorldTraffic); main thread */
+    private val worldAgain = AddonSilence.WorldTraffic()
+    /**
+     * issue 560: the start screen's add-ons word waits while this holds - out of the world since a logout / a disconnect (the
+     * re-login's character select) and the world's traffic not back yet. The documents back end it too ([worldBack]); the traffic
+     * back ends it for add-ons that stay silent (switched off at character select), so their word is not held for the whole run.
+     */
+    val outOfWorldHold: Boolean get() = outOfWorld && !worldAgain.back
     /**
      * this client run has been IN THE WORLD (the add-on's documents current: [worldSeen]); only then can leaving it write the re-login
      * file. NOT character select's traffic: measured 2026-10-09 10:30, the first character select (after the sign-in, before the world)
@@ -218,6 +226,7 @@ object NativeLogin {
         browserMode = browser; browserHold = browser; holdEndSec = 0L
         consumed = false; firstReadAt = 0L; pastLogin = false; pastLoginAt = 0L; quietFor = 0; quiet = false   // a new client run
         outOfWorld = false; reachedWorld = false; lifeMs = MAX_LIFE_MS; appCtx = ctx.applicationContext; changed()
+        runCatching { NetStall.runStarts() }               // issues 582 / 560 (review 11-23): the stall count is this run's
         playAt = System.currentTimeMillis(); windowArmed = false; windowSeen = false; expiredUnread = false; main.post { preLogin.reset(); afterLogin.reset() }
         downloading = false; downloadingAfter = false; holdFrom = 0L; capHeld = false
         downloadAtRead = false; lastHeavyAt = 0L; heavyNoted = false; readMs = 0L
@@ -360,6 +369,8 @@ object NativeLogin {
             // still while the device sleeps
             afterReadDue()
             worldTraffic(rxBytes); onTrafficSample?.invoke(rxBytes, txBytes)
+            // issues 582 / 560 (11-23): one line per stall in the world (how long, what was sent, the Wi-Fi, the game's latency)
+            runCatching { NetStall.second(appCtx, rxBytes, txBytes, reachedWorld && !outOfWorld && !GameLife.awayNow) }
             val counts = PreLoginTraffic.counts(firstReadAt > 0L, pastLogin, reachedWorld)
             if (counts) preLogin.add(rxBytes, System.currentTimeMillis())?.let { logEvent(it) }
             // issue #215: past the login screen and still downloading before the world: the minute's line and the bottom screen's state
@@ -464,6 +475,7 @@ object NativeLogin {
         val fl = flavorDir ?: return
         val ctx = appCtx ?: return
         outOfWorld = true
+        worldAgain.reset()                              // issue 560 (the review): this time out counts afresh (main thread)
         val login = savedFor(ctx) ?: run { logEvent("out of the world ($why); ${if (browserMode) "browser login" else "no saved login"}, nothing written"); return }
         try {
             val f = File(fl, FILE)
@@ -547,6 +559,7 @@ object NativeLogin {
 
     /** the game screen went: the file goes and the watching stops */
     fun end(ctx: Context? = null) {
+        runCatching { NetStall.runEnds() }                 // issues 582 / 560: a stall under way is said now
         outOfWorld = false
         browserStopped("the game screen went")
         if (downloading || downloadingAfter) { downloading = false; downloadingAfter = false; changed() }
@@ -567,6 +580,7 @@ object NativeLogin {
     /** the game's traffic stopping after the world (a disconnect: in the world it never drops under ~2 KB/s) writes the re-login file */
     private fun worldTraffic(rx: Long) {
         if (!pastLogin) return
+        if (outOfWorld) worldAgain.second(rx)           // issue 560 (the review): the world back by its traffic
         if (rx < 200) {
             if (++quietFor == 5 && !quiet) { quiet = true; rearm("the world's traffic stopped") }
         }

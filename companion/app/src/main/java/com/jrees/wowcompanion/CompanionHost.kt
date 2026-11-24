@@ -441,6 +441,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** the launcher's restart from Settings (and its Restart anyway, #576): Home first, the start screen's notice, the restart */
     private var restartFromSettings: () -> Unit = {}
+    /** issue 585: what the downloading card's Restart anyway restarts for ([restartAskFirst]: a saved login's restart, the Browser
+     *  login offer's); null = Settings' own ([restartFromSettings]) */
+    private var restartAskThen: (() -> Unit)? = null
 
     private fun noticeShow(s: ReportNotice.State) {
         reportNotice.show(s)
@@ -532,6 +535,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DiagLog.init(this)
         Tr.init(this)                              // 2026-11-07: Spanish / French (the Thor's language, or Settings > System > Language)
         DataStaleness.init(this)                   // issues #8 / #9: is the game folder's Data the build's?
+        DesktopAddons.init(this)                   // issue 453: the bundled add-ons' tags (PadMap, ActionBar), to know older PC add-ons
         if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
         ArtHarvest.onState { s ->
@@ -672,6 +676,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 Log.i("WCSETUP", "restart from Settings: pressed in $room while the game downloads; asked first")
                 SetupBridge.log?.invoke("restart: asked first (the game is downloading)")
                 if (room != Room.HOME) show(Room.HOME)
+                restartAskThen = null
                 noticeShow(ReportNotice.State.RestartDownloading)
             } else restartFromSettings()
         }
@@ -843,6 +848,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
+        MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
@@ -1019,30 +1026,39 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
         startView.onBrowserLogin = {
             Settings.browserLogin = true
-            NativeLogin.logEvent("sign-in: Browser login turned on from the BLZ51914400 offer; restarting the game")
+            val s = if (::loginWatch.isInitialized) loginWatch.state else null
+            val why = if (s != null && BrowserLogin.offerLine(s.reason, s.captcha) == BrowserLogin.CAPTCHA_LINE) "captcha timeout (325)" else "BLZ51914400"
             startView.login = StartView.Login.NONE
-            val restart = SetupBridge.restartGame
-            if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
-            else { restartNotice(); restart() }
+            val go: () -> Unit = {
+                NativeLogin.logEvent("sign-in: Browser login turned on from the $why offer; restarting the game")
+                val restart = SetupBridge.restartGame
+                if (restart == null) Log.w("WCSETUP", "browser login offer: no launcher hook, nothing restarts")
+                else { restartNotice(); restart() }
+            }
+            // issue 237 shows the offer during a download too: its restart asks first there, as every restart does (#576); Wait
+            // keeps Browser login on for the next start
+            if (restartAskFirst(go)) NativeLogin.logEvent("sign-in: Browser login turned on from the $why offer; the game is downloading, asked first")
+            else go()
         }
         loginPrompt = HomeLoginPrompt(this) { login ->
             settingsView.invalidate()
             NativeLogin.logEvent("sign-in: login saved (the login form)")
-            if (LauncherHooks.pkg != null) { loginNote = "Saved. The game signs in by itself the next time it starts."; loginShow() }
+            // the game never re-reads login.txt in place (test4): it restarts at once and the next start signs in with the new login -
+            // after Update login / Change login (restartOnSave), and (issue 585, the user's ruling 2026-11-23) after a save from the
+            // start screen's form while this run's game waits at its own login screen ([HomeLogin.saveRestarts])
+            val updating = restartOnSave && LauncherHooks.gameUp()
+            val waiting = !updating && LauncherHooks.pkg != null && loginSaveRestarts()
+            restartOnSave = false                  // the hold ends here: RESTARTING shows at once
+            val restartNow = updating || waiting
+            // a download asks first (#576's card): the note says the login waits for the next start until Restart anyway
+            val asks = restartNow && ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())
+            if (LauncherHooks.pkg != null) {
+                loginNote = if (restartNow && !asks) null else "Saved. The game signs in by itself the next time it starts."
+                loginShow()
+            }
             else signIn(login, explicit = true)
             SetupBridge.loginSaved()
-            // the game never re-reads login.txt in place (test4): it restarts at once and the next start signs in with the new login
-            val restartNow = restartOnSave && LauncherHooks.gameUp()
-            restartOnSave = false                  // the hold ends here: RESTARTING shows at once
-            if (restartNow) {
-                signInCheck.restarting(System.currentTimeMillis())
-                NativeLogin.logEvent("sign-in: login updated, restarting the game")
-                signInStep()
-                ui.postDelayed({
-                    val restart = SetupBridge.restartGame
-                    if (restart == null) NativeLogin.logEvent("sign-in: restart failed (no launcher hook)") else restart()
-                }, RESTART_DELAY_MS)
-            }
+            if (restartNow) loginRestartOrAsk(if (updating) "login updated" else "login saved while the game waits at its login screen")
         }
         setupPanel = SetupPanel(this)
         chooserPanel = ChooserPanel(this)
@@ -1451,7 +1467,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             reportNotice = ReportNotice(this@CompanionHost).apply {
                 onOpen = { s -> if (openUrlOnTop(s.url)) ReportFlow.clearPending() }
                 // #576: Restart anyway on the downloading card
-                onRestartAnyway = { SetupBridge.log?.invoke("restart: anyway (the game was downloading)"); restartFromSettings() }
+                onRestartAnyway = {
+                    SetupBridge.log?.invoke("restart: anyway (the game was downloading)")
+                    // issue 585: the card asked for a saved login's (or the Browser login offer's) restart, or for Settings' own; a
+                    // game gone meanwhile restarts nothing (its next start uses the new login / Browser login anyway)
+                    val then = restartAskThen
+                    restartAskThen = null
+                    when {
+                        then == null -> restartFromSettings()
+                        LauncherHooks.gameUp() -> then()
+                        else -> SetupBridge.log?.invoke("restart: the game is gone already, nothing restarts")
+                    }
+                }
                 onDismiss = { SetupBridge.noticeAsking = false }
                 onOpenUrl = { url -> if (openUrlOnTop(url)) ReportFlow.clearPending() }
             }
@@ -2612,6 +2639,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * every minute until a current document comes. The start screen's line follows it ([startAddonsStep]).
      */
     private val silence = AddonSilence.Watch(System.currentTimeMillis())
+    /** issues 558 / 476 (11-23): the last aura-container word logged (AuraProbe.wordLine) */
+    private var aboxLast: String? = null
     private val worldMem = AddonSilence.WorldByMemory()
     /** the clock [worldMem] was started for, and the uptime it started (a memory sample from before it does not count) */
     private var silenceFrom = 0L
@@ -2674,7 +2703,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the review: the game's traffic quiet (character select after a normal logout, its memory still high) holds a new word back
         val mode = if (!free) AddonSilence.StartMode.KEEP else AddonSilence.startMode(startView.line, startView.login != StartView.Login.NONE,
             signedIn, NativeLogin.downloading, silence.silent, worldMem.inWorld, NativeLogin.trafficQuiet, shown = startView.addons != null,
-            downloadingAfter = NativeLogin.downloadingAfter)
+            downloadingAfter = NativeLogin.downloadingAfter, outOfWorld = NativeLogin.outOfWorldHold)   // issue 560: a disconnect's re-login (until the world is back)
         when (mode) {
             AddonSilence.StartMode.ADDONS -> {
                 if (startView.addons == null) startCause = addonsCause()
@@ -2936,6 +2965,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // prd16 / uf16 (issue #181): what a fight's aura reads gave the top screen's HUD row / target bar, once per kind (WCLOG: the report
         // carries it)
         if (msg.optString("probe") == "aurasec") Log.i("WCLOG", AuraProbe.line(msg))
+        // issues 558 / 476 (11-23): whether the game made the fight-aura containers on the top screen (Trail's ab1 probe, once per piece and
+        // outcome a login); logging only
+        if (msg.optString("probe") == "aurabox") AuraProbe.boxLine(msg).let { l -> Log.i("WCLOG", l); DiagLog.event("addons", l) }
         // chat29: what the game says its chat style is, and what the switch did (the chat bar on the top screen, 2026-11-04)
         if (msg.optString("probe") == "chatstyle") Log.i("WCCHAT", "chat style: now ${msg.optString("now")} default ${msg.optString("default")} " +
             "set ${msg.optString("set")} after ${msg.optString("now2")} ${msg.optString("why")}")
@@ -3373,7 +3405,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-release-spirit: the dialogs' tap row could not be had (the tap pad has no row left): every dialog button would tap nothing
             "dialogpad" -> if (current) android.util.Log.w("WCDLG", "the dialogs have NO tap row: ${msg.optString("why")} (rows ${msg.optInt("rows", -1)})")
             "pvp" -> PvpModel.update(msg)   // the PvP rank (Character room tab 4) + the battleground queues (pvp session)
-            "hub" -> GameUi.onHub(msg, current)
+            "hub" -> {
+                GameUi.onHub(msg, current)
+                // issues 558 / 476 (11-23): the aura containers' word (hub71's abox) once each time it changes; and the game's own latency
+                // for the network stall lines (hub75's net, read-only GetNetStats)
+                if (current) msg.optJSONObject("hub")?.let { h ->
+                    AuraProbe.wordLine(h.optJSONObject("abox"))?.let { l -> if (l != aboxLast) { aboxLast = l; Log.i("WCLOG", l); DiagLog.event("addons", l) } }
+                    h.optJSONObject("net")?.let { n -> NetStall.latency(n.optInt("h", -1), n.optInt("w", -1), System.currentTimeMillis()) }
+                }
+            }
             "padrx" -> GameUi.onPadRx(msg, current)           // fix/desk-click-switch: Hub hub70, a press's word at once
             // the layout editor (Hub hub55): its document, CURRENT or replayed (a replay only shows; the page taps only while it is open)
             "lay" -> LayoutModel.Live.note(msg)
@@ -3535,6 +3575,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // backlog (its `_gt` stamp after the game's start: a host that came up mid-game); an older run's says nothing about now
                 if (current || padmapOfThisRun(msg.optLong("_gt", -1L))) { padmapRunAt = System.currentTimeMillis(); runStart = it.start }
                 if (current) pauseOverTell(it, "padmap")                // the user's pick: Start over game windows, told when it differs
+                if (current) { lastPadMapV = it.version; desktopOlderCheck() }   // issue 453: older add-ons on the PC (streaming)
                 // B: pet recall (PadMap m165 / m174), told when it differs - for THIS padmap's character (the review: GameUi.character is
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
@@ -3588,14 +3629,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
-                    // Linux Streaming Edition (2026-11-17, "tell memory"): Quests derives Start's way from the same choice at entering
-                    // the world and says it (guestack op "start", taken as told below), so the session's FIRST tell waits START_GRACE_MS
-                    // for that word and is only tapped when it did not come; a later change of the choice is told at once as before
-                    // (compared as Quests does: never asked = the rooms, its default; the old code told nothing then, and still doesn't)
-                    val wantRooms = d.want != false
-                    if (current && wantRooms != startToldWant && !(startToldWant == null && d.want == null)) {
+                    // issue 588 (upstream, the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too.
+                    // Linux Streaming Edition (2026-11-17 "tell memory", kept in the 1.0.39 merge): Quests derives Start's way at entering
+                    // the world and says it (guestack op "start", taken as told below), so the session's FIRST tell waits START_GRACE_MS for
+                    // that word and is only tapped when it did not come; a later change is told at once as before
+                    val ver = it.version
+                    val wantRooms = startToRooms(d.want, ver)
+                    if (current && wantRooms != startToldWant) {
                         if (startToldWant == null) {
-                            ui.postDelayed({ val now = lastDpad?.want != false
+                            ui.postDelayed({ val now = lastDpad?.let { x -> startToRooms(x.want, ver) } ?: wantRooms
                                 if (now == wantRooms && now != startToldWant) startTell(now) }, START_GRACE_MS)
                         } else startTell(wantRooms)
                     }
@@ -3612,7 +3654,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             // GitHub #43 THE TAP-TO-CAST BAR (ActionBar cb1): the slots (a state: a replayed one counts, the last one wins); its cooldowns
             // current only (as facecd); the edit's answer only logged (the next castbar document shows it)
-            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it) }
+            "castbar" -> CastStripModel.parse(msg)?.let { CastStripModel.Live.set(it); homeView.onCastBar(it); if (current) desktopOlderCheck() }
             "castcd" -> if (current) CastStripModel.parseCd(msg)?.let { homeView.onCastCd(it) }
             "castbarack" -> if (current) Log.i(HomeView.TAG, "cast bar: ${msg.optString("op")} ok=${msg.optBoolean("ok")} slot=${msg.optInt("s")} " +
                 "queued=${msg.optInt("q") == 1} ${msg.optString("why")}")
@@ -3620,6 +3662,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             "facecd" -> if (current) PadMapModel.parseCd(msg)?.let { homeView.onFaceCd(it) }
             // the fight flag also from Spells' facewatch (Tracking after test18): Home's D-pad picture follows the newest word
             "facewatch" -> if (current) homeView.onFightWord(msg.optBoolean("fight", false))
+            // issues 580 / 539 (11-23): where each press went (the last 30 for the report; one WCLOG line for a press that did nothing),
+            // and whether the fight buttons are ours (one line when it changes); logging only (WCPAD: off the start-up log's 200 lines)
+            "facecast" -> if (current) PressLog.press(msg, System.currentTimeMillis())?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
+            "faceswap" -> if (current) PressLog.swap(msg)?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
             // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)
             "smartyack" -> if (current && ::settingsView.isInitialized) settingsView.onSmartAck(msg.optString("op"), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
             "padack" -> if (current) PadMapModel.parseAck(msg)?.let {
@@ -3627,6 +3673,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (it.op == "rankup") newSpellRankAck(it)                      // PadMap m143: the rank-up prompt's A answered
                 // issue #136 (2026-11-11): the toolbar switch refused by the game (a fight, no character) is logged; DpadChoice re-sends it
                 if (!it.ok && (it.op == "dpad-on" || it.op == "dpad-off")) Log.w(HomeView.TAG, "dpad: the game refused ${it.op} (${it.why ?: "no reason"}); kept, sent again")
+                // issue 580 (11-23): every other refusal too, one WCLOG line each (the report's log); kept for its Controller section
+                else if (!it.ok) PressLog.refused(it.op, it.why, it.storage, it.idx, it.kind, System.currentTimeMillis())?.let { l -> Log.w("WCLOG", l); DiagLog.event("pad", l) }
                 // the player changed an In-combat setting: the backup follows the store from now on (test22 P0)
                 if (msg.optBoolean("ok") && msg.optString("op") in setOf("combat", "cface", "uncombat", "uncface", "clear", "rankup") &&
                     ::combatKeep.isInitialized) combatKeep.onPlayerChange()
@@ -3820,6 +3868,53 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** "Restarting the game to sign in…" stays readable this long before the game closes */
     private val RESTART_DELAY_MS = 1_500L
 
+    /** issue 585: the login just saved from the start screen's form restarts this run's game ([HomeLogin.saveRestarts]) */
+    private fun loginSaveRestarts(): Boolean {
+        if (!::loginWatch.isInitialized) return false
+        val s = loginWatch.state
+        return HomeLogin.saveRestarts(gameUp = LauncherHooks.gameUp(), restarting = SetupBridge.restarting,
+            autoLogin = HomeLoginStore.autoLogin(this), browser = Settings.browserLogin || NativeLogin.browserMode, realm = s.realm,
+            signingIn = s.signingIn, refused = s.phase == HomeLogin.Phase.FAILED, read = NativeLogin.firstReadAt > 0L,
+            pastLogin = NativeLogin.pastLogin || s.pastLogin, windowUp = NativeLogin.windowSeen)
+    }
+
+    /**
+     * A SAVED LOGIN'S RESTART (Update login, Change login, issue 585's start-screen save): while the game downloads it asks first, as
+     * Settings' restart does (#576: Wait / Restart anyway, on Home); else [loginRestart] at once
+     */
+    private fun loginRestartOrAsk(why: String) {
+        if (restartAskFirst { loginRestart(why) }) NativeLogin.logEvent("sign-in: $why; the game is downloading, asked first")
+        else loginRestart(why)
+    }
+
+    /**
+     * #576's card for a restart other than Settings' own: while the game downloads, Home and Wait / Restart anyway, whose Restart
+     * anyway runs [then]. false = no download (or no card yet): the caller restarts at once
+     */
+    private fun restartAskFirst(then: () -> Unit): Boolean {
+        if (!::reportNotice.isInitialized || !ReportNotice.restartAsks(NativeLogin.downloadingNow, LauncherHooks.gameUp())) return false
+        if (room != Room.HOME) show(Room.HOME)
+        restartAskThen = then
+        noticeShow(ReportNotice.State.RestartDownloading)
+        return true
+    }
+
+    /** the saved login's restart: RESTARTING for the sign-in check, the start screen's restart line, then the launcher's restart */
+    private fun loginRestart(why: String) {
+        // Home first, as Settings' restart (b-addons-restart): the form can be saved from Settings' Account row
+        if (room != Room.HOME) show(Room.HOME)
+        signInCheck.restarting(System.currentTimeMillis())
+        NativeLogin.logEvent("sign-in: $why, restarting the game")
+        signInStep()
+        // the note ("Saved. ... next time") goes first, so the restart's own line is the one on show
+        if (loginNote != null) { loginNote = null; loginShow() }
+        restartNotice()
+        ui.postDelayed({
+            val restart = SetupBridge.restartGame
+            if (restart == null) NativeLogin.logEvent("sign-in: restart failed (no launcher hook)") else restart()
+        }, RESTART_DELAY_MS)
+    }
+
     /** the game's General.log: inside the launcher from its chosen root; in the app the located game first; the old default last */
     private fun gameLog(): String = GamePaths.follow(LauncherHooks.pkg != null, GameFiles.gameRoot(this).path, game?.log)
 
@@ -3966,6 +4061,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         IndoorSchedulerStep.companionGone()
         ui.removeCallbacks(signInTick)
         NativeLogin.onTrafficSample = null
+        MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
         SetupBridge.keyboard(false)
         ui.removeCallbacks(rootCheck)
         if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
@@ -4098,7 +4194,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     /**
-     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; DS WoW toolbar on - off, Start stays the
+     * START OPENS THE PAUSE WHEEL FROM EVERY ROOM (the user 2026-10-09: "Wheel everywhere"; issue 588, 2026-11-23: the DS WoW toolbar on OR off; was: off, Start stays the
      * game's own wheel), read by the app itself (DirectPad: Start is no room's registered key any more), ONE route everywhere. An open
      * keyboard keeps Start (Chat's Send, Bags' Search key: their ownsStart); an open wheel reads Start itself (it closes); the start
      * screen / setup take it. The router's own "pause" word that follows is dropped ([START_DEDUPE_MS]).
@@ -4171,6 +4267,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val sent = padTabTap(PauseOver.cells(game))
         if (sent) pauseOverSentAt = SystemClock.elapsedRealtime()
         Log.i("WCHOME", "start over game windows: ${if (game) "game's wheel" else "our wheel"} told ($why)${if (sent) "" else ": not sent"}")
+    }
+    /** issue 453: the last current padmap's tag, and whether the PC's add-ons were last seen older (one WCSETUP line per change) */
+    private var lastPadMapV: String? = null
+    private var desktopOlderSaid: Boolean? = null
+    private fun desktopOlderCheck() {
+        val older = DesktopAddons.older(PlayGate.streamingNow(), lastPadMapV, CastStripModel.Live.bar?.version)
+        if (older == desktopOlderSaid) return
+        desktopOlderSaid = older
+        if (older) Log.i("WCSETUP", DesktopAddons.line(lastPadMapV, CastStripModel.Live.bar?.version))
+        else if (PlayGate.streamingNow()) Log.i("WCSETUP", "streaming: the PC's add-ons are not older than the Thor's")
+        if (::spellsOverlay.isInitialized) spellsOverlay.invalidate()
     }
     /** StartRoute: the last current document's wall time; the last padmap of this game run's wall time and its Start state (0 = none) */
     private var docLiveAt = 0L
@@ -4584,10 +4691,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * login whose game has not reached its login screen yet). The saved login is changed in Settings.
      */
     private fun nativeRow(s: HomeLogin.State): Pair<StartView.Login, String>? = when {
-        s.realm || NativeLogin.pastLogin -> null
-        // the user, 2026-11-18: a BLZ51914400 refusal offers Browser login (one button: it turns it on and restarts the game)
-        BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting) ->
-            StartView.Login.BROWSER to BrowserLogin.OFFER_LINE
+        s.realm -> null
+        // the user, 2026-11-18: a BLZ51914400 refusal offers Browser login (one button: it turns it on and restarts the game); issue 569:
+        // a captcha that ran out of time (325) too. Issue 237: asked BEFORE NativeLogin.pastLogin - a download's traffic can set that
+        // with the game still at its login screen (1.0.37 / 1.0.38), and the game's refusal itself says it is back there
+        BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting,
+            s.captcha) -> StartView.Login.BROWSER to BrowserLogin.offerLine(s.reason, s.captcha)
+        NativeLogin.pastLogin -> null
         // browser login: no saved-login row (the sign-in is Blizzard's page on this screen, BattleNetBrowserLogin)
         NativeLogin.browserMode -> null
         // 2026-11-07 (the user: "the sign in prompts are still appearing ... if I dont push anything fast enough"): no authenticator,
@@ -4621,7 +4731,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the triage (2026-11-14): this game run's silence (documents "seen" may be an earlier run's)
         val now = System.currentTimeMillis()
         val quiet = if (silence.silent) "; add-ons silent ${GameLife.minutes(silence.silentMs(now))} (since ${silence.clock.words}" +
-            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""})" else ""
+            "${if (worldMem.inWorld) ", the game's memory says the world" else ""}${if (NativeLogin.trafficQuiet) ", its traffic quiet" else ""}${if (NativeLogin.outOfWorld) ", out of the world since a logout or a disconnect${if (NativeLogin.outOfWorldHold) "" else " (its traffic back)"}" else ""})" else ""
         return "$start; room ${room.name.lowercase()}; documents ${if (docFlowSeen) "seen" else "none yet"}$docs$quiet" +
             (if (over.isEmpty()) "" else "; over it: ${over.joinToString()}") + setup
     }

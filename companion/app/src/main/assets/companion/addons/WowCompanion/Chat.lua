@@ -418,6 +418,8 @@ end
 function WC.notFound.hide(text)
     local nf = WC.notFound
     if not nf.pat or type(text) ~= "string" then return false end
+    -- Linux Streaming Edition 2026-11-24: in instances / PvP a system line can be a SECRET string (indexing it errored 47x a session)
+    if type(WC.isPlain) == "function" and not WC.isPlain(text) then return false end
     local who = text:match(nf.pat)
     if not who or not nf.qt() then return false end
     local at = nf.own[nf.key(who)]

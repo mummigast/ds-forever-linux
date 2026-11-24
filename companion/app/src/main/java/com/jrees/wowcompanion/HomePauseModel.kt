@@ -46,6 +46,10 @@ object HomePauseModel {
     /** the Macros room (Spells s10): page 3's slice where Calendar stood, and the Game Menu's own "Macros" entry (HomePauseView) */
     val MACROS = Slice("macros", "Macros", Kind.ROOM, room = "MACROS")
 
+    /** Linux Streaming Edition (the user, 2026-11-24: "i cannot leave the BG"): page 3's Leave Battle, shown only while a battleground is
+     *  active ([Flow.inBg], PvpModel's queues), asks first like PvP; the pause row's column 11 runs the game's LeaveBattlefield */
+    val LEAVE_BG = game("leavebg", "Leave Battle", "leavebg", confirm = true)
+
     /** pk1: Polestar's Skip step / Undo skip (pm3: the undo is "Undo skip"; Home picks: MapView.polestarSkip) */
     val PS_SKIP = Slice(PolestarSkip.KEY_SKIP, PolestarSkip.SKIP_WORD, Kind.HOME)
     val PS_PREV = Slice(PolestarSkip.KEY_PREV, PolestarSkip.PREV_WORD, Kind.HOME)
@@ -89,7 +93,7 @@ object HomePauseModel {
             MACROS,
             PS_SKIP, PS_PREV,
             game("pvp", "PvP", "pvp", confirm = true),
-            null, null, null,
+            LEAVE_BG, null, null,
         )),
     )
 
@@ -183,11 +187,14 @@ object HomePauseModel {
          *  Previous is greyed) - set by the view at each open from the Map's state */
         var psSkip = false
         var psPrev = false
+        /** a battleground is active (Leave Battle shows) - set by the view at each open from PvpModel */
+        var inBg = false
 
         fun slices(): List<Slice?> = if (page == EMOTE_PAGE) EMOTES else PAGES[page].map { s ->
             when (s?.key) {
                 PolestarSkip.KEY_SKIP -> s.takeIf { psSkip }
                 PolestarSkip.KEY_PREV -> if (!psSkip) null else if (psPrev) s else s.copy(off = true, offLine = NOTHING_LINE)
+                LEAVE_BG.key -> s.takeIf { inBg }
                 else -> s
             }
         }
@@ -282,7 +289,7 @@ object HomePauseModel {
     /** Spells' plain tap row for the game actions (asked 10-08), its columns in this order; the add-on answers `pauseack` */
     const val ROW = "pause"
     val COLS = listOf("sit", "pvp", "emote_dance", "emote_point", "emote_wave", "emote_kneel", "emote_train", "emote_chicken",
-        "emote_angry", "emote_cheer", "menu")
+        "emote_angry", "emote_cheer", "menu", "leavebg")
     /** how long a line under the gone wheel stays (the Game Menu's Escape could not be sent) */
     const val MENU_ARM_MS = 4_000L
     fun col(cmd: String): Int = COLS.indexOf(cmd)

@@ -445,7 +445,12 @@ class HomePauseView(
                 val cmd = s.cmd ?: return
                 if (s.confirm) {
                     val now = SystemClock.uptimeMillis()
-                    if (now - pvpArmedAt > CONFIRM_MS) { pvpArmedAt = now; say("Pick ${s.label} again to change your PvP flag"); return }
+                    if (now - pvpArmedAt > CONFIRM_MS) {
+                        pvpArmedAt = now
+                        say(if (s.key == HomePauseModel.LEAVE_BG.key) "Pick ${s.label} again to leave the battleground"
+                            else "Pick ${s.label} again to change your PvP flag")
+                        return
+                    }
                     pvpArmedAt = 0L
                 }
                 game(cmd)
@@ -625,7 +630,10 @@ class HomePauseView(
 
     private fun slices(): List<UiKit.PauseSlice?> { psState(); return flow.slices().map { it?.let { s -> UiKit.PauseSlice(s.key, s.label, s.enabled) } } }
     /** pk1: the Polestar slices follow the Map's state (a skip made from the wheel: Previous lights at the next frame) */
-    private fun psState() { val (sk, pv) = runCatching { polestar() }.getOrDefault(false to false); flow.psSkip = sk; flow.psPrev = pv }
+    private fun psState() {
+        val (sk, pv) = runCatching { polestar() }.getOrDefault(false to false); flow.psSkip = sk; flow.psPrev = pv
+        flow.inBg = PvpModel.queues.any { it.status == "active" }
+    }
 
     override fun onDraw(c: Canvas) {
         if (!isOpen && glideAt != 0L) {

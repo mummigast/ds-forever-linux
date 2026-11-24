@@ -2182,7 +2182,11 @@ end
 function WC.spellRange(id, unit)
     local fr = api("C_Spell", "IsSpellInRange") or _G.IsSpellInRange
     local m = WC.isMeleeNoRange(id)
-    if m and type(_G.CheckInteractDistance) == "function" then
+    -- Linux Streaming Edition 2026-11-24 (taint.log in a battleground: "An action was blocked in combat because of taint from
+    -- WowCompanion" x208 at this call, each one the game's "WowCompanion has been blocked" pop-up): CheckInteractDistance is
+    -- PROTECTED IN COMBAT on this client; in a fight the melee range comes from IsSpellInRange alone
+    local fight = type(InCombatLockdown) == "function" and InCombatLockdown()
+    if m and not fight and type(_G.CheckInteractDistance) == "function" then
         local v = S(_G.CheckInteractDistance, unit, 3)
         if v == true or v == false then return v end
     end
