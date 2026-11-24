@@ -5053,6 +5053,7 @@ function DB.step()
     end
     local okG, guid = pcall(UnitGUID, u)
     guid = okG and guid or nil
+    if guid ~= nil and type(WC.isPlain) == "function" and not WC.isPlain(guid) then guid = nil end   -- 2026-11-24: secret in PvP
     if DB.mine and GameTooltip:IsShown() and DB.unit == u and DB.guid == guid then return end
     GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
     if type(GameTooltip_SetDefaultAnchor) == "function" then pcall(GameTooltip_SetDefaultAnchor, GameTooltip, UIParent) end
