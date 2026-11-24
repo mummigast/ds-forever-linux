@@ -2416,7 +2416,8 @@ do
         for i, yd in pairs({ [2] = 8, [4] = 28 }) do
             local near = false
             for _, b in ipairs(list) do if math.abs(b.max - yd) <= 1 then near = true end end
-            if not near then add(yd, "d", i, function(tok) return CheckInteractDistance(tok, i) end) end
+            -- 2026-11-24: CheckInteractDistance is protected in combat (each call there = a "WowCompanion has been blocked"): nil then
+            if not near then add(yd, "d", i, function(tok) if InCombatLockdown() then return nil end; return CheckInteractDistance(tok, i) end) end
         end
         table.sort(list, function(x, y) return x.max < y.max end)
         A.bands = list

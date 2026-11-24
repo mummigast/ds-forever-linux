@@ -57,6 +57,12 @@ f:SetScript("OnEvent", function(self, event, name, fn)
         return
     end
     pcall(quiet)        -- Blizzard_DebugUtil loading after us would put the game's own back
+    -- TEMPORARY (2026-11-24 taint hunt; the Thor cannot type /console): the game's taint log on (Logs/taint.log), level 2
+    if event == "PLAYER_LOGIN" then
+        pcall(function()
+            if type(C_CVar) == "table" and C_CVar.SetCVar then C_CVar.SetCVar("taintLog", "2") elseif SetCVar then SetCVar("taintLog", "2") end
+        end)
+    end
     if name ~= "WowCompanion" then return end
     if event ~= "ADDON_LOADED" or db_done then return end
     db_done = true
