@@ -71,6 +71,41 @@ p.shown = true
 FIRE("PARTY_INVITE_REQUEST", "Other", true, true, true)
 DOC()
 chk("no spec role: Damage ticked", d.checkButton.checked and not t.checkButton.checked and not h.checkButton.checked)
+p.shown = false
+DOC()
+-- d38: THE BATTLEGROUND ENTRY (PVPReadyDialog: Enter Battle / Leave Queue, no roles)
+local pv = CreateFrame("Frame", "PVPReadyDialog"); pv.shown = false
+pv.label = { GetText = function() return "Your battle is ready!" end, IsShown = function() return true end }
+pv.statusText = { GetText = function() return "Capture the bases" end, IsShown = function() return true end }
+PVPReadyDialogInstanceInfoFrameName = { GetText = function() return "Arathi Basin" end, IsShown = function() return true end }
+local ent = CreateFrame("Button", "PVPReadyDialogEnterBattleButton"); ent.GetText = function() return "Enter Battle" end
+local lv = CreateFrame("Button", "PVPReadyDialogLeaveQueueButton"); lv.GetText = function() return "Leave Queue" end
+pv.shown = true
+FIRE("UPDATE_BATTLEFIELD_STATUS", 1)
+doc = DOC(); x = doc and FIND(doc, "PVP_READY")
+chk("battleground entry mirrored with its words", x ~= nil and x.text ~= nil and x.text:find("Arathi Basin", 1, true) ~= nil)
+chk("Enter Battle / Leave Queue on the shared cells", x ~= nil and BTN(x, 1).label == "Enter Battle" and BTN(x, 2).label == "Leave Queue"
+    and x.cells and x.cells.b1 ~= nil)
+chk("A / B aimed at Enter Battle / Leave Queue", _G.WowCompanionDlgA.attr.clickbutton == ent and _G.WowCompanionDlgB.attr.clickbutton == lv)
+pv.shown = false
+doc = DOC()
+chk("entered: gone", FIND(doc, "PVP_READY") == nil)
+-- d38: A DUNGEON ROLE CHECK (LFDRoleCheckPopup: roles + its own update function)
+local rc = CreateFrame("Frame", "LFDRoleCheckPopup"); rc.shown = false
+rc.Text = { GetText = function() return "Confirm your role:" end }
+local ra = CreateFrame("Button", "LFDRoleCheckPopupAcceptButton"); ra.GetText = function() return "Accept" end
+ra.enabled = false; ra.IsEnabled = function(self) return self.enabled end
+CreateFrame("Button", "LFDRoleCheckPopupDeclineButton").GetText = function() return "Decline" end
+local rt, rh, rd = role("LFDRoleCheckPopupRoleButtonTank"), role("LFDRoleCheckPopupRoleButtonHealer"), role("LFDRoleCheckPopupRoleButtonDPS")
+function LFDRoleCheckPopup_UpdateAcceptButton() ra.enabled = rt.checkButton.checked or rh.checkButton.checked or rd.checkButton.checked end
+SPEC_ROLE = "TANK"
+rc.shown = true
+FIRE("LFG_ROLE_CHECK_SHOW")
+doc = DOC(); x = doc and FIND(doc, "LFD_ROLECHECK")
+chk("dungeon role check: Tank (the spec's) ticked, Accept as Tank and on", rt.checkButton.checked and x ~= nil
+    and BTN(x, 1).label == "Accept as Tank" and BTN(x, 1).on == true)
+rc.shown = false
+DOC()
 return table.concat(out, "\n")
 '''
 
