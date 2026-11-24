@@ -7,6 +7,10 @@
 
 <!-- screenshot: both screens, the auction house remote -->
 
+> **A one-person project, tested by playing.** This edition is tested by one person playing the game on their own Thor and PC,
+> so fixes and changes land almost daily, and a new release can follow the last one within hours. Read the release notes for
+> what was tested; if something breaks for you, [open an issue](https://github.com/mummigast/ds-forever-linux/issues).
+
 ## What this edition adds
 
 - **A Linux PC helper.** It starts WoW through Steam and Proton, keeps your add-ons in sync, and closes the game once the
