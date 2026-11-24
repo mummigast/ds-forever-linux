@@ -8,6 +8,7 @@ B. Dialogs d35 under test_quest_start.py's stub: the stream's ONE `stay` keeps a
    sign; a real mouse (pad.humanAt) brings it back; a new dialog in that frame needs its own sign; plain `alive` still lapses after LIFE.
 C. Interact i167s (i169 since the 1501 merge): the iact "stay" cell (asked for last), ACT.stay, no answer of its own.
 Needs lupa. Exit code 1 on any failure."""
+import re
 import os
 import sys
 
@@ -136,7 +137,7 @@ check(L.eval('#SPY') == 0 or all(L.eval('SPY[%d]' % i) != "SetCVar" for i in ran
 
 # ---------------------------------------------------------------------------------------------------------------- B. Dialogs d35
 DIALOGS = open(DIALOGS_SRC, encoding="utf-8").read()
-check('local DV = "d35"' in DIALOGS and "the cursor keeps randomly showing on the game" in DIALOGS, "B. Dialogs d35, its note quotes the user")
+check(bool(re.search(r'local DV = "d(3[5-9]|[4-9]\d)"', DIALOGS)) and "the cursor keeps randomly showing on the game" in DIALOGS, "B. Dialogs d35, its note quotes the user")
 D = lupa.LuaRuntime()
 D.execute(STUB)
 D.execute(r'''

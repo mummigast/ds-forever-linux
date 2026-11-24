@@ -38,7 +38,7 @@ local S = WC.S
 
 -- d30 (int/1429): combat-nav d27-d28 (the idlg leave cells 33-39, WC.dialogs.mirrored) + starter-prompt d27-d29 (the quest starter
 -- prompt, its Start / Not now now on the charter's Sign / Offer cells 28 / 29: the row stays 40 columns)
-local DV = "d35"         -- bump on every change; d35 (fix/stream-cursor, the user 2026-11-19 streaming: "the cursor keeps randomly showing on the game"; the taps.log: the app's sign of life, a posted click every 5 s under "Resurrect now?", each one a cursor on the stream): THE STAY CELL - on a stream the app taps `stay` (doc.life.stay, an iact cell of Interact's) ONCE per newly drawn set instead of `alive` every LIFE_EVERY s; every dialog shown at that tap stays invisible on the top screen (and shielded) until it goes, until another dialog takes its frame, or until a REAL mouse moves (TapPad pad25's WC.pad.humanAt: a cursor move no pad press explains - the PC's own user, a touch on the stream) - then it is back on the top screen as before; `alive` and LIFE are unchanged (Local, an older app); d34 (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): A ROLL ANSWERED LEAVES THE DOCUMENT IN THAT VERY FRAME - the game's own RollOnLoot / ConfirmLootRoll are watched with secure post-hooks (whoever made the call: our cell, the game's own roll frame, its confirm's Okay) and the roll is held out (D.rolled) until the game drops it (CANCEL_LOOT_ROLL / it leaves GetActiveLootRollIDs) or D.ROLL_KEEP s pass with the game still offering it; the GAME'S BIND CONFIRM rides its roll (CONFIRM_LOOT_ROLL / CONFIRM_DISENCHANT_ROLL: r.ask = the roll asked for, r.askI = its pop-up's slot, the pop-up says roll = the roll id) so the app draws it on the roll with the dialog's own cells; Cancel gives the roll back; the game's selection on an answered roll is read as the one its frame takes next; the game's roll frame stays dimmed while an answered roll waits; a roll confirm is not counted in mirrored() (the rolls never claim A / B from a holding room); review: the bind confirm of a roll the game has just taken (ConfirmLootRoll from its Okay, whose pop-up hides only after the hook's document) is never listed, so that document never shows it as a box; d33 (issue #278, the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED, button 1 = Disable: C_AddOns.DisableAddOn + ReloadUI in the game's own code) is GUARDED for our own add-ons: A and B press Ignore (button 2), Disable is never pressed by DS Forever (not A, not our copy, not a finger on our copy; the AddOns list stays the player's); d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
+local DV = "d36"         -- bump on every change; d36 (the user 2026-11-24: "i cannot accept party invites"): THE ROLE INVITE - an invite from a group with roles is not the StaticPopup PARTY_INVITE but LFGInvitePopup (StaticPopupSpecial_Show, GameEvent.HandlePartyInviteRequest when tank/healer/damage), which was never mirrored, and its Accept stays greyed until a role is ticked (none is when the player can take several); mirrored now as dialog LFG_I on the guild invite's two cells (Accept / Decline, A / B), and when no role is ticked the add-on ticks the role of the current spec (a plain SetChecked on the game's own check box: no input to the game); d35 (fix/stream-cursor, the user 2026-11-19 streaming: "the cursor keeps randomly showing on the game"; the taps.log: the app's sign of life, a posted click every 5 s under "Resurrect now?", each one a cursor on the stream): THE STAY CELL - on a stream the app taps `stay` (doc.life.stay, an iact cell of Interact's) ONCE per newly drawn set instead of `alive` every LIFE_EVERY s; every dialog shown at that tap stays invisible on the top screen (and shielded) until it goes, until another dialog takes its frame, or until a REAL mouse moves (TapPad pad25's WC.pad.humanAt: a cursor move no pad press explains - the PC's own user, a touch on the stream) - then it is back on the top screen as before; `alive` and LIFE are unchanged (Local, an older app); d34 (loot-pop, the user 2026-11-16: "I have also noticed that the loot roll window is delayed and buggy, sometimes making me press the button twice to move on or even just taking like 2 second after accepting an input to move on"): A ROLL ANSWERED LEAVES THE DOCUMENT IN THAT VERY FRAME - the game's own RollOnLoot / ConfirmLootRoll are watched with secure post-hooks (whoever made the call: our cell, the game's own roll frame, its confirm's Okay) and the roll is held out (D.rolled) until the game drops it (CANCEL_LOOT_ROLL / it leaves GetActiveLootRollIDs) or D.ROLL_KEEP s pass with the game still offering it; the GAME'S BIND CONFIRM rides its roll (CONFIRM_LOOT_ROLL / CONFIRM_DISENCHANT_ROLL: r.ask = the roll asked for, r.askI = its pop-up's slot, the pop-up says roll = the roll id) so the app draws it on the roll with the dialog's own cells; Cancel gives the roll back; the game's selection on an answered roll is read as the one its frame takes next; the game's roll frame stays dimmed while an answered roll waits; a roll confirm is not counted in mirrored() (the rolls never claim A / B from a holding room); review: the bind confirm of a roll the game has just taken (ConfirmLootRoll from its Okay, whose pop-up hides only after the hook's document) is never listed, so that document never shows it as a box; d33 (issue #278, the user's pick "Yes, protect", 2026-11-13): the game's "<a DS Forever add-on> has been blocked from an action" pop-up (ADDON_ACTION_FORBIDDEN / ADDON_ACTION_BLOCKED, button 1 = Disable: C_AddOns.DisableAddOn + ReloadUI in the game's own code) is GUARDED for our own add-ons: A and B press Ignore (button 2), Disable is never pressed by DS Forever (not A, not our copy, not a finger on our copy; the AddOns list stays the player's); d32 (issue camp-exit, build 1462, the user: "when exiting the game and the timer pops up it doesnt have the 'exit now' option that it normally should"): the QUIT countdown's "Exit Now" (the game's button 1, its OnAccept = ForceQuit in the game's own code) is mirrored again with its touch cell, a secure click on the game's own button; A stays bound to nothing on it (d22's guard: never pressed by the controller, the app's fallback or the safe close); CAMP has no button 1, so it still shows Cancel alone; d31 (issue #69, 1.0.18: "tried to sign a guild chart didnt work"; the offline harness signs by touch and by A, the report's log has no trace of the charter): DIAGNOSTICS ONLY, nothing pressed or written - the charter's Sign is followed for 4 s and one "cap" document says what came of it (petSign: by touch / A, signatures before / after, the window closed, the game's UI error id, which petition system message by its place in D.PETMSG, a pop-up shown), numbers only; d30 int/1429: the quest starter's Start / Not now SHARE the charter's Sign / Offer cells (idlg 28 / 29: the prompt never shows with the charter open, PETITION_SHOW disarms it and gives the cells back), so the row keeps combat-nav's seven leave cells (33-39) at 40 columns; d29 (starter-prompt): the quest starter prompt ONLY when a starter is NEWLY LOOTED this session (the user, 2026-11-11, asked how long "Not now" lasts: "Only when newly looted"): a baseline of the bags' item counts at login / reload, a prompt only for a count rising above it (never for what was already there, a /reload or a move between bags), Not now = that one prompt; d28 (starter-prompt): the quest starter's Start is DISARMED on the very event a vendor / bank / mail / trade / NPC window opens (a bag item used at a vendor is sold) and aimed by item id, not bag and slot; a Start on a disarmed button is no answer; d27 (starter-prompt): A QUEST STARTER IN THE BAGS ASKS "Start quest?" (the user, 2026-11-11: "If I pick up a quest item like that we should make a prompt asking if we want to start that quest"; [Ripped Missive]): a dialog of ours, QUEST_START, A = a secure use of the item, B = Not now (see D.QS below); d28 (combat-nav): WC.dialogs.mirrored() - the pop-ups the app shows as its box (Interact's fight sink leaves A / B to the app while one shows: the review of combat_nav, the user's decision 1, 2026-11-11); d27 (combat-nav): the idlg row's last seven columns (33-39, the row grows to 40: no new row) are the capture's per-window leave cells (combat_nav_design Step 5c, the user 2026-11-11), aimed by Interact (WC.dialogs.leaveCell); d26: while the trade window is open EVERY dialog with an inserted frame is mirrored (the user: trading a green gave an "are you sure" on the top screen)
 local POOL = 4          -- StaticPopup1 .. StaticPopup4
 local CELLS = 6         -- per dialog: buttons 1-4, the extra button, the close X
 local ROW = "idlg"
@@ -58,6 +58,10 @@ local LEAVE_COL, LEAVE_N = POOL * CELLS + 9, 7
 local GUILD_I = POOL + 1
 local GUILD_COL = POOL * CELLS + 2      -- Join; GUILD_COL + 1 = Decline
 local GUILD_SECS = 60
+-- d36: THE ROLE INVITE (LFGInvitePopup, Blizzard_LFGUtil): Accept = LFGInvitePopupAcceptButton (AcceptGroup with the ticked roles),
+-- Decline = LFGInvitePopupDeclineButton; it declines by itself when its timeOut runs out. Shares the guild invite's two cells (both never
+-- show at once; the guild invite wins if they do)
+local LFG_I = POOL + 3
 -- d18: THE GUILD CHARTER's buttons (Interact's petition window, i108): pressed by SECURE clicks, so the game's own confirm / rename
 -- boxes come from its own code. Three named secure buttons (A's binding clicks, Interact's wantOf) and three touch cells.
 local PET_COL = POOL * CELLS + 4        -- Sign, Request Signature, Rename: PET_COL .. PET_COL + 2
@@ -437,6 +441,86 @@ local function guildButton(k)
     if type(b) == "table" then return b end
 end
 D.guild = nil           -- { inviter, name, at } from GUILD_INVITE_REQUEST
+-- d36: the role invite
+local function lfgFrame() local f = _G.LFGInvitePopup; if type(f) == "table" then return f end end
+local function lfgButton(k)
+    local b = (k == 1) and _G.LFGInvitePopupAcceptButton or (k == 2) and _G.LFGInvitePopupDeclineButton or nil
+    if type(b) == "table" then return b end
+end
+D.LFG_ROLES = { { key = "TANK", btn = "LFGInvitePopupRoleButtonTank", word = "Tank" },
+                { key = "HEALER", btn = "LFGInvitePopupRoleButtonHealer", word = "Healer" },
+                { key = "DAMAGER", btn = "LFGInvitePopupRoleButtonDPS", word = "Damage" } }
+local function lfgCheck(r)
+    local rb = _G[r.btn]
+    local cb = type(rb) == "table" and rb.checkButton
+    if type(cb) == "table" then return cb end
+end
+-- the role of the current spec (nil when the game does not say)
+function D.lfgSpecRole()
+    local i = TN(function() return GetSpecialization() end)
+    if not i then return nil end
+    return TS(function() return (GetSpecializationRole(i)) end)
+end
+-- the roles ticked now, and the one ticked for the player when none was (once per invite: a change by hand stays)
+function D.lfgRoles(f)
+    local on, open = {}, {}
+    for _, r in ipairs(D.LFG_ROLES) do
+        local cb = lfgCheck(r)
+        if cb and shown(cb) then
+            if TB(function() return cb:GetChecked() end) then on[#on + 1] = r end
+            if TB(function() return cb:IsEnabled() end) ~= false then open[#open + 1] = r end
+        end
+    end
+    if #on == 0 and #open > 0 and not D.lfgPickedFor then
+        local want = D.lfgSpecRole()
+        local pick = open[1]
+        for _, r in ipairs(open) do if r.key == want then pick = r end end
+        if not want then for _, r in ipairs(open) do if r.key == "DAMAGER" then pick = r end end end
+        local cb = lfgCheck(pick)
+        if cb and pcall(function() cb:SetChecked(true) end) then
+            D.lfgPickedFor = true
+            if type(LFGInvitePopup_UpdateAcceptButton) == "function" then pcall(LFGInvitePopup_UpdateAcceptButton) end
+            on[1] = pick
+        end
+    end
+    return on
+end
+local function readLfg(f)
+    local d = { i = LFG_I, which = "LFG_INVITE" }
+    d.text = TS(function() return LFGInvitePopupText:GetText() end) or "You are invited to a group."
+    local on = D.lfgRoles(f)
+    local words = {}
+    for _, r in ipairs(on) do words[#words + 1] = r.word end
+    d.sub = (#words > 0) and ("Role: " .. table.concat(words, ", ") .. " (pick another on the top screen)") or "Pick a role on the top screen"
+    if shown(f.QueueWarningText) then
+        local w = TS(function() return f.QueueWarningText:GetText() end)
+        if w then d.sub = d.sub .. "\n" .. w end
+    end
+    d.buttons = {}
+    for k = 1, 2 do
+        local b = lfgButton(k)
+        if shown(b) then
+            local label = TS(function() return b:GetText() end) or (k == 1 and "Accept" or "Decline")
+            if k == 1 and #words == 1 then label = label .. " as " .. words[1] end
+            d.buttons[#d.buttons + 1] = { k = k, label = label, on = TB(function() return b:IsEnabled() end) ~= false }
+        end
+    end
+    local left = TN(function() return f.timeOut end)
+    if left and left > 0 then d.left = math.ceil(left) end
+    return d
+end
+-- the two shared invite cells aimed at whichever invite shows (guild first); out of combat only
+function D.aimInvite()
+    if not D.gCell or TB(function() return InCombatLockdown() end) == true then return end
+    local gf, lf = guildFrame(), lfgFrame()
+    local pick = (gf and shown(gf) and guildButton) or (lf and shown(lf) and lfgButton) or guildButton
+    for k = 1, 2 do
+        local b, t = D.gCell[k], pick(k)
+        if b and t and S(function() return b:GetAttribute("clickbutton") end) ~= t then
+            pcall(function() b:SetAttribute("clickbutton", t) end)
+        end
+    end
+end
 local function readGuild(f)
     local g = D.guild or {}
     local inviter = g.inviter or TS(function() return GuildInviteFrameInviterName:GetText() end) or "Someone"
@@ -736,6 +820,7 @@ end
 local function buttonsOf(d)
     if d.i == D.QS.i then return _G[D.QS.use], _G[D.QS.no] end
     if d.i == GUILD_I then return guildButton(1), guildButton(2) end
+    if d.i == LFG_I then return lfgButton(1), lfgButton(2) end
     local f = dialogFrame(d.i)
     return f and buttonOf(f, 1), f and buttonOf(f, 2)
 end
@@ -772,6 +857,18 @@ local function collect()
             D.since[gf] = nil
             D.guild = nil
             undim(gf)
+        end
+    end
+    local lf = lfgFrame()
+    if lf then
+        if shown(lf) and not (gf and shown(gf)) then
+            local d = readLfg(lf)
+            if D.mode and shownByApp(lf, d.which) then d.hid = dim(lf) or nil else undim(lf) end
+            list[#list + 1] = d
+        else
+            D.since[lf] = nil
+            if not shown(lf) then D.lfgPickedFor = nil end
+            undim(lf)
         end
     end
     return list
@@ -893,7 +990,7 @@ local function build()
                 for _, d in ipairs(list) do
                     d.cells = {}
                     for _, b in ipairs(d.buttons) do
-                        d.cells["b" .. b.k] = (d.i == GUILD_I) and (GUILD_COL + b.k - 1)
+                        d.cells["b" .. b.k] = (d.i == GUILD_I or d.i == LFG_I) and (GUILD_COL + b.k - 1)
                                               or (d.i == D.QS.i) and (D.QS.col + b.k - 1) or cellOf(d.i, b.k)
                     end
                     if d.extra then d.cells.extra = cellOf(d.i, 5) end
@@ -983,6 +1080,7 @@ end
 
 local function look()
     pcall(D.aim)
+    pcall(D.aimInvite)
     local ok, n = pcall(emit, false)
     if ok and type(n) == "number" and (n > 0 or D.rollsWait) and not D.polling then
         D.polling = true
@@ -1132,6 +1230,7 @@ local function offerTouch()
         end
         local gi = (col == GUILD_COL or col == GUILD_COL + 1)
         local i, k = gi and GUILD_I or (math.floor(col / CELLS) + 1), gi and (col - GUILD_COL + 1) or ((col % CELLS) + 1)
+        if gi and not shown(guildFrame()) and shown(lfgFrame()) then i = LFG_I end
         -- d19 (b-release-spirit, 1.0.8: "it presses but nothing happens and then it reappears"): the click's answer says WHAT it
         -- clicked: the dialog (which), the game's button, whether that button was enabled, whether the cell was aimed at it; and,
         -- half a second later, whether that dialog is still up (a release that the game took closes DEATH)
@@ -1312,6 +1411,23 @@ do
     end)
     pcall(function() gf:RegisterEvent("GUILD_INVITE_REQUEST") end)
     pcall(function() gf:RegisterEvent("GUILD_INVITE_CANCEL") end)
+end
+-- d36: the role invite: the game shows it in its own PARTY_INVITE_REQUEST handler (this frame's runs after or before it: look at once and
+-- next frame), and hides it on accept / decline / its time out / PARTY_INVITE_CANCEL
+do
+    D.lfgEv = CreateFrame("Frame")
+    D.lfgEv:SetScript("OnEvent", function()
+        D.lfgPickedFor = nil
+        local f = lfgFrame()
+        if f and not D.lfgHooked then
+            D.lfgHooked = true
+            pcall(function() f:HookScript("OnShow", look); f:HookScript("OnHide", look) end)
+        end
+        look()
+        if type(C_Timer) == "table" then C_Timer.After(0, look) end
+    end)
+    pcall(function() D.lfgEv:RegisterEvent("PARTY_INVITE_REQUEST") end)
+    pcall(function() D.lfgEv:RegisterEvent("PARTY_INVITE_CANCEL") end)
 end
 
 -- d27: the bags looked at anew when they change, a quest is taken or dropped, a fight ends (a held prompt shows), a game window closes
