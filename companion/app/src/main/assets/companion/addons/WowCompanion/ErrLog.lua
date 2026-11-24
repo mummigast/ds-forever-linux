@@ -7,6 +7,7 @@ local MAX, STACK = 30, 600
 local log = { list = {}, dropped = 0 }
 local by = {}          -- message -> its entry (not saved)
 local busy = false
+local db_done = false
 local function record(msg)
     if busy then return end
     busy = true
@@ -34,11 +35,22 @@ if type(geterrorhandler) == "function" and type(seterrorhandler) == "function" t
         if type(prev) == "function" then return prev(msg, ...) end
     end)
 end
+-- THE GAME'S "Your AddOns are experiencing a large number of errors" POP-UP (the user, 2026-11-24: it kept popping up in a fight and the
+-- bottom screen could do nothing else). The client calls the global OnExcessiveErrors (Blizzard_DebugUtil: StaticPopup_Show
+-- "TOO_MANY_LUA_ERRORS", whose button 1 disables ALL add-ons). Ours counts it here instead (log.excessive); the errors stay recorded.
+local function hush() log.excessive = (log.excessive or 0) + 1 end
+local function quiet()
+    if rawget(_G, "OnExcessiveErrors") ~= hush then _G.OnExcessiveErrors = hush end
+end
+pcall(quiet)
 local f = CreateFrame("Frame")
+f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("ADDON_LOADED")
-f:SetScript("OnEvent", function(self, _, name)
+f:SetScript("OnEvent", function(self, event, name)
+    pcall(quiet)        -- Blizzard_DebugUtil loading after us would put the game's own back
     if name ~= "WowCompanion" then return end
-    self:UnregisterEvent("ADDON_LOADED")
+    if event ~= "ADDON_LOADED" or db_done then return end
+    db_done = true
     if type(rawget(_G, "WowCompanionDB")) ~= "table" then _G.WowCompanionDB = {} end
     local db = _G.WowCompanionDB
     db.luaErrPrev = db.luaErr
