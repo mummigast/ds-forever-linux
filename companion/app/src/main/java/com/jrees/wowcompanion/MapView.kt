@@ -1432,6 +1432,8 @@ class MapView(context: Context) : View(context) {
     private var morphS0 = 0f
     private var morphHints = false                 // closing: the controls line was showing when it began
     private var morphLastAt = 0L
+    /** Q4: the map's foot line where the game hides the player's position (instances) */
+    private val HIDDEN_HERE = "Your position is hidden by the game in here"
     private val MORPH_STALE_MS = 700L              // no call for this long: ended (a host that stopped calling)
     private val morphMap = FloatArray(6)
     // what the last frame drew: the player's spot in HOME's px, the scale (px per map-x unit), the player in map space
@@ -8385,6 +8387,15 @@ class MapView(context: Context) : View(context) {
         }
 
         if (filterOpen && !compact) drawFilter(c, left, top, side)
+        // Q4 (2026-11-24, the research: say "hidden" instead of a silent blank): in a dungeon, raid or battleground the game gives add-ons
+        // no position, so the map has no arrow; one dim line says so, at the field's foot
+        if (!morphOn && m.optBoolean("inst", false) && m.optDouble("x", Double.NaN).isNaN()) {
+            val was = pSmall.color
+            pSmall.color = Theme.dim
+            val t = Tr.t(HIDDEN_HERE)
+            c.drawText(t, (w - pSmall.measureText(t)) / 2f, h - 14f, pSmall)
+            pSmall.color = was
+        }
         // last of all, above everything and outside the box: the focused quest's card in flight
         if (morphOn) drawFlight(c)
     }

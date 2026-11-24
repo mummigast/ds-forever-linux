@@ -104,7 +104,9 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
             MotionEvent.ACTION_UP -> {
                 if (abs(e.x - downX) > SLOP || abs(e.y - downY) > SLOP) return true
                 val room = UiKit.TAB_END_W
-                val i = tabs.indexOfFirst { it.contains(e.x, e.y) && e.x >= 16f + room && e.x <= width - 16f - room }
+                // Q7 (2026-11-24, the research's touch-target audit: 64 px tabs, ~3-4 mm): a tab answers over the strip's height above
+                // and below its art too (TAB_TOP - HIT_UP .. TAB_TOP + TAB_H + HIT_DOWN = 112 px, the app's 48 dp floor); the art is unchanged
+                val i = tabs.indexOfFirst { e.x >= it.left && e.x <= it.right && hitY(e.y) && e.x >= 16f + room && e.x <= width - 16f - room }
                 if (i >= 0) SettingsTabs.visible.getOrNull(i)?.let { onPick(it) }
             }
         }
@@ -164,6 +166,11 @@ class SettingsTabBar(context: Context, private val onPick: (SettingsTabs.Tab) ->
         const val TAB_MAX_W = 220f
         const val BAR_H = 158f
         const val SLOP = 24f
+        /** Q7: a tab's touch reaches this far above / below its art */
+        const val HIT_UP = 34f
+        const val HIT_DOWN = 14f
+        /** Q7: [y] is on the tab strip's touch band */
+        fun hitY(y: Float): Boolean = y >= TAB_TOP - HIT_UP && y <= TAB_TOP + TAB_H + HIT_DOWN
         const val A_GLYPH = 40f
     }
 }

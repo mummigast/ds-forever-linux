@@ -89,7 +89,7 @@ class GeneralTilesTest {
         assertEquals(listOf(Row.LOGIN, Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, true, false))
         assertEquals(listOf(Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, Row.WINDOWS_RESTART), GeneralTiles.rows(SettingsTabs.Group.ACCOUNT, false, true))
         // the user, 2026-11-19: Support the Project, the tab's last row
-        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))
+        assertEquals(listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.KEYS), GeneralTiles.rows(SettingsTabs.Group.HELP, true, false))   // Q2: Keyboard link
         // 2026-11-19: General > Reset, four one-button rows, each its button
         assertEquals(listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL), GeneralTiles.rows(SettingsTabs.Group.RESET, true, false))
         assertEquals(ResetPlan.Button.values().toList(), GeneralTiles.rows(SettingsTabs.Group.RESET, true, false).map { GeneralTiles.resetOf(it) })

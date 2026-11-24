@@ -61,6 +61,8 @@ object GeneralTiles {
         // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
         BROWSER_LOGIN(BrowserLogin.ROW_ID),
         WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status"),
+        // Linux Streaming Edition (Q2, 2026-11-24): whether presses reach the game as keys or fall back to clicks (KeyHealth)
+        KEYS("Keyboard link"),
         // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset, one full-width button each (ResetPlan)
         RESET_SETTINGS("Reset settings"), RESET_LAYOUTS("Reset layouts"), RESET_SKILLS("Reset skills"), RESET_ALL("Reset everything"),
         // the user, 2026-11-19: "just a simple button at the bottom that says 'Support the Project'" (SupportLink): the tab's last row
@@ -73,7 +75,7 @@ object GeneralTiles {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
         SettingsTabs.Group.ACCOUNT -> if (StartMode.STREAM_ONLY) emptyList() else listOfNotNull(if (loginRow) Row.LOGIN else null,   // Linux Edition: none
             Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
-        SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS)
+        SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.KEYS)
         SettingsTabs.Group.RESET -> listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL)
         SettingsTabs.Group.SUPPORT -> listOf(Row.SUPPORT)
         else -> emptyList()
@@ -376,7 +378,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 GeneralTiles.Row.REPORT -> out += Control(r, GeneralTiles.button(room).rect(), { reportPress() })
                 GeneralTiles.Row.RELOAD -> out += Control(r, GeneralTiles.button(room).rect(), { reloadPress() }, reload = true)
                 // read-only: a stop so the cursor reaches the page's last row (A there does nothing)
-                GeneralTiles.Row.STATUS -> out += Control(r, box.rect(), {})
+                GeneralTiles.Row.STATUS, GeneralTiles.Row.KEYS -> out += Control(r, box.rect(), {})
                 GeneralTiles.Row.SUPPORT -> out += Control(r, GeneralTiles.wideButton(box).rect(), { supportPress() })
                 GeneralTiles.Row.RESET_SETTINGS, GeneralTiles.Row.RESET_LAYOUTS, GeneralTiles.Row.RESET_SKILLS, GeneralTiles.Row.RESET_ALL ->
                     out += Control(r, GeneralTiles.wideButton(box).rect(), { resetPress(GeneralTiles.resetOf(r)!!) })
@@ -626,6 +628,17 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                 pValue.textAlign = Paint.Align.RIGHT
                 c.drawText(fitText(pValue, say, room.w - 8f, 26f, 20f), room.r - 8f, box.cy + 9f, pValue)
                 pValue.textAlign = Paint.Align.LEFT; pValue.textSize = 22f
+            }
+            GeneralTiles.Row.KEYS -> {
+                val k = KeyHealth.summary(SystemClock.uptimeMillis())
+                pValue.color = when (k.state) {
+                    KeyHealth.State.OK -> Theme.motd; KeyHealth.State.PART -> Theme.gold
+                    KeyHealth.State.OFF -> Theme.unusable; KeyHealth.State.NONE -> Theme.dim
+                }
+                pValue.textAlign = Paint.Align.RIGHT
+                c.drawText(fitText(pValue, Tr.t(k.text), room.w - 8f, 26f, 18f), room.r - 8f, box.cy + 9f, pValue)
+                pValue.textAlign = Paint.Align.LEFT; pValue.textSize = 22f
+                postInvalidateDelayed(2000)
             }
             GeneralTiles.Row.SUPPORT, GeneralTiles.Row.RESET_SETTINGS, GeneralTiles.Row.RESET_LAYOUTS, GeneralTiles.Row.RESET_SKILLS,
             GeneralTiles.Row.RESET_ALL -> {}                     // drawn in onDraw: the whole row is its button

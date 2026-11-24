@@ -283,6 +283,23 @@ for k in ('DOWN', 'DOWN', cols[29], cols[5]):
     key(k)
 check(hits() == ['MapCloseTarget'], "40c: the close cell by keys clicks the map's close button", '')
 
+# pad38 (2026-11-24): the Group Finder's plain rows are far rows 33-35, the last selectors (column keys 33-35, never COLX)
+L.execute("""
+local pad = WowCompanion.pad
+GFTAPS = {}
+pad.op("gfw", "gfw", function(key) GFTAPS[#GFTAPS + 1] = key end)
+for i = 0, 3 do pad.slotFor("gfw", "k" .. i) end
+pad.bindKeys()
+pad.keysFarRefresh()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('gfw') == 'DOWN DOWN ' + cols[35], "40d: gfw = DOWN DOWN + selector 35 (the last column key)", rows.get('gfw'))
+tick(1)
+for k in ('DOWN', 'DOWN', cols[35], cols[3]):
+    key(k)
+check(L.eval('#GFTAPS') >= 1, "40e: a gfw cell by keys runs the Group Finder's handler", L.eval('#GFTAPS'))
+
 # pad32: the Auras pick and the Talents rows are far rows (selectors 20-22)
 L.execute("""
 local pad = WowCompanion.pad

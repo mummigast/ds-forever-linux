@@ -638,6 +638,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         override fun started(width: Int, height: Int) = main.post { onStarted(width, height) }.let {}
         override fun ended(error: Int, notPaired: Boolean, message: String) = main.post { onEnded(error, notPaired, message) }.let {}
         override fun poorConnection(poor: Boolean) {}
+        // Q10 (2026-11-24): the PC game's controller rumble on the Thor (was dropped: the base Events.rumble is a no-op)
+        override fun rumble(low: Int, high: Int) = ThorRumble.rumble(activity, low, high)
     }
 
     private fun onStarted(w: Int, h: Int) {

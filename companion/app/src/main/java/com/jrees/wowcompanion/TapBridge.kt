@@ -407,6 +407,7 @@ object TapBridge {
         val keyScript = if (KEYS_ON && inLauncher && !GameInput.typing) TapKeys.script(pad, cells, gapMs, keySession) else null
         if (keyScript != null) {
             val what = cells.joinToString(" ") { "${it.first}:${it.second}" }
+            KeyHealth.keys(cells.map { it.first }.distinct(), SystemClock.uptimeMillis())     // Q2: the player sees the link's health
             worker.execute {
                 Log.i(TAG, "quiet pad: $what keys (no wait)")
                 RootShell.run(keyScript) { r ->
@@ -427,6 +428,7 @@ object TapBridge {
         val keysOff = if (pad?.optJSONObject("keys") != null) when {
             !KEYS_ON -> "off"; !inLauncher -> "no launcher"; GameInput.typing -> "typing"
             TapKeys.session(pad) != keySession -> "no handshake"; else -> "a cell without keys" } else null
+        KeyHealth.clicks(cells.map { it.first }.distinct(), keysOff, SystemClock.uptimeMillis())    // Q2
         val id = synchronized(sent) { ++batchSeq }
         // feat/desktop-clicks (the user's pick 2026-11-18, "Desktop clicks on the PC"): streaming with a Desktop that clicks, the batch
         // goes to Desktop in the pad's own game px (DeskClicks), never as a touch over the video; Local and an older Desktop as before

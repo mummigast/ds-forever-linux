@@ -161,6 +161,14 @@ class BridgeLog(
         running = false
     }
 
+    /** Q1: a status line when the PC's clock and the Thor's differ by more than [CLOCK_SKEW_MS]; null = fine or unknown */
+    internal fun clockSkewLine(pcMs: Long, thorMs: Long): String? {
+        if (pcMs <= 0L) return null
+        val d = kotlin.math.abs(thorMs - pcMs)
+        if (d <= CLOCK_SKEW_MS) return null
+        return "PC: the PC's clock and the Thor's differ by ${d / 1000} s - turn on automatic date and time on both"
+    }
+
     /** one connection: hello, then every message until it ends (internal for the tests) */
     internal fun session(c: BridgeConn): End {
         c.send(BridgeProtocol.hello(deviceId, token, runCatching { uiScale() }.getOrNull()))
@@ -186,6 +194,9 @@ class BridgeLog(
                     // a new connection replays the backlog: half-assembled documents of the old one would only glue onto it
                     docs.reset()
                     onStatus("PC: connected to ${m.pcName.ifEmpty { "DS Forever Desktop" }}${if (m.wowRunning) "" else " (WoW isn't running)"}")
+                    // Linux Streaming Edition (Q1, 2026-11-24): the two clocks compared (a skew breaks timed things: cooldown ends,
+                    // the bags' "new" marks, the reports' times); the welcome's own trip is milliseconds
+                    clockSkewLine(m.pcMs, System.currentTimeMillis())?.let { onStatus(it) }
                     onWow(m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, m.wowWhy)
                     onPc(m.pc?.let { if (it.state.isEmpty()) it.copy(state = if (m.wowRunning) "running" else "stopped") else it }
                         ?: PcWow(state = m.wowState.ifEmpty { if (m.wowRunning) "running" else "stopped" }, why = m.wowWhy))
@@ -313,6 +324,8 @@ class BridgeLog(
     internal fun runHere() { running = true; loop() }
 
     companion object {
+        /** Q1: more than this between the PC's clock and the Thor's is said (s, not ms, matter to the timed parts) */
+        const val CLOCK_SKEW_MS = 3_000L
         const val TAG = "DSFSTREAM"
         private val DELAYS_MS = longArrayOf(1_000, 2_000, 4_000, 8_000, 15_000)
     }

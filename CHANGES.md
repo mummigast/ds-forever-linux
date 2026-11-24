@@ -3,6 +3,19 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## Unreleased (beta)
+
+- **Problem reports go to this project:** Send opens a pre-filled issue on this repository (the direct upload went to upstream's
+  tracker).
+- **Settings > Help > Keyboard link:** shows whether your presses reach the game as keys (green), which rooms still use clicks
+  (amber) or that the link is not up yet (red).
+- **The game's controller rumble reaches the Thor**, and a short buzz when a queue pops, a ready check or an invite comes.
+- **The Group Finder by keys** instead of clicks; the far-key route is now full (the next rows need another key space).
+- **Settings tabs are easier to hit** (their touch area is the full 48 dp, the look is the same).
+- **The map says "Your position is hidden by the game in here"** in dungeons and battlegrounds instead of going blank.
+- PC helper: `dsf-bridge doctor` also checks the PC clock, Sunshine's encoder (hardware or software) and other streaming programs;
+  the Thor warns when the two clocks differ by more than 3 s.
+
 ## 2026-11-24 (afternoon): linux-v1.0.39.2, add-on set 458 (bugfix)
 
 On top of linux-v1.0.39.1. Tested on the Thor 2026-11-24: Professions from the first viewing, entering Bags. The bank changes are built and tested off-device, not played yet.
