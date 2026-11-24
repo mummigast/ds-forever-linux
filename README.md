@@ -19,10 +19,10 @@
 - **Smoother fights.** Less work per frame inside the game, so fewer hitches when a fight starts.
 - **Streaming only.** The game runs on the PC, never on the Thor, so the app is smaller and installs next to the official one.
 
-## Latest: 1.0.39.1
+## Latest: 1.0.39.2
 
-DS Forever 1.0.39, party invites and battleground pop-ups on the bottom screen, X takes flags in fights, no more
-"blocked" pop-ups in battlegrounds, and the Map room works again.
+Professions and Bags work from the first press, and the bank names its items. On top of 1.0.39.1 (DS Forever 1.0.39,
+party and battleground pop-ups on the bottom screen).
 [All changes](CHANGES.md)
 
 ## What you need

@@ -1752,8 +1752,11 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
         if (!take.enter(state.ctlOn)) return
         // the game's bags already open (Bags let go, e.g. freed): the OPEN door would do nothing, so take with col 29
         val open = state.ctl?.optBoolean("open") == true
+        // Linux Streaming Edition (2026-11-24, the user: "When taking up bags, if i use the dpad too quickly it uses the spell
+        // shortcuts instead"; the log: the door's stream click lost, the fallback take 1500 ms later): the controller is TAKEN
+        // FIRST, by keys (bmvq 29: Bags holds without a window), then the door opens the game's own window behind the room
+        GameInput.tap(context, state.pad, "bmvq", 29)
         if (state.gameDoors && !open) GameInput.tap(context, state.pad, "bag0", 39)
-        else GameInput.tap(context, state.pad, "bmvq", 29)
         postDelayed(takeCheck, TAKE_CHECK_MS)
     }
 

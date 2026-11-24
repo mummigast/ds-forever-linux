@@ -1,7 +1,25 @@
 # Changes in DS Forever Linux Streaming Edition
 
-Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 456). What differs from DS Forever in general: [FORK.md](FORK.md).
+Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
+
+## 2026-11-24 (afternoon): linux-v1.0.39.2, add-on set 458 (bugfix)
+
+On top of linux-v1.0.39.1. Tested on the Thor 2026-11-24: Professions from the first viewing, entering Bags. The bank changes are built and tested off-device, not played yet.
+
+- **Professions show on the bottom screen the first time** you open one: the room's buttons go as keys instead of clicks that
+  could get lost on the stream, and the recipe list is read again while the game is still loading it.
+- **Entering Bags no longer fires your D-pad spell shortcuts:** the room takes the controller at once (by keys), before the game's
+  own bag window opens behind it.
+- **Bank:** the pointed item's name and kind show in the footer (for example "Recipe · Tailoring"); L / R jump the cursor between
+  the bank and your bags; the Bank / Account Bank tabs are a row the D-pad reaches (A picks).
+
+### Known issues in this release
+- Chat commands typed in the app's chat (`/reload`, ...) aren't sent: use the game's own chat for those.
+- A few actions still go as clicks: opening your bags' game window, moving items between bags, picking a spell from the spellbook.
+- *In fights: Top screen* can put the moved buttons in the wrong layout.
+- Live typing works in the auction house only (letters, digits and spaces; no å, ä or ö yet).
+- No dungeon map inside the Stockades (being looked at). In a battleground, X on flags / corpses and Leave Battle are not played yet.
 
 ## 2026-11-24: linux-v1.0.39.1, DS Forever 1.0.39, add-on set 456 (tested)
 

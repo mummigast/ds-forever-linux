@@ -52,7 +52,7 @@ def src(rel):
 
 check('local HV = "hub77"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub75")
 check('local PV = "m187"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m186")
-check('local IV = "i189"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
+check('local IV = "i190"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")
 
 print("\n%d failure(s)" % len(FAILS))
