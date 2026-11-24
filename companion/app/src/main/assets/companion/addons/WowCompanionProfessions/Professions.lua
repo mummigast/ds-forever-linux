@@ -48,7 +48,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local PV = "p27"          -- bump on every change; the app shows it, so a stale build is visible; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
+local PV = "p28"          -- bump on every change; p28 (2026-11-24): an open profession whose recipe data is not ready yet is looked at again every 0.25 s for 5 s; the app shows it, so a stale build is visible; p27 ENCHANTING FROM THE ROOM (#541, "cant enchant": every Enchanting recipe was refused, "needs an item to enchant"): ctl ench casts the selected enchant once (the game's own CraftRecipe, as Create) and the game asks for its item; the ack says pick = true and the app opens the Bags room's "Choose an item" (Bags.lua's pick: what the enchant can go on, worn first; its Replace question answered there); p26 NO PARTIAL CHARACTER KEY (the 11-20 hunter, test build 1513: an empty GetRealmName() keyed the books under "Name-?"): who() is Safety k6's WC.charKey(), nil until the realm is known; p25 (voice1 review, the user 2026-11-16: voice to text must be "intuitive and slick", "A opens the keyboard, X opens our own voice prompt"): while the app's search keyboard (or its voice page) is up, Start is held from the game too (the keyboard's Search key, as Bags' search holds it), so the game's own Start never opens its wheel over it; p24 (voice1, the user 2026-11-16: voice to text in ALL search boxes, "A opens the keyboard, X opens our own voice prompt"; the pick: "Professions search (which gets controller A and X)"): ctl kbd / nokbd - while the app's keyboard (or its voice page) types the room's search, B is the ROOM's (no back button, nothing passed to the game), so B closes the keyboard and never the game's window; refused in a fight (bindings cannot change); p23: FORGET a main profession (ctl forget:1 / forget:2)
 local MAKE_MAX = 26      -- make:1 .. make:26 on the control row; more than that is Create All
 local SEL_COLS = 40      -- columns of the "profsel" row (TapPad's COLS)
 local BASIC = 1          -- Enum.CraftingReagentType.Basic (profession constants documentation)
@@ -650,6 +650,11 @@ local lastProf, lastRec = nil, nil
 local function emit(force)
     local wrote = false
     local rec = WC.collectRecipes()
+    -- p28 (Linux Streaming Edition, 2026-11-24, the user: the bottom screen showed a profession only from its SECOND viewing): the
+    -- window opens before the game's recipe data is ready (IsTradeSkillReady false, no profession id yet) and no later event may
+    -- come, so an open profession without its book is looked at again (soon(): every 0.25 s, at most REC_TRIES times)
+    st.recWait = (st.open and rec == nil) or nil
+    if rec then st.recTries = 0 end
     if rec then
         local key = WC.encode(rec)
         if key ~= lastRec or force then
@@ -679,6 +684,7 @@ local function soon()
     C_Timer.After(0.25, function()
         queued = false
         if emit(false) then WC.push() end
+        if st.recWait and (st.recTries or 0) < 20 then st.recTries = (st.recTries or 0) + 1; soon() end     -- p28: up to 5 s
     end)
 end
 
