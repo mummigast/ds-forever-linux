@@ -4844,13 +4844,13 @@ class InteractView(context: Context) : View(context) {
         val hasAcct = bk.optBoolean("account")
         val row = bankGaps.row(if (hasAcct) 2 else 1, 176f, inner.right - 20f, ty + 4f, th - 4f, 290f, if (acct) 1 else 0, this)
         val tb = RectF(row[0]).apply { if (acct) top = ty + 12f }
-        UiKit.tab(c, tb, "Bank", !acct)
+        UiKit.tab(c, tb, "Bank", !acct, cursor = cur == "bktab char")      // i190: the tab row is the D-pad's too
         act?.let { slotOf(it, "char") }?.let { if (it >= 0) hits.add(tb to "act:bktab char|$it") }
         if (hasAcct) {
             val ta = RectF(row[1]).apply { if (!acct) top = ty + 12f }
-            UiKit.tab(c, ta, "Account Bank", acct)
+            UiKit.tab(c, ta, "Account Bank", acct, cursor = cur == "bktab acct")
             act?.let { slotOf(it, "acct") }?.let { if (it >= 0) hits.add(ta to "act:bktab acct|$it") }
-            bankGaps.badges(c)          // L and R on the row's outsides, always (the user, 15 Oct)
+            // i190 (the user's pick 2026-11-24): L / R now jump between the bank and your bags, so the tab row carries no L / R
         }
         pFill.color = Color.rgb(96, 80, 50)
         c.drawRect(inner.left - 6f, ty + th, inner.right + 6f, ty + th + 2f, pFill)
@@ -4947,6 +4947,8 @@ class InteractView(context: Context) : View(context) {
         // ---- right: your bags, in the Bags room's own tiles (BagsView.drawSlot), 7 to a row; they scroll with the cursor
         val br = RectF(half + 8f, top, inner.right - 4f, bot)
         c.drawText(Tr.t("Your Bags"), br.left + 22f, br.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
+        // i190: L / R jump the cursor between the two panes
+        UiKit.hints(c, br.right - 16f, br.top + 28f, UiKit.shoulderGlyph(false) to "Bank", UiKit.shoulderGlyph(true) to "Bags")
         val view = RectF(br.left, br.top + 52f, br.right, br.bottom)
         val bcw = (br.width() - 32f) / 7f
         val list = ArrayList<Pair<String, JSONObject?>>()
@@ -5006,7 +5008,24 @@ class InteractView(context: Context) : View(context) {
             val mx = UiKit.hints(c, bx - 300f, cy, "rev_y" to "Move")
             if (ok) { hits.add(RectF(mx, cy - 44f, bx - 290f, cy + 44f) to "bk:move"); glyphHits["rev_y"] = "bk:move" }
         }
-        resultLine(c, inner.left + 260f, bx - 480f, cy, now)
+        if (!resultLine(c, inner.left + 260f, bx - 480f, cy, now)) {
+            // i190 (the user, 2026-11-24: "i do not know what recipes are there ... a short tooltip on what item it is is needed"): the
+            // pointed item's name in its quality colour, and its kind (the add-on's GetItemInfoInstant type / subtype) under it
+            pointedItem?.let { pi ->
+                val nm = pi.optString("n", "").takeIf { it.isNotEmpty() }
+                val kd = pi.optString("k", "").takeIf { it.isNotEmpty() }
+                val w = bx - 480f - (inner.left + 260f)
+                if (nm != null && w > 80f) {
+                    val np = UiKit.bodyPaint(26f, Theme.quality(pi.optInt("quality", 1)))
+                    val cnt = pi.optInt("count", 1)
+                    c.drawText(fit(np, Tr.t(nm) + if (cnt > 1) " ($cnt)" else "", w), inner.left + 260f, cy - 4f, np)
+                    if (kd != null) {
+                        val kp = UiKit.bodyPaint(22f, Theme.dim)
+                        c.drawText(fit(kp, Tr.t(kd), w), inner.left + 260f, cy + 26f, kp)
+                    }
+                }
+            }
+        }
 
         // ---- the purchase box (the next bank tab), its Yes = the game's PurchaseBankTab
         if (bk.optBoolean("box")) {
