@@ -46,7 +46,16 @@ pcall(quiet)
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("ADDON_LOADED")
-f:SetScript("OnEvent", function(self, event, name)
+-- the game's "<add-on> has been blocked from an action only available to the Blizzard UI": the event names the add-on and the
+-- protected function (the pop-up does not); kept as an error line "BLOCKED <addon> <function>" with the stack where it fired
+f:RegisterEvent("ADDON_ACTION_BLOCKED")
+f:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+f:SetScript("OnEvent", function(self, event, name, fn)
+    if event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        record((event == "ADDON_ACTION_BLOCKED" and "BLOCKED " or "FORBIDDEN ") .. tostring(name) .. " " .. tostring(fn)
+               .. (InCombatLockdown and InCombatLockdown() and " (in combat)" or ""))
+        return
+    end
     pcall(quiet)        -- Blizzard_DebugUtil loading after us would put the game's own back
     if name ~= "WowCompanion" then return end
     if event ~= "ADDON_LOADED" or db_done then return end
