@@ -3,6 +3,11 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 456). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## Unreleased (beta)
+
+- **Professions show on the bottom screen the first time** you open one: the room's buttons go as keys instead of clicks that
+  could get lost on the stream, and the recipe list is read again while the game is still loading it.
+
 ## 2026-11-24: linux-v1.0.39.1, DS Forever 1.0.39, add-on set 456 (tested)
 
 On top of linux-v1.0.38.4. Tested on the Thor 2026-11-24: party invites with roles, the battleground entry pop-up, no "blocked" pop-up in a battleground, the Map room from the Start wheel, general play with no Lua errors. Not tested yet in a battleground: X on flags and corpses in a fight, Leave Battle.
