@@ -6676,7 +6676,7 @@ do
     local SKIP = { WowCompanionSpellsDB = { keyProbe = true, faceSwap = true, faceCd = true, combatFace = true },
                    -- Linux Streaming Edition (2026-11-23, the user: "a lot of stutters"; every 5 s a 13-16 KB svkeep and a ~45 ms
                    -- hitch): the edition's diagnostics change all the time, so the table was "changed" (and sent) on every pass
-                   WowCompanionDB = { chatTop = true, perf = true, hitch = true, dotBox = true, softTgt = true } }
+                   WowCompanionDB = { chatTop = true, perf = true, hitch = true, dotBox = true, softTgt = true, luaErr = true, luaErrPrev = true } }
     local VARS = { "WowCompanionSpellsDB", "WowCompanionDB" }
     local last = {}
     local function keyLess(a, b)
