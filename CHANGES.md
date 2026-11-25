@@ -5,29 +5,51 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
-- **Hold to cast over the stream (untested in game):** the Thor's presses to the PC go through the same hold gate as upstream's own
-  game (a tap on release, a hold at the hold time with the Guide button as the marker). The one-time Guide check runs once while
-  streaming and is not repeated once it worked. If the Steam overlay opens on it, turn off Steam's "Guide button focuses Steam".
-- **DS Forever 1.0.41 merged (set 462):** upstream's 1.0.40 + 1.0.41: Edit Home tabs (Out of combat / In combat / Party mode, each
-  its own layout), 60 fps by default + a performance mode, lighter add-ons in fights, our own cast bar above the HUD in fights, Smart Y
-  by a campfire, hold to cast (built for the Thor's own game: likely not working while streaming, untested). The Controller room's
-  open by keys moved to page-3 code 29 (upstream took 24 / 25). Streaming keeps: indoor maps pause while streaming, no sign-in or
-  graphics-driver rows.
-- **Fixes found in review (set 461):** a game rumble running when the stream ends now stops (it buzzed on); the pin buttons get
-  their cells before the buffs (a long buff list could leave them without one); the clock check stamps the PC's time at the send.
-- **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start, page
-  3) shows **Cancel <buff>** for each: one press cancels it, by keys (for an accidental Divine Shield or Ice Block). **Unpin** in the
+On top of linux-v1.0.39.2. Add-on set 462 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
+(all unit tests pass); **not played on the Thor yet**. Planned as the next stable release, linux-v1.0.41.1, once tested.
+
+### New from DS Forever 1.0.40 and 1.0.41 (upstream)
+
+- **Edit Home tabs:** Out of combat, In combat and Party mode each keep their own Home layout, edited on their own tab.
+- **Our own cast bar in fights,** right above the HUD on the top screen (or across the bottom screen if you pick that), with the
+  swing timer.
+- **Performance mode:** Home's animations ease off while you move or fight (the bottom screen redraws at ~30 Hz), automatically.
+- **Lighter add-ons in fights:** fewer flushes and no full 15 s snapshot mid-fight.
+- **Smart Y sits you down by a campfire.**
+- **The Controller room** shows just Press and Hold per button (Move / Bind hold / Bind).
+
+### New in this edition
+
+- **Hold to cast while streaming:** two spells on one button - tap for one, hold for the other (hold time in Settings: 0.3 / 0.4 /
+  0.55 s). Upstream built it for the Thor's own game only; here the presses to the PC go through the same timing, with the
+  controller's Guide button as the "this was a hold" signal. A one-time check presses Guide once to see that the game gets it; once
+  it works it is not repeated. If the check fails, hold to cast simply stays off.
+- **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start,
+  page 3) shows **Cancel <buff>** for each: one press cancels it (for an accidental Divine Shield or Ice Block). **Unpin** in the
   same list.
-- **Problem reports go to this project:** Send opens a pre-filled issue on this repository (the direct upload went to upstream's
-  tracker).
-- **Settings > Help > Keyboard link:** shows whether your presses reach the game as keys (green), which rooms still use clicks
-  (amber) or that the link is not up yet (red).
-- **The game's controller rumble reaches the Thor**, and a short buzz when a queue pops, a ready check or an invite comes.
-- **The Group Finder by keys** instead of clicks; the far-key route is now full (the next rows need another key space).
-- **Settings tabs are easier to hit** (their touch area is the full 48 dp, the look is the same).
+- **Settings > Help > Keyboard link:** whether your presses reach the game as keys (green), which rooms still use clicks (amber),
+  or that the link is not up yet (red).
+- **Rumble:** the game's controller rumble reaches the Thor, and a short buzz when a queue pops, a ready check or an invite comes.
+- **The Group Finder by keys** instead of clicks.
+- **Settings tabs are easier to hit** (a full 48 dp touch area; the look is the same).
 - **The map says "Your position is hidden by the game in here"** in dungeons and battlegrounds instead of going blank.
+- **Problem reports go to this project:** Send opens a pre-filled issue on this repository.
 - PC helper: `dsf-bridge doctor` also checks the PC clock, Sunshine's encoder (hardware or software) and other streaming programs;
   the Thor warns when the two clocks differ by more than 3 s.
+
+### Fixed
+
+- A game rumble running when the stream ended kept buzzing; it now stops.
+- With a long buff list the pin buttons could end up without a cell; they now get theirs first.
+- The Controller room's open by keys and upstream's new fight cast bar used the same internal code; ours moved (they would have
+  triggered each other).
+
+### Known issues (beta)
+
+- **Hold to cast:** if the Steam overlay opens when the Guide check runs, turn off Steam > Settings > Controller > "Guide button
+  focuses Steam". The game may also not see Guide through Proton at all; then the check says so and hold to cast stays off.
+- Still open from stable: a bank deposit from the bottom-screen window may not go through; the Stockades has no
+  dungeon map; battleground controls (X on flags / corpses, Leave Battle) not played yet.
 
 ## 2026-11-24 (afternoon): linux-v1.0.39.2, add-on set 458 (bugfix)
 
