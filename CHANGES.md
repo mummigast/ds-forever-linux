@@ -5,6 +5,8 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
+- **Fixes found in review (set 461):** a game rumble running when the stream ends now stops (it buzzed on); the pin buttons get
+  their cells before the buffs (a long buff list could leave them without one); the clock check stamps the PC's time at the send.
 - **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start, page
   3) shows **Cancel <buff>** for each: one press cancels it, by keys (for an accidental Divine Shield or Ice Block). **Unpin** in the
   same list.

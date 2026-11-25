@@ -46,7 +46,7 @@ if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function
 local CALL, isPlain = WC.CALL, WC.isPlain
 local format = string.format
 
-local AV = "a9"     -- bump on every change; a9 (2026-11-24): pinned buffs for fights (pins, the castbar's cells 25-26); the app shows it, so a stale build is visible
+local AV = "a9b"     -- bump on every change; a9b: pin cells taken before the buffs' cells; a9 (2026-11-24): pinned buffs for fights (pins, the castbar's cells 25-26); the app shows it, so a stale build is visible
 -- a8 (#558 / #476, the user 2026-11-19: "Just remove them during fights"): IN A FIGHT the bottom screen's buffs / debuffs are hidden
 -- entirely, so nothing is read: the document says hide = true with empty lists (no aura read, no tooltip, no enchant read, the pad's
 -- aura slots kept as they were) and the app draws none of them - no frozen list, no estimate, no note. The fight: PLAYER_REGEN_DISABLED
@@ -320,15 +320,16 @@ local function emit(force)
     local pad = WC.pad
     if pad and not locked and doc.b then
         local present = {}
-        for _, a in ipairs(doc.b) do
-            if type(a.id) == "number" then a.slot = pad.slotFor("aura", a.id); present[a.id] = true end
-        end
-        present.open, present.close = true, true          -- the Character room's two fixed cells are never freed
-        -- a9: the pin / unpin cells (plain: no game action), kept for the session
+        -- a9: the pin / unpin cells (plain: no game action), kept for the session; taken BEFORE the buffs (a9b: a long buff list
+        -- could fill the row first and leave the pins without a cell, or on columns 36-39 that have no key)
         doc.pinCell = pad.slotFor("aura", "pin")
         doc.unpinCells = {}
         for i = 1, PINS.n do doc.unpinCells[i] = pad.slotFor("aura", "unpin" .. i); present["unpin" .. i] = true end
         present.pin = true
+        for _, a in ipairs(doc.b) do
+            if type(a.id) == "number" then a.slot = pad.slotFor("aura", a.id); present[a.id] = true end
+        end
+        present.open, present.close = true, true          -- the Character room's two fixed cells are never freed
         pad.retain("aura", present)
     end
     if pad then local okp, g = pcall(pad.describe); if okp then doc.pad = g end end

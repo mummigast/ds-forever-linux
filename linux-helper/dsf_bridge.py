@@ -754,6 +754,7 @@ async def start_session(ws, device):
     async with feed_lock:
         sessions[device] = ws
         log(f"Session for {device[:8]}…, backlog {len(backlog)}")
+        welcome["pc_ms"] = int(time.time() * 1000)   # Q1b: stamped at the send (not before the lock), the Thor compares clocks
         await send(ws, {"t": "welcome", **welcome, "device_id": device, "backlog": len(backlog)})
         for msg in list(backlog):
             await send(ws, msg)

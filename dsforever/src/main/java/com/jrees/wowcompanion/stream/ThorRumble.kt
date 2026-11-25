@@ -30,7 +30,7 @@ object ThorRumble {
         val fromPad = if (pad != null && Build.VERSION.SDK_INT >= 31) pad.vibratorManager.defaultVibrator.takeIf { it.hasVibrator() } else null
         val own = if (Build.VERSION.SDK_INT >= 31) (ctx.getSystemService(VibratorManager::class.java))?.defaultVibrator
                   else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
-        return (fromPad ?: own?.takeIf { it.hasVibrator() }).also { vib = it; Log.i(TAG, "rumble: " + if (fromPad != null) "the pad's motor" else if (it != null) "the handheld's motor" else "no motor") }
+        return (fromPad ?: own?.takeIf { it.hasVibrator() }).also { if (it != null) vib = it; Log.i(TAG, "rumble: " + if (fromPad != null) "the pad's motor" else if (it != null) "the handheld's motor" else "no motor") }
     }
 
     /** 0..65535 per motor -> one amplitude 1..255, or 0 = stop (pure: the test) */
@@ -48,6 +48,15 @@ object ThorRumble {
             if (a == 0) v.cancel()
             else v.vibrate(VibrationEffect.createWaveform(longArrayOf(0L, HOLD_MS), intArrayOf(0, a), 1))
         }
+    }
+
+    /** the stream ended or went away: stop a running rumble (its waveform repeats until cancelled) and forget the motor (the pad
+     *  may be another next time) */
+    fun stop() {
+        val v = vib
+        lastLevel = 0
+        vib = null
+        runCatching { v?.cancel() }
     }
 
     /** one short tap (never while the game's own rumble runs) */

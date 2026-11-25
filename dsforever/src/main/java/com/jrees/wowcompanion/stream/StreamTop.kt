@@ -842,6 +842,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun teardown() {
         seen = false
+        ThorRumble.stop()                                   // Q10b: a rumble running when the stream ends would buzz on forever
         if (streamFps >= 100) StreamRate.release(activity, surface.holder.surface)
         streamFps = 0
         SetupBridge.openPcKeyboard = null
