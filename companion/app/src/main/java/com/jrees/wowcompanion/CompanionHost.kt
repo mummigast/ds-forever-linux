@@ -445,6 +445,26 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  login offer's); null = Settings' own ([restartFromSettings]) */
     private var restartAskThen: (() -> Unit)? = null
 
+    /** PadLayerNote's per-character memory: prefs `padnote`, "bars.<character key>" = the two values last seen ("st=3;ps=1") */
+    private val padNoteStore: PadLayerNote.Store by lazy {
+        val p = getSharedPreferences("padnote", MODE_PRIVATE)
+        object : PadLayerNote.Store {
+            override fun get(who: String): String? = p.getString("bars.$who", null)
+            override fun put(who: String, memo: String) { p.edit().putString("bars.$who", memo).apply() }
+        }
+    }
+
+    /** a current hud document's `bars` (ActionBar's read-only Stance / Possess Bar values): a change onto LT / RT is Home's note, once */
+    private fun padLayerNote(bars: JSONObject, docName: String?) {
+        val who = PadLayerNote.whoFor(GameUi.character, docName)            // the review: only the document's own character
+        val notes = runCatching { PadLayerNote.onBars(padNoteStore, who, bars) }.getOrDefault(emptyList())
+        for (w in notes) {
+            val l = PadLayerNote.logLine(w)
+            Log.i("WCSETUP", l); DiagLog.event("pad", l)
+            ui.post { homeView.padNote(w) }
+        }
+    }
+
     private fun noticeShow(s: ReportNotice.State) {
         reportNotice.show(s)
         SetupBridge.noticeAsking = reportNotice.asking
@@ -615,6 +635,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         castView.onCastState = { strip.castChanged() }
         ItemCd.init(this)                                   // r20: the Hearthstone's kept end time (per character)
+        CastSettings.init(this); HoldCast.init(this)        // hold to cast (PadMap m190): the hold time, the probe's kept outcome
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
@@ -627,9 +648,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         chatView.tapper = { cells, gap -> TapBridge.tapsSpaced(this, questsPad, cells, gap) }
         // hold to talk (HoldTalk): the toolbar's microphone follows its switch and the last used chat's colour
         chatView.onTalkChannel = { if (talkPanelUp()) talkTabs.refresh(chatView.talkTabs()); talkDraw() }
-        HomeSettings.onChange { ui.post { talkDraw() } }
+        // the 1528 audit: the host's own static listeners hold it WEAKLY ([weakly]; HomeViewsReleasedTest): a host made again (the bottom
+        // screen's DsForeverScreen) is never kept - with its whole Home - by the old one's, and the ones that send the add-on taps send
+        // nothing once its screen is gone
+        HomeSettings.onChange(weakly(this) { h -> h.ui.post { h.talkDraw() } })
         // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
-        HomeLayoutStore.onChange { ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }
+        HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.mirrorCheck(it); h.topCheck(it); h.castCheck(it); h.swingCheck(it) } } })
+        // feat/top-castbar: the Swing timer setting goes to the add-on's top bar too (PadMap m190), on its change as on the layout's
+        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.swingCheck(it) } } })
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -848,20 +874,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        // 1529 PERFORMANCE MODE (FramePace, the user's pick 2026-11-24): Home's animations at ~30 Hz while the player moves or fights on
+        // Home (no room open); full rate at rest, in the rooms and for a moment after a touch (the root's dispatchTouchEvent)
+        FramePace.probe = { room == Room.HOME && homeView.isShown && (homeView.inFight() || lastBook?.combat == true || mapView.movingNow()) }
         // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
         MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
-        RadialMeta.onChange { lastPadMap?.let { m -> homeView.onPadMap(m); controllerView.onPadMap(m); spellbookView.onPadMap(m) } }
+        RadialMeta.onChange(weakly(this) { h -> h.lastPadMap?.let { m -> h.homeView.onPadMap(m); h.controllerView.onPadMap(m); h.spellbookView.onPadMap(m) } })
         // the user's pick 2026-11-13: Start over game windows - a change is told to the add-on at once (the next padmap confirms it)
         var pauseOverSeen = HomeSettings.pauseOverGame
-        HomeSettings.onChange { ui.post {
-            if (!shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
-                pauseOverSeen = HomeSettings.pauseOverGame; pauseOverSentAt = 0L; pauseOverTell(lastPadMap, "the setting")
+        HomeSettings.onChange(weakly(this) { h -> h.ui.post {
+            if (!h.shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
+                pauseOverSeen = HomeSettings.pauseOverGame; h.pauseOverSentAt = 0L; h.pauseOverTell(h.lastPadMap, "the setting")
             }
-            if (!shell.hostGone()) petBTell("the setting")                     // B: pet follow, this character's choice
-        } }
+            if (!h.shell.hostGone()) h.petBTell("the setting")                     // B: pet follow, this character's choice
+        } })
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -869,6 +898,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // our own sign-in's row on the start screen takes the pad while it shows (LATER 29); then Interact's loot ring
             // (the edge is taken on EVERY mask, whatever the route, so a press held through a route change is not swallowed later)
             val down = m and loginPadHeld.inv(); loginPadHeld = m
+            // PadLayerNote: B lets Home's game-setting note go (seen only: B still does what it does below / in the game)
+            if (PadInput.isHeld(down, PadInput.SLOT_FACE_RIGHT)) ui.post { homeView.padNoteB() }
             // loot-pop review: the rolls read the presses while they cover the screen, or while the fight's small panel shows a roll's bind
             // confirm with the GAME's focus (its A / B are the game's pop-up's: never also the loot window's under it); every other mask is
             // only SEEN, so the first press after the panel grows / opens is a real edge (DialogView.padSeen)
@@ -957,7 +988,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // P4: the room bar's order is the layout record's (per character, D5); edit mode drives it from its draft (HomeView.roomBar)
         homeView.roomBar = strip
         strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
-        HomeSettings.onChange { ui.post { if (!shell.hostGone()) roomBarSync() } }
+        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.roomBarSync() } })
         // THE ROOM'S COMBAT CUE (Home; the user: "I want the room that I am in to flash red"): over every room, under the bar and every
         // overlay; it takes no touch
         roomCue = RoomCombatCue(this)
@@ -1000,8 +1031,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
-        // feat/pause-power: Exit game while streaming = the clean disconnect (the PC's WoW closes, the PC put back), then the chooser
-        StartMenu.onExit = { (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
+        // feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): Exit game
+        // closes DS Forever at once, Local or Streaming (ExitNow); without the launcher (the companion app alone) the old routes
+        StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); Settings.forgetGameAccountPick(); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
         StartMenu.canRestart = { LauncherHooks.gameUp() }
@@ -1013,6 +1045,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
         // (the choice is read first by StartMenu.region: regionNow stays the folder's own, for a Stop that forgets the choice again)
         StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU) }
+        // the Menu's Battle.net sign-in (the user, 2026-11-24): Settings.browserLogin itself, saved by the Menu; the sign-in log says so
+        // (states only) and the start screen's lines follow at once (the advice goes, or the Restart game line comes)
+        StartMenu.onSignIn = { on ->
+            NativeLogin.logEvent("sign-in: Battle.net sign-in set to ${BrowserLogin.words(on)} (the Menu), from the next game start")
+            if (::loginWatch.isInitialized) loginShow()
+        }
         // the region card's second line (the user, 2026-11-17): the launcher compares that region's build with the install's
         StartMenu.regionPreview = { code, answer ->
             val check = SetupBridge.regionCheck
@@ -1081,7 +1119,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Thread({ runCatching { ReportFlow.autoSave(app) }.onFailure { Log.w("WCREPORT", "auto-save failed", it) }; SetupBridge.loginSaved() },
                 "report-autosave").start()
         }
-        DiagLog.onChange { ui.post { ui.removeCallbacks(recTick); recTick.run() } }
+        DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } })
         SetupBridge.openLoginForm = { loginPrompt.open() }
         // a refused saved login (M3): "Update login" = the same form, then the game restarts by itself with it (test4 ruling)
         SetupBridge.updateLogin = { restartOnSave = true; loginPrompt.open() }
@@ -1269,11 +1307,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         homeView.editRibbonRedraw = { strip.invalidate() }
         homeView.onEditPress = { key, k -> BottomTiles.press("", key, k, BottomTiles.Env(lastDpad, GameUi.character)) { on -> dpadSet(on) } }
-        homeView.onEditSlots = { controllerView.openOnCastBar(); pickRoom(Room.CONTROLLER) }
+        // (edit tabs, the review: each tab's Edit slots opens that situation's bar - In combat's, Party mode's, else WoW Defaults')
+        homeView.onEditSlots = { t -> controllerView.openOnCastBar(t.bar); pickRoom(Room.CONTROLLER) }
         homeView.onEditFilters = { show(Room.CHAT); chatView.post { chatView.openFilters() } }
         // 1518 (the autosave): the add-on hears the record's D-pad sides and fight bar only once edit mode is not live (Done, Discard,
         // a fight, another room); while it is, the pictures preview the draft
-        homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }
+        homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }
         homeView.onEditChanged = { on ->
             lbEval(); trackSync(); strip.invalidate()
             // the 1515 merge: a key question that waited for edit mode is looked at again once edit mode has ended
@@ -1313,10 +1352,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
         }
         pauseView.onPick = { s -> pausePick(s) }
-        // feat/pause-power: THE POWER BUTTON (the user, 2026-11-18): its prompt's line, a fight's refusal, and Close = [PausePower.Sequence]
+        // feat/pause-power: THE POWER BUTTON (the user, 2026-11-18): its prompt's line, and Close. feat/exit-now (the user's pick
+        // 2026-11-24, "Keep the confirm, allow in fights"): Close = DS Forever closes at once (ExitNow, as the Menu's Exit game), in a
+        // fight too (no refusal any more); the old sequence ([PausePower.Sequence]) only without the launcher
         pauseView.streaming = { SetupBridge.endSession != null }
-        pauseView.powerRefusal = { if (homeView.inFight()) PausePower.FIGHT_LINE else null }
-        pauseView.onPower = { powerOff.run() }
+        pauseView.onPower = { LauncherHooks.exitNow?.invoke(ExitNow.POWER) ?: powerOff.run() }
         pauseView.polestar = { mapView.polestarCanSkip() to mapView.polestarCanPrev() }      // pk1: its Skip / Previous step slices
         pauseView.pins = { homeView.auraPins() }                                             // a9: the pinned buffs' Cancel slices
         // THE TARGET RADIAL: the pause wheel's slide, close and place; a pick runs as the party menu's entries do
@@ -1341,7 +1381,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 p.copy(cx = p.cx + (a[0] - b[0]), top = p.top + if (p.classic) 0 else a[1] - b[1])
             }
         }
-        castView.onShoulders = { lb, rb -> lbAloneNow = lb && !rb; lbEval() }
+        // fix/lbrb-wheels: the FRIENDLY bumper alone (RB while the game swaps its target bumpers), and again when the swap changes
+        castView.onShoulders = { lb, rb -> shLb = lb; shRb = rb; lbAloneNow = LbPartyView.friendlyAlone(lb, rb, castView.swapTargets()); lbEval() }
+        castView.onSwapTargets = { sw -> lbAloneNow = LbPartyView.friendlyAlone(shLb, shRb, sw); lbEval() }
         // hold to talk's pop-up: a finger on a chat tab picks it (as LB / RB do)
         castView.onTalkTab = { key -> if (talkPanelUp() && talkTabs.pick(key)) {
             holdTalk.tabTouched(SystemClock.uptimeMillis()); Log.i("WCHOME", "hold to talk: chat $key (touch)"); talkDraw() } }
@@ -1389,6 +1431,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // b-release-spirit (test16: a bottom-screen dialog press reached nothing, not even the dialog's own view): while a dialog
             // shows, a finger's DOWN says which view on top took it, so one log read tells "covered" from "pressed"
             override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+                FramePace.touched(android.os.SystemClock.uptimeMillis())          // 1529: a touch = full rate for a moment
                 val r = super.dispatchTouchEvent(e)
                 if (e.actionMasked == MotionEvent.ACTION_DOWN && ::dialogView.isInitialized && dialogView.visibility == View.VISIBLE) {
                     val above = (indexOfChild(dialogView) + 1 until childCount).map { getChildAt(it) }
@@ -1956,6 +1999,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun partyRedraw() {
         homeView.partyChanged()
+        // EDIT TABS: Party mode on / off changes which tab the next fight lays - the add-on's Top screen / Cast bar flags follow it - and
+        // the page Home lays out of fights: the D-pad's sides follow it ("Follow the layout on screen"; out of fights only: mirrorCheck)
+        val ft = homeView.fightTab()
+        if (ft != lastFightTab) { lastFightTab = ft; lastDpad?.let { fightFlagsCheck(it) } }
+        val dt = homeView.dpadTab()
+        if (dt != lastDpadTab) { lastDpadTab = dt; lastDpad?.let { mirrorCheck(it) } }
         castView.partyChanged()
         controllerView.partyChanged()
         settingsView.partyChanged()
@@ -2107,6 +2156,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             HomePauseModel.Kind.ROOM -> s.room?.let { name -> runCatching { Room.valueOf(name) }.getOrNull() }?.let { r -> pickRoom(r) }
             HomePauseModel.Kind.HOME -> when (s.key) {
                 "buffs" -> homeView.openAuras(debuff = false)
+                // the corner's Edit (the user, 2026-11-24: X "puts them into the home edit mode"): Edit Home's own entry (Home first from
+                // a room; a fight: Edit Home's refusal, its pencils flash)
+                HomePauseModel.EDIT.key -> editHome("the pause wheel's Edit")
                 // f-trackpad-keyboard: the pause wheel's D-pad Left; on Home (from a room: Home first)
                 // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
                 "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }
@@ -2917,8 +2969,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             GameUi.loadReported()
             System.currentTimeMillis().let { t -> if (msg.optBoolean("on", false)) GameInput.load.start(t) else GameInput.load.end(t) }
         }
-        // the interiors bake (Track C) runs while the game is there and quiet; it waits while it fights or loads
-        if (current) IndoorSchedulerStep.noteAlive(homeView.inFight() || setupLoading || startView.visibility == View.VISIBLE)
+        // the interiors bake (Track C): its word on a fight or a loading / setup screen (2026-11-24: Build now in game builds only while
+        // the player is idle - the fight its own word, "Paused: in a fight")
+        if (current) homeView.inFight().let { fight -> IndoorSchedulerStep.noteAlive(fight || setupLoading || startView.visibility == View.VISIBLE, fight = fight) }
         // a reload from the Settings keeps it up until the new hello (the game writes on for a moment before it reloads)
         // (an art failure kept it up before Play only: with the game live it never holds the bottom screen; p-build-tables-blocks-keyboard)
         if (current) streamLiftCover = false          // in the world: the waiting screen does not come back after Stream settings
@@ -2984,6 +3037,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current) GameUi.onTracking(it.optJSONObject("track"))     // LATER 25: the "While tracking" minimap
                 }
                 msg.optJSONObject("actionbar")?.let { castView.update(it); bagsView.castTick() }      // bags-de1: the grid's bar too
+                // PadMap m187's report: a WoW Stance / Possess Bar setting moved onto LT / RT for this character: Home's note, once
+                if (current) msg.optJSONObject("actionbar")?.optJSONObject("hud")?.optJSONObject("bars")?.let {
+                    padLayerNote(it, msg.optJSONObject("player")?.optString("name", "")?.takeIf { n -> n.isNotEmpty() })
+                }
                 homeView.onFull(msg, current)
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)
@@ -3581,6 +3638,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // set further down, so a first padmap after a start / a character switch read the default or the last character's setting)
                 if (current) { petBNow = it.petB; petBWho = PetRecall.who(it.dpad?.name, it.dpad?.realm); petBTell("padmap") }
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
+                if (current) HoldCast.fighting = it.combat                   // hold to cast: the probe pulses out of fights only
                 // the k6 review round 2: a realm seen in a current padmap counts against every other realm of its name (before any fold)
                 if (current) RealmFix.saw(CharKey.of(it.dpad?.name, it.dpad?.realm))
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
@@ -3627,7 +3685,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the 1514 merge (CharKey): the WHOLE key only; named with no realm = pending (no record read or written, the
                     // previous character's key let go; an edit meanwhile is laid on the real record once the key comes)
                     if (current && named) HomeLayoutStore.character(ck, d.name)
-                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d) }
+                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d) }
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     // issue 588 (upstream, the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too.
@@ -3666,6 +3724,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // issues 580 / 539 (11-23): where each press went (the last 30 for the report; one WCLOG line for a press that did nothing),
             // and whether the fight buttons are ours (one line when it changes); logging only (WCPAD: off the start-up log's 200 lines)
             "facecast" -> if (current) PressLog.press(msg, System.currentTimeMillis())?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
+            // HOLD TO CAST (PadMap m190): the places the router turns into the hold spell now (the launcher's gate), and the probe
+            "holdmap" -> if (current) HoldCast.onMap(msg)
+            "holdprobe" -> if (current) HoldCast.onProbe(msg)
+            "holdcd" -> if (current) PadMapModel.parseHoldCd(msg)?.let { homeView.onHoldCd(it) }
             "faceswap" -> if (current) PressLog.swap(msg)?.let { l -> Log.i("WCPAD", l); DiagLog.event("pad", l) }
             // m127: Smart Y's list edits answered (a refusal said on its Add row; the user, 2026-11-11: it was never read)
             "smartyack" -> if (current && ::settingsView.isInitialized) settingsView.onSmartAck(msg.optString("op"), msg.optBoolean("ok", false), msg.optString("why").ifEmpty { null })
@@ -4083,6 +4145,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (nativePreview) return
         regionShow()                                         // the region line goes once this run reaches the world
         val s = loginWatch.state
+        signInHint(s)
         // INSIDE THE ONE APP: the row only while it has something to say ([nativeRow]); a just-saved note shows once
         val native = if (LauncherHooks.pkg == null) null else nativeRow(s)
         val oneApp = LauncherHooks.pkg != null
@@ -4134,6 +4197,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // a failure shows the reason and does not retry by itself (the user's pick; the gold box itself is gone, 2026-10-05)
     }
     private var lineWritten: String? = null
+
+    /**
+     * THE LINE UNDER THE START SCREEN'S LINE (the user, 2026-11-24; BrowserLogin.startHint), inside the one app only: the Menu's Restart
+     * game while the running game started the other way, else the advice to try Blizzard's page after a refusal it could fix (the same
+     * test as [nativeRow]'s error line). Never during a reload, never a button, never a switch.
+     */
+    private fun signInHint(s: HomeLogin.State) {
+        startView.hint = if (LauncherHooks.pkg == null || reloadAt != 0L || s.realm) null else BrowserLogin.startHint(
+            failed = s.clientUp && s.phase == HomeLogin.Phase.FAILED, reason = s.reason, captcha = s.captcha,
+            browserOn = Settings.browserLogin || NativeLogin.browserMode, restarting = SetupBridge.restarting,
+            saved = HomeLoginStore.has(this), gameUp = LauncherHooks.gameUp(), launched = BrowserLogin.launched,
+            chosen = Settings.browserLogin)
+    }
 
     /**
      * B ON THE PRESS FRAME (the user 2026-10-09, "Now, before release": the flash and the B glyph's removal came only after the screen
@@ -4314,8 +4390,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var slideT = 0f
 
     /** Home's panels, the bar and the room on show, at [t] of the pause wheel's open (0 = at rest) */
-    /** LB alone held now (CastView's reader) */
+    /** LB alone held now (CastView's reader); fix/lbrb-wheels: the friendly bumper alone (RB while the game swaps its target bumpers) */
     private var lbAloneNow = false
+    /** fix/lbrb-wheels: the bumpers as CastView last said (each alone of the triggers), for a swap that changes while one is held */
+    private var shLb = false
+    private var shRb = false
     /** the LB picture shows while LB alone is held and nothing else has the screen: only in the world (1.0.19: never over the start-up
      *  screens), and only once the class wheel is closed and covered (1.0.20: they take turns, HomeView.classBusy).
      *  fix/lb-home-only (the user 2026-11-19: "Pressing LB in menus like the auction house shows the party selected. That should only
@@ -4698,6 +4777,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // with the game still at its login screen (1.0.37 / 1.0.38), and the game's refusal itself says it is back there
         BrowserLogin.offer(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode, SetupBridge.restarting,
             s.captcha) -> StartView.Login.BROWSER to BrowserLogin.offerLine(s.reason, s.captcha)
+        // the user, 2026-11-24: any OTHER refusal Blizzard's page could fix shows the error, and the advice under it (signInHint) - no
+        // button, nothing switched; asked before NativeLogin.pastLogin for the same reason as the offer
+        BrowserLogin.advise(s.phase == HomeLogin.Phase.FAILED, s.reason, Settings.browserLogin || NativeLogin.browserMode,
+            SetupBridge.restarting, s.captcha, HomeLoginStore.has(this)) -> StartView.Login.NONE to BrowserLogin.failedLine(s.reason)
         NativeLogin.pastLogin -> null
         // browser login: no saved-login row (the sign-in is Blizzard's page on this screen, BattleNetBrowserLogin)
         NativeLogin.browserMode -> null
@@ -4718,7 +4801,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!::startView.isInitialized) return "not up yet"
         fun shown(v: View?) = v != null && v.visibility == View.VISIBLE
         val start = if (shown(startView)) "start screen '${startView.line}' (row ${startView.login.name.lowercase()}${if (loginRevealed) ", for the row" else ""}" +
-            "${if (startView.addonsShown) ", the add-ons' word shown${if (startHow) " with How" else ""}" else ""})"
+            "${if (startView.addonsShown) ", the add-ons' word shown${if (startHow) " with How" else ""}" else ""}" +
+            "${startView.hint?.let { ", under it '$it'" } ?: ""})"
             else "no start screen${if (reloadAt != 0L) " (reload)" else ""}"
         val over = buildList {
             if (::setupView.isInitialized && shown(setupView)) add("setup")
@@ -5192,7 +5276,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the last send of a wish went unanswered: Home's Save hold on the D-pad pictures ends (a cross-fade back to the add-on's `d`) */
     private val mirrorGiveUp = Runnable {
         val d = lastDpad
-        if (d == null || ToolbarMirror.bitOf(d.dirs) != HomeLayoutSolver.mirrorBit(HomeSettings.layout)) homeView.roomBarHoldEnd()
+        if (d == null || ToolbarMirror.bitOf(d.dirs) != homeView.mirrorWant()) homeView.roomBarHoldEnd()
     }
 
     /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 20 /
@@ -5208,7 +5292,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // 1518 (edit mode saves as it goes): nothing is sent while edit mode is live - the D-pad pictures preview the draft - and the
         // record's sides go to the add-on once it is not (onEditLive: Done, Discard, a fight, another room)
         if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }
-        val want = HomeLayoutSolver.mirrorBit(HomeSettings.layout)
+        val want = homeView.mirrorWant()                                // (edit tabs: the page Home lays out of a fight - HomeTab.dpad)
         if (mirrorSentWant != want) { mirrorSentAt = null; mirrorTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp)
@@ -5226,6 +5310,17 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     // ---------------------------------------------------------------- movable Home phase 3: the top-screen combat bar's flag
+    /** EDIT TABS (2026-11-24): the fight tab the flags were last checked for (Party mode's or In combat's: HomeView.fightTab) */
+    private var lastFightTab: HomeTab? = null
+    /** EDIT TABS: the page the NEXT fight lays - Party mode's tab while Party mode is on, else In combat's. The add-on keeps ONE Top
+     *  screen flag (`ct`) and ONE Cast bar flag (`cc`) per character and switches by itself in a fight; the app sets them out of combat
+     *  only, so they follow the tab the next fight will use (a Party mode toggled mid-fight waits for the fight's end, as any change) */
+    private fun fightPage(): HomeLayout = HomeSettings.layout.forTab(homeView.fightTab())
+    /** EDIT TABS: the D-pad's tab the mirror bit was last checked for (HomeView.dpadTab) */
+    private var lastDpadTab: HomeTab? = null
+    /** EDIT TABS: every add-on flag that follows the NEXT fight's tab, checked again (Party mode on / off). The 1529 integration:
+     *  feat/top-castbar's swing flag too ([swingCheck] reads TopCombatBar.swingWanted(fightPage(), ...): the next fight's own Cast bar) */
+    private fun fightFlagsCheck(d: PadMapModel.Dpad) { topCheck(d); castCheck(d); swingCheck(d) }
     private var topSentAt: Long? = null
     private var topSentWant: Boolean? = null
     private var topTries = 0
@@ -5238,7 +5333,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(topAgain); return }      // the 1514 merge: as mirrorCheck
         if (homeView.editing) { ui.removeCallbacks(topAgain); return }                       // 1518: as mirrorCheck (edit mode live)
-        val want = TopCombatBar.wanted(HomeSettings.layout)
+        val want = TopCombatBar.wanted(fightPage())
         if (topSentWant != want) { topSentAt = null; topTries = 0 }
         val now = SystemClock.elapsedRealtime()
         ui.removeCallbacks(topAgain)
@@ -5250,6 +5345,72 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val sent = padTabTap(TopCombatBar.cells(a.on))
                 Log.i(HomeView.TAG, "top combat bar: ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
                 if (++topTries < MIRROR_TRIES) ui.postDelayed(topAgain, TopCombatBar.RESEND_MS + 200L)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- the cast bar in a Top-screen fight (PadMap m187, Book b77)
+    private var castSentAt: Long? = null
+    private var castSentWant: Boolean? = null
+    private var castTries = 0
+    private val castAgain = Runnable { lastDpad?.let { castCheck(it) } }
+    private val CAST_AFTER_TOP_MS = 1_000L
+
+    /** TopCombatBar.castWanted ("Cast bar in fights: Top screen" with In fights = Top screen) vs the add-on's `cc`: [topCheck]'s rules
+     *  (out of combat, re-sent every TopCombatBar.RESEND_MS until `cc` says it, nothing while edit mode is live or with no key; an older
+     *  add-on without `cc`: nothing to send - the bottom screen's strip carries the bar, TopCombatBar.honoured) */
+    private fun castCheck(d: PadMapModel.Dpad) {
+        if (!mirrorCurrent) return
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(castAgain); return }
+        if (homeView.editing) { ui.removeCallbacks(castAgain); return }
+        val want = TopCombatBar.castWanted(fightPage())
+        if (castSentWant != want) { castSentAt = null; castTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(castAgain)
+        // the top flag's own taps just went (the same page-3 cells: TapPad's 0.25 s repeat guard would swallow this batch's first 39)
+        if (topSentAt?.let { now - it < CAST_AFTER_TOP_MS } == true) { ui.postDelayed(castAgain, CAST_AFTER_TOP_MS); return }
+        when (val a = TopCombatBar.decide(want, d.cc, homeView.inFight(), castSentAt?.let { now - it })) {
+            TopCombatBar.Act.Matched -> { castSentAt = null; castSentWant = null; castTries = 0 }
+            TopCombatBar.Act.Wait -> if (d.cc != null) ui.postDelayed(castAgain, TopCombatBar.RESEND_MS)
+            is TopCombatBar.Act.Send -> {
+                castSentAt = now; castSentWant = want
+                val sent = padTabTap(TopCombatBar.castCells(a.on))
+                Log.i(HomeView.TAG, "fight cast bar: ${if (a.on) "top screen" else "bottom screen"} ${if (sent) "sent" else "not sent"}")
+                if (++castTries < MIRROR_TRIES) ui.postDelayed(castAgain, TopCombatBar.RESEND_MS + 200L)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- feat/top-castbar: the swing with our top cast bar (PadMap m190, Book b78)
+    private var swingSentAt: Long? = null
+    private var swingSentWant: Boolean? = null
+    private var swingTries = 0
+    private val swingAgain = Runnable { lastDpad?.let { swingCheck(it) } }
+
+    /** TopCombatBar.swingWanted (Settings > Home "Swing timer", only while "Cast bar in fights: Top screen" is wanted: the add-on draws
+     *  the swing over our top bar then) vs the add-on's `cs`: [castCheck]'s rules (out of combat, re-sent every TopCombatBar.RESEND_MS
+     *  until `cs` says it, nothing while edit mode is live or with no key, an older add-on without `cs`: nothing to send), after the cast
+     *  bar's own taps (the same page-3 cells: TapPad's 0.25 s repeat guard) */
+    private fun swingCheck(d: PadMapModel.Dpad) {
+        if (!mirrorCurrent) return
+        if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(swingAgain); return }
+        if (homeView.editing) { ui.removeCallbacks(swingAgain); return }
+        // the 1529 integration: the NEXT fight's page (edit tabs: In combat's or Party mode's own Cast bar), as topCheck / castCheck read
+        val want = TopCombatBar.swingWanted(fightPage(), HomeSettings.swingTimer)
+        ui.removeCallbacks(swingAgain)
+        if (want == null) { swingSentAt = null; swingSentWant = null; swingTries = 0; return }
+        if (swingSentWant != want) { swingSentAt = null; swingTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        val after = listOfNotNull(topSentAt, castSentAt).maxOrNull()
+        if (after != null && now - after < CAST_AFTER_TOP_MS) { ui.postDelayed(swingAgain, CAST_AFTER_TOP_MS); return }
+        when (val a = TopCombatBar.decide(want, d.cs, homeView.inFight(), swingSentAt?.let { now - it })) {
+            TopCombatBar.Act.Matched -> { swingSentAt = null; swingSentWant = null; swingTries = 0 }
+            TopCombatBar.Act.Wait -> if (d.cs != null) ui.postDelayed(swingAgain, TopCombatBar.RESEND_MS)
+            is TopCombatBar.Act.Send -> {
+                swingSentAt = now; swingSentWant = want
+                val sent = padTabTap(TopCombatBar.swingCells(a.on))
+                Log.i(HomeView.TAG, "top cast bar swing: ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
+                if (++swingTries < MIRROR_TRIES) ui.postDelayed(swingAgain, TopCombatBar.RESEND_MS + 200L)
             }
         }
     }

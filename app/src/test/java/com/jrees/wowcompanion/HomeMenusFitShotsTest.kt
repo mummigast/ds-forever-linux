@@ -115,6 +115,7 @@ class HomeMenusFitShotsTest {
         val map = MapView(app); val cast = CastView(app) { }; val chat = ChatView(app) { }
         holder.addView(map); holder.addView(cast); holder.addView(chat)
         val home = HomeView(app, map, cast, chat) { }
+        home.pageZoomOn = false                                       // (edit tabs: this suite samples Home's own px; the zoom + tab row: EditTabsShotsTest)
         home.borrow()
         ct?.let { home.onPadMap(PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m183","m":{"page":1,"sets":[],"dpad":{"on":true,"want":true,"ct":$it}}}"""))!!) }
         lay(home)
@@ -232,10 +233,14 @@ class HomeMenusFitShotsTest {
         home.pauseSlide(UiKit.PAUSE_OPEN_MS)
         for ((k, d) in drawn(home)) {
             val l0 = laid.getValue(k)
-            if (d.right > 0.5f && d.left < W - 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            // (feat/radial-castbar: Across's bar drops straight down below the page - off the screen, never sideways;
+            //  feat/fight-castbar: the fight strip of a Top-screen fight goes up with the band - off the top edge is off the screen too)
+            if (d.right > 0.5f && d.left < W - 0.5f && d.top < H - 0.5f && d.bottom > 0.5f) no(tag, "pause: $k still on screen ${r(d)}")
+            if ((k == "STRIP" || k == "CAST2") && l0.left <= G + 1f && l0.right >= W - G - 1f) {
+                if (kotlin.math.abs(d.left - l0.left) > 0.5f) no(tag, "pause: Across's $k slid ${(d.left - l0.left).toInt()} sideways")
+                continue
+            }
             if (l0.left <= G + 1f && l0.right >= W - G - 1f) continue                 // a full-screen module keeps its own side
-            // the Both bar's own rule (cb3: it goes left with the chat) is kept
-            if (k == "STRIP" && l0.width() > W / 2f) continue
             val dir = d.left - l0.left
             if (dir != 0f && (dir < 0f) != (l0.centerX() < W / 2f)) no(tag, "pause: $k (centre ${l0.centerX().toInt()}) slid ${dir.toInt()} across the page")
         }
@@ -310,8 +315,12 @@ class HomeMenusFitShotsTest {
         val b = boxes(p.home)
         val party = b["PARTY"] ?: return no(tag, "no party list")
         val col = b.getValue(if (p.layout.party.column == HomeModule.MAP) "MAP" else "CHAT")
-        if (party.centerX() < col.left || party.centerX() > col.right) no(tag, "party list ${r(party)} not in its column ${r(col)}")
         val other = b.getValue(if (p.layout.party.column == HomeModule.MAP) "CHAT" else "MAP")
+        // (full width in Party mode, 2026-11-23: the list spans both columns - its tab still on its own column's outer edge)
+        val wide = party.width() > W * 0.9f
+        if (wide && (party.left > minOf(col.left, other.left) + 1.5f || party.right < maxOf(col.right, other.right) - 1.5f))
+            no(tag, "party list ${r(party)} not across both columns")
+        if (!wide && (party.centerX() < col.left || party.centerX() > col.right)) no(tag, "party list ${r(party)} not in its column ${r(col)}")
         val right = col.left > other.left
         if (right && kotlin.math.abs(party.right - W) > 0.5f || !right && kotlin.math.abs(party.left) > 0.5f)
             no(tag, "party list ${r(party)}: its tab off its column's outer edge")
@@ -381,10 +390,10 @@ class HomeMenusFitShotsTest {
         }
         for (f in HomeLayout.FightBand.values()) {
             p.home.editAct { listOf(HomeEditModel.Fx.Press(BottomTiles.COMBAT, f.ordinal)) }; settle(4)
-            p.home.editAct { it.toggleFight() }; settle(30)
+            p.home.fightToggle(); settle(30)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(4)
             check("fight ${f.name.lowercase()}", ev.menuBox(EditStop.FIGHT_PEN))
-            p.home.editAct { it.closeMenu(); it.toggleFight() }; settle(30)
+            p.home.editAct { it.closeMenu() }; p.home.fightToggle(); settle(30)
         }
         p.home.editCancel(); settle()
     }
@@ -543,5 +552,16 @@ class HomeMenusFitShotsTest {
             } finally { stay = false }
         }
         sheet("toast_top_bar")
+    }
+
+    /** EDIT TABS (2026-11-24): the fight look - solo the In combat tab, with Party mode on its own tab's Fight toggle */
+    private fun HomeView.fightLookOn() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) { if (!m.fightPreview) editKey("PAD1") } else editAct { it.tabTo(HomeTab.COMBAT) }
+    }
+    @Suppress("unused")
+    private fun HomeView.fightToggle() {
+        val m = editModel() ?: return
+        if (m.tab == HomeTab.PARTY) editAct { it.toggleFight() } else editAct { it.tabTo(if (m.tab == HomeTab.COMBAT) HomeTab.OUT else HomeTab.COMBAT) }
     }
 }

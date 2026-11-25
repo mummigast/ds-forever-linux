@@ -695,7 +695,7 @@ namespace DsfDesktop.App
                                 f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
                                 return f;
                             }
-                            var why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                            var why = life.Make(thorW, thorH, OwnHz, DateTime.UtcNow);
                             if (why == null)
                             {
                                 f.Hz = Math.Max(PcChecks.MaxHz(life.GdiName), life.Mode.hz);
@@ -773,10 +773,11 @@ namespace DsfDesktop.App
         public const string MatchSkippedLine = "Screen not matched: Apollo is streaming";
 
         /// <summary>fix/1492-feedback: the stream's "match screen" log line. Pure</summary>
-        public static string MatchLine(bool matched, bool ownScreen, int w, int h, int fps) =>
-            ownScreen ? "match screen: the stream is on our own screen (made at the Thor's " + w + "x" + h + "@" + fps + ")"
-            : matched ? "match screen: Sunshine sets the PC's screen to the Thor's " + w + "x" + h + "@" + fps + " for this stream (back " +
-                        DsfDesktop.Sunshine.SunshineConfig.RevertDelayMs / 1000 + " s after it ends)"
+        public static string MatchLine(bool matched, bool ownScreen, int w, int h, int fps, int ownHz = 0) =>
+            ownScreen ? "match screen: the stream is on our own screen (made at the Thor's " + w + "x" + h + ", " + Math.Max(fps, ownHz) +
+                        " Hz for a " + fps + " fps stream)"
+            : matched ? "match screen: Sunshine sets the PC's screen to the Thor's " + w + "x" + h + " for this " + fps +
+                        " fps stream, its own refresh rate kept (back " + DsfDesktop.Sunshine.SunshineConfig.RevertDelayMs / 1000 + " s after it ends)"
             : "match screen: off (the PC's screen stays as it is; the stream is scaled)";
 
         /// <summary>the Thor's status line when the player's Match is stood down for Apollo's session</summary>
@@ -844,6 +845,10 @@ namespace DsfDesktop.App
         bool TakeScreen() => Interlocked.CompareExchange(ref screenBusyN, 1, 0) == 0;
         void FreeScreen() => Volatile.Write(ref screenBusyN, 0);
         int thorW = 1920, thorH = 1080, thorFps = 60;
+        /// <summary>the PC's real monitors' top refresh rate (their current size; read at each display change, kept when none is on)</summary>
+        int realMaxHz;
+        /// <summary>the rate our own screen is made at (<see cref="ScreenPlan.OwnHz"/>): never below the stream's</summary>
+        int OwnHz => ScreenPlan.OwnHz(thorFps, realMaxHz);
         /// <summary>when the Thor's bridge connected, and whether its stream_mode came since: ours waits for the mode (else it is
         /// made at 1080p60 and made again at 120, two Sunshine restarts each)</summary>
         DateTime thorSince = DateTime.MinValue;
@@ -947,7 +952,7 @@ namespace DsfDesktop.App
                             if (life.Exists) why = null;   // ours is up already: it works
                             else
                             {
-                                why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                                why = life.Make(thorW, thorH, OwnHz, DateTime.UtcNow);
                                 if (why == null)
                                 {
                                     var drv = life.Current?.Name;
@@ -1053,6 +1058,9 @@ namespace DsfDesktop.App
             {
                 if (key != topoKey) Log.I("displays: " + string.Join("; ", win.Where(d => d.Active).Select(d => d.ToString())));
                 topoKey = key;
+                // stream smoothness: the real monitors' top rate, for our own screen's (OwnHz); none on = the last one kept
+                int top = win.Where(d => d.Active && !d.Virtual).Select(d => PcChecks.MaxHz(d.Name)).DefaultIfEmpty(0).Max();
+                if (top > 0 && top != realMaxHz) { realMaxHz = top; Log.I("displays: the real monitors' top rate " + top + " Hz"); }
                 displaysDirty = false;
                 displaysRead = null;
                 displayCheckPending = true;
@@ -1131,7 +1139,7 @@ namespace DsfDesktop.App
                 if (!driversRead) { driversRead = true; Fire(); }
             }
             // no question is asked any more (0.2.37: the window's setup offers the install), so never OfferInstall
-            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, looks && driverUsable, thorWants, offered: true, (thorW, thorH, thorFps), streaming,
+            var (step, why) = life.Decide(now, Settings.OwnScreen, hasScreen, looks && driverUsable, thorWants, offered: true, (thorW, thorH, OwnHz), streaming,
                                           sunshineOnOurs: sessionOutput != null, thorHere: thor || streaming);
             switch (step)
             {
@@ -1178,7 +1186,7 @@ namespace DsfDesktop.App
             var life = Screens;
             try
             {
-                var why = life.Make(thorW, thorH, thorFps, DateTime.UtcNow);
+                var why = life.Make(thorW, thorH, OwnHz, DateTime.UtcNow);
                 if (why != null)
                 {
                     Log.I("virtual screen: couldn't make one: " + why);
@@ -1655,7 +1663,8 @@ namespace DsfDesktop.App
         int? loginRunPid;
         /// <summary>the login.txt run reached character select or the world (WowFlow.LoginRunSettled): no run to ask again for</summary>
         bool loginRunSettled;
-        /// <summary>the Thor's remembered game account (WowAccount; never logged), for the PC's Config.wtf before WoW starts; null = none</summary>
+        /// <summary>the Thor's remembered game account (WowAccount; never logged): only which WTF/Account folder our settings tables follow
+        /// (WowSvSync.PickAccount). Never written into the PC's Config.wtf (the user's ruling 2026-11-23); null = none</summary>
         string gameAccountList;
         readonly object loginGate = new object();
 
@@ -1663,12 +1672,12 @@ namespace DsfDesktop.App
         {
             lock (loginGate)
             {
-                // the game account first: a login that is not wanted now still tells which game account the Thor remembers
+                // the game account first: a login that is not wanted now still tells which game account the Thor remembers (for the
+                // settings follow only: nothing goes into the PC's Config.wtf, the user's ruling 2026-11-23)
                 gameAccountList = WowAccount.Valid(accountList) ? accountList : null;
                 var dir = FlavorDirOrNull;
                 if (dir == null) return;
                 var s = ScreenNow();
-                if (s == WowScreen.None && gameAccountList != null) RememberGameAccount(dir);
                 if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !WowFlow.LoginFileWanted(s)) return;
                 var why = WowLoginFile.Write(dir, email, password);
                 if (why == null) { loginFileAt = DateTime.UtcNow; signInSeenAt = null; loginRunPid = null; loginRunSettled = false; loginFileUnread = false; }
@@ -1738,17 +1747,9 @@ namespace DsfDesktop.App
             }
         }
 
-        /// <summary>the Thor's remembered game account into the PC's Config.wtf (WowAccount: only that key, the PC's own pick wins); only
-        /// while no client runs (WoW writes the file when it closes)</summary>
-        void RememberGameAccount(string flavorDir)
-        {
-            var list = gameAccountList;
-            if (list == null || flavorDir == null) return;
-            Log.I("game account: " + WowAccount.Ensure(Path.Combine(flavorDir, "WTF", "Config.wtf"), list));
-        }
-
         /// <summary>
-        /// Just before Desktop starts WoW: the remembered game account goes in, and when the client of the last login.txt run closed
+        /// Just before Desktop starts WoW (the PC's Config.wtf is left alone: no remembered game account goes in any more, the user's
+        /// ruling 2026-11-23): when the client of the last login.txt run closed
         /// itself (a refused region, 2026-11-17), its file goes (it was for that run only) and the Thor is asked for the login again
         /// ("login_again"; the user's pick 2026-11-17: "Ask the Thor again"). Its answer is an ordinary login_file: written for the new
         /// run, deleted by the same rule.
@@ -1764,8 +1765,6 @@ namespace DsfDesktop.App
             {
                 try
                 {
-                    // the started client's own folder (a start through Battle.net works in Battle.net's folder)
-                    RememberGameAccount(p?.Flavor != null && Wow != null ? Wow.FlavorDir(p.Flavor) : FlavorDirOrNull);
                     var dir = FlavorDirOrNull;
                     int? pidNow = null;
                     using (var w = WowWindow.FindAny(dir)) if (w != null) pidNow = w.Id;
@@ -1909,7 +1908,9 @@ namespace DsfDesktop.App
             // fix/1492-feedback: the match is Sunshine's own (its dd_* options): said for every stream, so the log shows it (test 1492's
             // log had no "match screen" line at all, though Sunshine had switched the monitor to 1920x1080@120 at 15:07:46)
             else if (s == StreamState.Streaming && was != StreamState.Streaming)
-                Log.I(MatchLine(matchWritten, sessionOutput != null, thorW, thorH, thorFps));
+                Log.I(MatchLine(matchWritten, sessionOutput != null, thorW, thorH, thorFps, OwnHz));
+            if (s == StreamState.Streaming && was != StreamState.Streaming)
+                Task.Run(() => StreamLookLine());
             if (s == StreamState.Streaming && was != StreamState.Streaming)
                 Task.Run(() =>
                 {
@@ -1917,6 +1918,26 @@ namespace DsfDesktop.App
                     if (Settings.StartWowOnStream) Want("stream started");
                     else if (Settings.FocusOnStream) { CheckCapture(); FocusWow(); }
                 });
+        }
+
+        /// <summary>
+        /// stream smoothness (a tester's "the game runs at about half its FPS"): one line at a stream's start, 3 s in (after Sunshine's
+        /// own display change): each screen on with its refresh rate now (and its top one), and WoW's own frame settings from its
+        /// Config.wtf - READ ONLY (<see cref="WowFrameCaps"/>; nothing of the game's is written). No names: display numbers only
+        /// </summary>
+        void StreamLookLine()
+        {
+            try
+            {
+                Thread.Sleep(3000);
+                if (Stream != StreamState.Streaming) return;
+                var screens = Displays.WindowsDisplays().Where(d => d.Active)
+                    .Select(d => { var (w, h, hz) = PcChecks.CurrentMode(d.Name); return WowFrameCaps.ScreenWord(d.Name, d.Virtual, w, h, hz, PcChecks.MaxHz(d.Name)); });
+                var dir = FlavorDirOrNull;
+                var caps = dir == null ? "WoW's folder unknown" : WowFrameCaps.Read(Path.Combine(dir, "WTF", "Config.wtf"));
+                Log.I("stream look: screens " + string.Join("; ", screens) + "; WoW " + caps);
+            }
+            catch (Exception e) { Log.I("stream look: " + e.Message); }
         }
 
         /// <summary>from Sunshine's prep commands (--event stream-start / stream-stop, through the single-instance pipe)</summary>
@@ -2885,7 +2906,7 @@ namespace DsfDesktop.App
             if (driversAt == DateTime.MinValue) { driversAt = now; (driverInstalled, driverUsable) = life.Survey(); }
             // a pure look (reviewers 2026-11-17: Decide adopted a leftover and wrote the mode ours was made for)
             var (step, _) = life.Peek(now, Settings.OwnScreen, hasScreen, driverUsable, true, offered: true,
-                                      (thorW, thorH, thorFps), false, sunshineOnOurs: sessionOutput != null, thorHere: true);
+                                      (thorW, thorH, OwnHz), false, sunshineOnOurs: sessionOutput != null, thorHere: true);
             return step == ScreenPlan.Step.MakeOurs;
         }
 

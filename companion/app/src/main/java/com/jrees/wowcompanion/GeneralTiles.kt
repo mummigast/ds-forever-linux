@@ -58,8 +58,11 @@ object GeneralTiles {
     /** the compact rows, in their groups' order */
     enum class Row(val label: String) {
         LANGUAGE("Language"), LOGIN("Battle.net login"), GAME_ACCOUNT("Game account"), WINDOWS_ID(WindowsId.ROW_ID),
-        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start
+        // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): Off / On, from the next game start; 2026-11-24 its words are
+        // the start screen Menu's: "Battle.net sign-in: Saved login / Blizzard's page" (one setting)
         BROWSER_LOGIN(BrowserLogin.ROW_ID),
+        // 2026-11-23: Recommended / the test drivers this APK carries (GraphicsDriver), from the next Play
+        GRAPHICS_DRIVER(GraphicsDriver.ROW_ID),
         WINDOWS_RESTART("Restart the game"), REPORT("Problem report"), RELOAD("Reload game UI"), STATUS("Status"),
         // Linux Streaming Edition (Q2, 2026-11-24): whether presses reach the game as keys or fall back to clicks (KeyHealth)
         KEYS("Keyboard link"),
@@ -70,11 +73,14 @@ object GeneralTiles {
     }
 
     /** [g]'s compact rows now: the login row only when the host has it; Restart the game only while the running game used the other ID
-     *  or signed in the other way (Browser login) */
-    fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean): List<Row> = when (g) {
+     *  or signed in the other way (Browser login), and under Graphics driver while it started with the other driver ([driverRestart]);
+     *  Graphics driver only where a test driver applies ([GraphicsDriver.rowShown]) */
+    fun rows(g: SettingsTabs.Group, loginRow: Boolean, winIdRestart: Boolean, driverRestart: Boolean = false,
+             driverRow: Boolean = GraphicsDriver.rowShown()): List<Row> = when (g) {
         SettingsTabs.Group.LOOK -> listOf(Row.LANGUAGE)
         SettingsTabs.Group.ACCOUNT -> if (StartMode.STREAM_ONLY) emptyList() else listOfNotNull(if (loginRow) Row.LOGIN else null,   // Linux Edition: none
             Row.GAME_ACCOUNT, Row.WINDOWS_ID, Row.BROWSER_LOGIN, if (winIdRestart) Row.WINDOWS_RESTART else null)
+        SettingsTabs.Group.GRAPHICS -> if (StartMode.STREAM_ONLY || !driverRow) emptyList() else listOfNotNull(Row.GRAPHICS_DRIVER, if (driverRestart) Row.WINDOWS_RESTART else null)
         SettingsTabs.Group.HELP -> listOf(Row.REPORT, Row.RELOAD, Row.STATUS, Row.KEYS)
         SettingsTabs.Group.RESET -> listOf(Row.RESET_SETTINGS, Row.RESET_LAYOUTS, Row.RESET_SKILLS, Row.RESET_ALL)
         SettingsTabs.Group.SUPPORT -> listOf(Row.SUPPORT)
@@ -88,6 +94,9 @@ object GeneralTiles {
     }
     /** a row that is ONE button across it, its words on the button (Support the Project, the Reset buttons) */
     fun wide(r: Row): Boolean = r == Row.SUPPORT || resetOf(r) != null
+    /** Game account's "Remembered" (gameAccountAsk = false): the user's ruling 2026-11-23, its words say where it skips the list
+     *  (2026-11-24: Browser login is now Battle.net sign-in's "Blizzard's page", so the words name that) */
+    const val REMEMBERED = "Skip (Blizzard's page)"
     /** the note on Reset layouts / skills with no character known yet */
     const val NO_CHARACTER = "No character yet"
 
@@ -241,6 +250,7 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         ReportFlow.onChange { postInvalidate() }
         WindowsId.onChange { post { relayout() } }
         BrowserLogin.onChange { post { relayout() } }
+        GraphicsDriver.onChange { post { relayout() } }
         if (group == SettingsTabs.Group.HELP) StatusLine.onChange = { post { invalidate() } }
     }
 
@@ -266,7 +276,9 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     // ---------------------------------------------------------------- the model now
 
     private fun slots(): List<GeneralTiles.Slot> = if (group == SettingsTabs.Group.LOOK) GeneralTiles.slots(ScreenSwap.offered) else emptyList()
-    private fun rows(): List<GeneralTiles.Row> = GeneralTiles.rows(group, host.loginRow, winIdRestart())
+    private fun rows(): List<GeneralTiles.Row> = GeneralTiles.rows(group, host.loginRow, winIdRestart(), driverRestart())
+    private fun driverRestart(): Boolean =
+        GraphicsDriver.showRestart(host.gameRunning(), SetupBridge.restarting, GraphicsDriver.launched?.choice, Settings.graphicsDriver)
 
     private fun winIdRestart(): Boolean = WindowsId.showRestart(host.gameRunning(), SetupBridge.restarting, WindowsId.launched, Settings.windowsId) ||
         BrowserLogin.showRestart(host.gameRunning(), SetupBridge.restarting, BrowserLogin.launched, Settings.browserLogin)
@@ -374,6 +386,12 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
                     out += Control(r, b, { Settings.windowsId = WindowsId.VALUES[k] }) }
                 GeneralTiles.Row.BROWSER_LOGIN -> segs(room, BrowserLogin.SEGMENTS).forEachIndexed { k, b ->
                     out += Control(r, b, { Settings.browserLogin = k == 1 }) }
+                GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
+                    segs(room, list.map { GraphicsDriver.words(it) }).forEachIndexed { k, b ->
+                        out += Control(r, b, {
+                            Settings.graphicsDriver = list[k]
+                            DiagLog.event("app", "Graphics driver set ${list[k].id} (from the next Play)")
+                        }) } }
                 GeneralTiles.Row.WINDOWS_RESTART -> out += Control(r, GeneralTiles.button(room).rect(), { host.onRestart() })
                 GeneralTiles.Row.REPORT -> out += Control(r, GeneralTiles.button(room).rect(), { reportPress() })
                 GeneralTiles.Row.RELOAD -> out += Control(r, GeneralTiles.button(room).rect(), { reloadPress() }, reload = true)
@@ -606,6 +624,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
             GeneralTiles.Row.WINDOWS_ID -> seg(c, cs, WindowsId.SEGMENTS, WindowsId.VALUES.indexOf(Settings.windowsId))
             GeneralTiles.Row.LOGIN -> UiKit.button(c, cs[0], if (host.loginSaved()) "Change" else "Save", UiKit.Button.UP)
             GeneralTiles.Row.BROWSER_LOGIN -> seg(c, cs, BrowserLogin.SEGMENTS, if (Settings.browserLogin) 1 else 0)
+            GeneralTiles.Row.GRAPHICS_DRIVER -> GraphicsDriver.offered().let { list ->
+                seg(c, cs, list.map { GraphicsDriver.words(it) }, GraphicsDriver.segment(Settings.graphicsDriver, list)) }
             GeneralTiles.Row.WINDOWS_RESTART -> UiKit.button(c, cs[0], "Restart", UiKit.Button.UP)
             GeneralTiles.Row.REPORT -> {
                 val rec = DiagLog.recording()
@@ -801,6 +821,8 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
         const val SLOP = 24f
         const val ARM_MS = 3000L
         const val SEG_TEXT = 24f
-        val GAME_ACCOUNT = listOf("Ask each time", "Remembered")
+        // the user's ruling 2026-11-23: the remembered one is handed over on Browser login only (the saved login still shows the
+        // game's list), so the second word says where it skips (GameAccountHandover); its prefs value stays gameAccountAsk = false
+        val GAME_ACCOUNT = listOf("Ask each time", GeneralTiles.REMEMBERED)
     }
 }

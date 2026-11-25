@@ -36,7 +36,7 @@ import android.view.View
  * Book b70 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal D7-D9): TWO TAB ROWS, Out of combat | In combat (D7:
  * the old first tab renamed), then Controller | Tap to cast; LB / RB walk all four in reading order ([CastStripModel.stepBind]): Out + Controller
  * (bf-off), Out + Tap to cast (padtab 39 then 26), In + Controller (bf-on), In + Tap to cast (39 then 4: the bar's IN-COMBAT layer, its
- * set slots with the crossed swords, an empty one showing the slot's own thing faded). Macros and Bags get Tap to cast too (D8). Show in
+ * set slots with the crossed swords, an empty one blank, as on Out of combat: 2026-11-23). Macros and Bags get Tap to cast too (D8). Show in
  * combat off: In combat + Tap to cast is dimmed with a lock, its slots grey, "Hidden in fights" (the add-on refuses with one red pulse).
  * The bar Off in Settings: both Tap to cast tabs dimmed, "Bar is off" and "Turn on" (a finger, or the add-on's `cbon` for A: D2).
  */
@@ -96,7 +96,7 @@ class SpellsOverlay(
      *  dimmed, with the note (never a stop: nothing can be placed on a bar the PC's add-on cannot take) */
     private fun olderTab(): Boolean = !three() && DesktopAddons.older(PlayGate.streamingNow(), padMap?.version, CastStripModel.Live.bar?.version)
     /** b70 (D2): the bar is Off in Settings: the bar veiled, "Turn on" */
-    private fun barOff(): Boolean = CastStripModel.barOff(HomeSettings.castBarSide)
+    private fun barOff(): Boolean = !HomeSettings.castBarOnAnyTab          // (edit tabs: Off on every tab of Home - the review)
     /** b70 (D5): Show in combat off: In combat's bar locked */
     private fun fightHidden(): Boolean = !CastStripModel.showOf(HomeSettings.castBarCombat)
     /** b71: Bar in Party mode off: Party mode's bar locked */
@@ -413,7 +413,7 @@ class SpellsOverlay(
         if (cbOn) c.drawRect(RectF(box.left + 20f, CTL_HEAD + 22f, box.right - 20f, BAR_HEAD - 22f), pRecede)
 
         // TAP-TO-CAST BAR: the situation's layer (Out of combat the bar's own, In combat its fight layer, Party mode its party layer): a
-        // set slot wears its badge, an empty one shows what it falls through to, faded; the stop's slot lit and showing the thing where
+        // set slot wears its badge, an empty one draws blank as on Out of combat (the user, 2026-11-23); the stop's slot lit and showing the thing where
         // it would go, the slot it is on already glowing green (picking that one takes it off); locked: veiled with ONE word
         val older = olderTab()                                          // issue 453: dimmed with the note, never gone
         if (three() || older) {
@@ -434,12 +434,11 @@ class SpellsOverlay(
             for (i in 0 until CastStripModel.SLOTS) {
                 val sr = cbSlotRect(i, w)
                 val own = layer?.getOrNull(i)?.takeIf { it.filled }
-                val under = if (sit != 0 && own == null) bar?.slots?.getOrNull(i)?.takeIf { it.filled } else null
-                val sl = own ?: under
+                // an empty slot of In combat's / Party mode's layer: blank, no faded fall-through (what it casts is unchanged)
                 val showThing = cbOn && i == at && here != i && !locked
                 val bmp = if (showThing) thingIcon
-                          else (sl?.icon ?: CastStripView.MACRO_QMARK.takeIf { sl?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
-                UiKit.slot(c, bmp, sr.left, sr.top, sr.width(), dim = locked || (under != null && !showThing))
+                          else (own?.icon ?: CastStripView.MACRO_QMARK.takeIf { own?.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
+                UiKit.slot(c, bmp, sr.left, sr.top, sr.width(), dim = locked)
                 if (own != null && !locked && !showThing) {
                     if (sit == 1) UiKit.tex("combat_swords")?.let { sw -> c.drawBitmap(sw, null, RectF(sr.right - 22f, sr.top - 16f, sr.right + 18f, sr.top + 22f), pBmp) }
                     else if (sit == 2) Icons2.draw(c, SituationPage.Icon.PARTY, sr.right - 2f, sr.top + 2f, 34f)
@@ -481,7 +480,18 @@ class SpellsOverlay(
             !lt && !rt -> UiKit.hints(c, box.right - 80f, HINT_Y, back to "Back")
             else -> null
         }
+        // Book b78 HOLD TO CAST (the study's "Place as hold"): in this box the pressed button IS the place, so holding it for the hold
+        // time places the spell as that button's hold spell; said at the foot's left while the controller waits and hold to cast works
+        if ((r == null || !r.ok) && !cbOn && !party && padMap?.holdOn == true && HoldCast.usable)
+            holdHint(c, box.left + 80f, HINT_Y)
         if (hx != null && ctl?.hosted == true) hostHits.add(RectF(hx - 24f, HINT_Y - 48f, box.right - 40f, HINT_Y + 48f) to "b")
+    }
+
+    /** Book b78: "Hold a button: place as hold" with the hold mark (the room's), at the foot's left */
+    private fun holdHint(c: Canvas, x: Float, cy: Float) {
+        HoldArt.mark(c, x + 16f, cy, 16f, Theme.gold)
+        val p = UiKit.bodyPaint(28f, Theme.text)
+        c.drawText(Tr.t(HOLD_HINT), x + 44f, cy - (p.ascent() + p.descent()) / 2f, p)
     }
 
     /** b71: the situation's bar takes nothing now (the bar Off, Show in combat off, Bar in Party mode off) */
@@ -670,12 +680,15 @@ class SpellsOverlay(
         /** the answer's line: where it went, or (Book b59, an item already there) where it came off */
         fun answerWord(r: SpellsModel.BindResult): String = when {
             r.cleared -> "Cleared from"
+            r.hold -> "Hold spell on"                                   // Book b78: the button was held
             r.fight -> "In combat on"
             else -> "Bound to"
         }
         /** Book b59: the box's question after a press that took (a clear asks to keep it cleared) */
         fun keepQuestion(r: SpellsModel.BindResult): String = if (r.cleared) "Keep it cleared?" else "Keep this binding?"
         private const val SHOW_MS = 1500L
+        /** Book b78: the foot's hold line */
+        const val HOLD_HINT = "Hold a button: place as hold"
         /** b71 (Option C) THE BOX, top to bottom: the thing's line, the situations' row, the answer's line, the Controller heading and its
          *  picture (at [CTL_K], centred on [CTL_CY]), the triggers' chips, the bar's heading and its 8 slots, the hints */
         private const val THING_Y = 180f

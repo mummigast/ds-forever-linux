@@ -14,7 +14,9 @@ import java.nio.file.Files
  * off, or the launcher not in front), but exactly then the bottom screen closed and its CompanionHost.onDestroy stopped the step; it
  * started again only with the bottom screen, i.e. with the launcher in front, where it waits. These tests replay #573's evening
  * (play, quit to the Ready screen, minimize, let the screen time out, come back) against the step's start / stop table, then run the
- * real scheduler through the same moments.
+ * real scheduler through the same moments. 2026-11-24 (the user: "The indoor maps just never builds. I want it to show the bar and build
+ * on the first screen if people wait there"): it now builds on the launcher's screen too, before the first game and after one; only the
+ * game (up, launching, Play pressed) holds it.
  */
 class IndoorBackgroundBuildTest {
     // Linux Edition: these are upstream's rule (streamOnlyBake off); PlayGateTest has the edition's own
@@ -39,8 +41,17 @@ class IndoorBackgroundBuildTest {
         Moment("Play again", Event.COMPANION_UP, gameActive = true, played = true, quiet = false),
     )
 
-    /** the moments in which the step is alive AND allowed to build, under the start / stop table [table] */
-    private fun buildingMoments(table: (Event) -> Action): List<String> {
+    /** 1.0.25 - 1.0.40's wait (superseded by the user's 2026-11-24 ruling): only after a game, and only while nobody looks */
+    private fun oldWait(m: Moment): String? = when {
+        m.gameActive -> PlayGate.GAME_RUNNING
+        !m.played -> PlayGate.AFTER_PLAY
+        !m.quiet -> PlayGate.IN_BACKGROUND
+        else -> null
+    }
+
+    /** the moments in which the step is alive AND allowed to build, under the start / stop table [table] (and [wait]: today's rule) */
+    private fun buildingMoments(table: (Event) -> Action,
+                                wait: (Moment) -> String? = { PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = it.gameActive) }): List<String> {
         var alive = false
         val out = ArrayList<String>()
         for (m in evening) {
@@ -49,8 +60,7 @@ class IndoorBackgroundBuildTest {
                 Action.STOP -> alive = false
                 Action.KEEP, null -> {}
             }
-            val wait = PlayGate.indoorWait(streaming = false, artRunning = false, gameActive = m.gameActive, playedThisRun = m.played, quiet = m.quiet)
-            if (alive && wait == null) out.add(m.what)
+            if (alive && wait(m) == null) out.add(m.what)
         }
         return out
     }
@@ -66,12 +76,16 @@ class IndoorBackgroundBuildTest {
     }
 
     @Test fun beforeTheFixTheStepAndItsBuildWindowNeverOverlapped() {
-        assertEquals("the #573 reproduction: never alive while it may build", emptyList<String>(), buildingMoments(before))
+        assertEquals("the #573 reproduction: never alive while it may build", emptyList<String>(), buildingMoments(before, ::oldWait))
+        // the 568 fix under 1.0.38 - 1.0.40's wait: only the unseen moments after a game
+        assertEquals(listOf("minimized", "the screen times out", "the screen turns off on the Ready screen"),
+            buildingMoments(IndoorSchedulerStep::on, ::oldWait))
     }
 
     @Test fun nowItBuildsWhileMinimizedOrWithTheScreenOff() {
-        assertEquals(listOf("minimized", "the screen times out", "the screen turns off on the Ready screen"),
-            buildingMoments(IndoorSchedulerStep::on))
+        // 2026-11-24: and on DS Forever's own screen, before the first game and after one
+        assertEquals(listOf("DS Forever opens, the launcher in front", "quit to the Ready screen", "minimized", "the screen times out",
+            "back to DS Forever", "the screen turns off on the Ready screen"), buildingMoments(IndoorSchedulerStep::on))
     }
 
     @Test fun neverWhileTheGameRunsEvenMinimized() {
@@ -116,7 +130,7 @@ class IndoorBackgroundBuildTest {
         var stops = 0
         override fun position(): IndoorBakeQueue.Position? = null
         override fun busy() = busyReason() != null
-        override fun busyReason(): String? = PlayGate.indoorWait(false, artRunning = false, gameActive = gameUp, playedThisRun = played, quiet = quiet)
+        override fun busyReason(): String? = PlayGate.indoorWait(false, artRunning = false, gameActive = gameUp)
         override fun gameRunning() = gameUp
         override fun hot() = false
         override fun stop(): Boolean { stops++; return false }      // the bottom screen going away is no stop any more
@@ -124,7 +138,7 @@ class IndoorBackgroundBuildTest {
         override fun sleep(ms: Long) { t += ms; if (t >= minimizeAt) quiet = true }
     }
 
-    @Test fun afterTheGameItWaitsOnTheReadyScreenBuildsOnceMinimizedAndLetsGoAtPlay() {
+    @Test fun afterTheGameItBuildsOnTheReadyScreenAndLetsGoAtPlay() {
         val root = Files.createTempDirectory("indoor568").toFile()
         val sig = Launcher().apply { minimizeAt = 10_000L }
         // Play pressed while the second building is being made
@@ -134,8 +148,9 @@ class IndoorBackgroundBuildTest {
         val s = IndoorScheduler(IndoorBakeStore(root), root, "build", gen, sig, File(root, "data"),
             onStatus = { if (it.phase == IndoorScheduler.Phase.PAUSED) notes.add(it.note) }, log = { logs += it })
         assertEquals(IndoorScheduler.Outcome.RELEASED, s.run())
-        assertEquals("the Ready screen's wait says why, not \"game busy\"", PlayGate.IN_BACKGROUND, notes.first())
-        assertTrue("it waited until the minimize: ${sig.t} ms", sig.t >= 10_000L)
+        // 2026-11-24: the Ready screen in front no longer holds it (it built at once, never waiting for the minimize)
+        assertFalse("no wait for the minimize: $notes", PlayGate.IN_BACKGROUND in notes)
+        assertTrue("it did not wait for the minimize: ${sig.t} ms", sig.t < 10_000L)
         assertEquals("the first made, the second let go at Play, the third never started", 2, gen.made)
         assertEquals("nothing stopped it on the way", 0, logs.count { it == "stopped" })
         assertFalse("a release is no deferral", logs.any { it.startsWith("deferred wmo_1") })
@@ -157,7 +172,8 @@ class IndoorBackgroundBuildTest {
         // (the fake generator's output is not a sealed building: the store defers each; what counts here is that all three ran)
         val outcome = s.run()
         assertTrue("$outcome", outcome == IndoorScheduler.Outcome.COMPLETE || outcome == IndoorScheduler.Outcome.DEFERRED)
-        assertEquals(listOf(PlayGate.AFTER_PLAY, PlayGate.IN_BACKGROUND), notes)
+        // 2026-11-24: neither "builds after you play" nor "builds when minimized" holds it any more: it built at once
+        assertEquals(emptyList<String>(), notes)
         assertEquals(3, gen.made)
     }
 
@@ -168,21 +184,22 @@ class IndoorBackgroundBuildTest {
 
     @Test fun theRowSaysWhatHappens() {
         val head = "Indoor Maps (Optional): "
-        assertEquals(head + "Builds after you play", IndoorSchedulerStep.readiness(null).label)
+        assertEquals(head + "Starting", IndoorSchedulerStep.readiness(null).label)
         assertEquals(head + "Building 120/1853", IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.BAKING)).label)
         assertEquals(head + "120/1853 ready - Waiting: game running",
             IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.PAUSED, PlayGate.GAME_RUNNING)).label)
         assertEquals(head + "Builds when minimized or screen off",
             IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.PAUSED, PlayGate.IN_BACKGROUND, 0, 0)).label)
-        assertEquals(head + "1853/1853 ready", IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).label)
+        // D1 (the user's pick, 2026-11-23): done is "Finished" (IndoorFinishTest: with the places the builder's rule cannot map)
+        assertEquals(head + "Finished: 1,853 maps", IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).label)
         assertTrue(IndoorSchedulerStep.readiness(st(IndoorScheduler.Phase.DONE, ready = 1853)).done)
     }
 
     @Test fun noWaitIsCalledGameBusyAnyMore() {
         for (streaming in listOf(false, true)) for (art in listOf(false, true)) for (game in listOf(false, true))
-            for (played in listOf(false, true)) for (quiet in listOf(false, true)) {
-                val why = PlayGate.indoorWait(streaming, art, game, played, quiet)
-                assertTrue("$streaming $art $game $played $quiet -> $why", why != PlayGate.GAME_BUSY && why?.contains("busy") != true)
+            for (files in listOf(false, true)) {
+                val why = PlayGate.indoorWait(streaming, art, game, files)
+                assertTrue("$streaming $art $game $files -> $why", why != PlayGate.GAME_BUSY && why?.contains("busy") != true)
             }
     }
 }

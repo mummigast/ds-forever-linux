@@ -29,6 +29,12 @@ object LauncherHooks {
      * MainActivity; null = no launcher (nothing closes)
      */
     @Volatile var quitApp: ((force: Boolean) -> Unit)? = null
+    /**
+     * feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): THE MENU'S
+     * EXIT GAME - DS Forever closes at once, Local or Streaming ([ExitNow]: no Exit Game, no countdown; the game killed, every screen
+     * and service gone, the process ended). [why] = who asked ([ExitNow.MENU]). Set by the launcher's MainActivity; null = no launcher
+     */
+    @Volatile var exitNow: ((why: String) -> Unit)? = null
     /** the container's graphics profile as the launcher picked it (the problem report's GPU / driver line), "" = not known yet */
     @Volatile var gpuLine: String = ""
     /** the launch's last step and its result ("preparing the container", "booting", "launch failed: ..."), "" = no launch yet */
@@ -47,7 +53,24 @@ object LauncherHooks {
      * screen went, or never came up: the container failed, the player backed out) or Play starts a new launch. Ends [PlayGate]'s launch
      * window; [launchState] stays for the problem report
      */
-    fun endLaunchWindow() { launchAtMs = 0L; playHoldAtMs = 0L }
+    fun endLaunchWindow() { launchAtMs = 0L; playHoldAtMs = 0L; playPressAtMs = 0L }
+
+    /**
+     * PLAY LETS THE INDOOR MAPS GO AT ONCE (the user, 2026-11-24: the indoor maps build on the first screen while people wait there;
+     * "Pressing Play must not be delayed"): when Play was pressed (epoch ms; 0 = no press under way). Set at the press itself, before
+     * Play's wait for the art; the indoor maps builder lets go of the game files at its next step ([PlayGate.pressHeld]) and Play waits for
+     * that at most a second (IndoorSchedulerStep.letGoForPlay). Cleared by [endLaunchWindow] (the start screen back) and [playStopped]
+     */
+    @Volatile var playPressAtMs = 0L
+    fun playPressed() { playPressAtMs = System.currentTimeMillis(); runCatching { IndoorSchedulerStep.playPressed() } }
+    /** the launch stopped before the game came up (the art not ready, a refusal, a failure): the start screen builds again */
+    fun playStopped(why: String) { playPressAtMs = 0L; runCatching { IndoorSchedulerStep.playStopped(why) } }
+
+    /**
+     * 2026-11-24: the game's own files are being written now (its update, an install, Repair: the launcher's screen): the indoor maps
+     * never read beside that ([PlayGate.FILES_BUSY])
+     */
+    @Volatile var filesBusy: () -> Boolean = { false }
 
     /** when Play held the art ([holdForPlay], epoch ms), 0 = no hold: [PlayGate.held] */
     @Volatile var playHoldAtMs = 0L

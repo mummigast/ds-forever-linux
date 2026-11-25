@@ -5,6 +5,11 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
+- **DS Forever 1.0.41 merged (set 462):** upstream's 1.0.40 + 1.0.41: Edit Home tabs (Out of combat / In combat / Party mode, each
+  its own layout), 60 fps by default + a performance mode, lighter add-ons in fights, our own cast bar above the HUD in fights, Smart Y
+  by a campfire, hold to cast (built for the Thor's own game: likely not working while streaming, untested). The Controller room's
+  open by keys moved to page-3 code 29 (upstream took 24 / 25). Streaming keeps: indoor maps pause while streaming, no sign-in or
+  graphics-driver rows.
 - **Fixes found in review (set 461):** a game rumble running when the stream ends now stops (it buzzed on); the pin buttons get
   their cells before the buffs (a long buff list could leave them without one); the clock check stamps the PC's time at the send.
 - **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start, page

@@ -95,7 +95,8 @@ class HomeEditWiringTest {
         assertTrue("the Layouts reset cancels edit mode", cancel > 0)
         assertTrue("before HomeSettings.resetDone(", cancel < reset.indexOf("HomeSettings.resetDone(ResetPlan.Kind.LAYOUTS in kinds)"))
         // the owner: recorded at the open, checked when the store's owner changes, a park's resume and Save
-        assertTrue(home.contains("HomeLayoutStore.onOwner { editUi.post { editOwnerCheck(\"the character changed\") } }"))
+        // (held weakly since the 1528 leak fix: HomeViewsReleasedTest)
+        assertTrue(home.contains("HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck(\"the character changed\") } })"))
         assertTrue(body(home, "fun editOpen(").contains("editOwner = HomeLayoutStore.owner()"))
         assertTrue(body(home, "private fun editAwayBack()").contains("editOwnerCheck("))
         // the hold: cancelled when another room opens, its gates again at the fire
@@ -125,7 +126,8 @@ class HomeEditWiringTest {
         assertTrue(cancel > 0 && cancel < reset.indexOf("resetRun.run(b, who, all, localGame)"))
         // 1518: no layouts - edit mode opens on the record only (no flips, no slots, no fold of a preset's); the band has no pieces
         // to move (the user's ruling 2026-11-22: the top bar stays still)
-        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start)"))
+        // (edit tabs: it opens on the tab of what Home shows - Party mode on = Party mode's)
+        assertTrue(body(home, "fun editOpen(").contains("HomeEditModel(saved, start, HomeTab.opening(partyOnHere()), PARTY_MODULE)"))
         assertFalse(home.contains("editPiece"))
         assertFalse(body(home, "fun editOpen(").contains("foldOpen"))
         // the cursor's widget gone: the card and the bar (the model's set)
@@ -157,12 +159,23 @@ class HomeEditWiringTest {
         // 1518 build 3: no toolbar switch in edit mode (the band's menu is gone: Settings > Bottom screen has it); the record's sides
         // (its mirror bit) are held on the pictures until the add-on's `d` says them
         assertFalse(home.contains("onEditToolbar"))
-        assertTrue(end.contains("roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null"))
+        // (edit tabs, "Follow the layout on screen": the sides of the page Home lays out of a fight - HomeView.mirrorWant)
+        assertTrue(end.contains("roomBarHold = if (write) mirrorWant() else null"))
+        assertTrue(body(home, "fun mirrorWant(").contains("HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())"))
+        assertTrue(body(host, "private fun mirrorCheck(").contains("val want = homeView.mirrorWant()"))
         assertFalse("no All characters from edit mode", end.contains("all ="))
         // the add-on hears the record's sides / fight bar only once edit mode is not live
         assertTrue(body(host, "private fun mirrorCheck(").contains("if (homeView.editing) { ui.removeCallbacks(mirrorAgain); ui.removeCallbacks(mirrorGiveUp); return }"))
         assertTrue(body(host, "private fun topCheck(").contains("if (homeView.editing) { ui.removeCallbacks(topAgain); return }"))
-        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it) } } }"))
+        assertTrue(host.contains("homeView.onEditLive = { on -> if (!on) ui.post { lastDpad?.let { mirrorCheck(it); topCheck(it); castCheck(it); swingCheck(it) } } }"))
+        // feat/top-castbar: the top bar's swing flag (PadMap m190) waits for Done too
+        assertTrue(body(host, "private fun swingCheck(").contains("if (homeView.editing) { ui.removeCallbacks(swingAgain); return }"))
+        // the 1529 integration (feat/top-castbar x feat/edit-tabs): the swing flag follows the NEXT fight's tab as `ct` / `cc` do (its
+        // own Cast bar, not Out of combat's record), and Party mode on / off checks it again with them
+        assertTrue(body(host, "private fun swingCheck(").contains("TopCombatBar.swingWanted(fightPage(), HomeSettings.swingTimer)"))
+        assertTrue(body(host, "private fun fightFlagsCheck(").contains("{ topCheck(d); castCheck(d); swingCheck(d) }"))
+        // the fight cast bar's flag (PadMap m187) waits for Done as the top flag does
+        assertTrue(body(host, "private fun castCheck(").contains("if (homeView.editing) { ui.removeCallbacks(castAgain); return }"))
         // a held B on the direct feed (press and release) is Discard; the relayed guest's B stays the plain ladder
         assertTrue(host.contains("if (k == \"PAD2\" && !setupPad && room == Room.HOME && homeView.editing) homeView.editB(down) else homeKey(k, down, rep)"))
         assertTrue(body(home, "fun editB(").contains("if (!editHoldUp()) editKey(\"PAD2\")"))

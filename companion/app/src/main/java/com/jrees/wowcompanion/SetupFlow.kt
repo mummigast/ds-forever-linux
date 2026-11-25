@@ -55,6 +55,8 @@ object SetupFlow {
         val dependencies: String? = null,
         /** the optional interiors step's line, null = no such step registered (the release ships without it) */
         val indoor: String? = null,
+        /** D1 (2026-11-23): the interiors step is finished (every building built or turned down by its rule): the row turns green */
+        val indoorDone: Boolean = false,
         /** the client build line, null = not checked yet */
         val client: String? = null,
         /** the newer client build when the local one is out of date */
@@ -148,6 +150,16 @@ object SetupFlow {
      */
     const val MAPS_WAIT = "Maps: build while the game is closed"
     const val MAPS_READY = "Maps: ready"
+
+    /**
+     * D1 (the user's pick, 2026-11-23: "Done when all mappable built"): the finished row, from the step's "Finished: 1,632 maps, 221
+     * places can't be mapped" - "Indoor maps finished: 1,632 maps, 221 places can't be mapped" (its terse name "Indoor maps finished")
+     */
+    fun indoorDoneRow(line: String): String = "$INDOOR_DONE: " + line.removePrefix("Finished: ").removePrefix("Finished")
+        .trimStart(':', ' ').ifEmpty { "ready" }
+    const val INDOOR_DONE = "Indoor maps finished"
+    /** the indoor maps' row while they build or wait (terse: these words alone; es / fr in the app's i18n) */
+    const val INDOOR_ROW = "Indoor maps (optional)"
 
     /** the "DS Forever vX is out" pop-up holds Play until Update or Later (board b-update-blocks-play) */
     /**
@@ -248,7 +260,10 @@ object SetupFlow {
             l.startsWith("Client build:") -> if (i.updating) fraction(i.busy) ?: BAR_MOVING else null
             l.startsWith("DS Forever") -> i.busy?.takeIf { it.startsWith("Downloading the update") }?.let { fraction(it) }
             l.startsWith("Icons:") -> if (c.mark == Mark.OK || l.contains("all icons ready")) null else fraction(l.substringAfter(':'))
+            // 2026-11-24 ("show the bar ... on the first screen"): its count while it builds or waits; while it lists the buildings (no
+            // count yet) or builds with none, a moving bar
             l.startsWith("Indoor maps") -> if (c.mark == Mark.OK) null else fraction(l.substringAfter(':'))
+                ?: l.substringAfter(':').trim().let { if (it.startsWith("Building") || it.startsWith("Listing")) BAR_MOVING else null }
             else -> null
         }
     }
@@ -451,7 +466,10 @@ object SetupFlow {
         if (!streamOnly) add(i.addonsProblem?.let { Check(it + (i.dependencies?.let { d -> "; $d" } ?: ""), Mark.BAD) }
             ?: Check("Add-ons: ${if (i.addonsInstalled) "installed" else "installed with the first Play"}" +
                 (i.dependencies?.let { "; $it" } ?: ""), if (i.addonsInstalled) Mark.OK else Mark.WAIT))
-        i.indoor?.let { add(if (streamOnly) Check("Indoor maps: $it", Mark.OPTIONAL, full = true) else Check("Indoor maps (builds while the game is closed): $it", Mark.OPTIONAL)) }
+        // 2026-11-24 (the user: "show the bar and build on the first screen if people wait there"): it builds here now, so the row no
+        // longer says it waits for the game to close
+        i.indoor?.let { add(if (i.indoorDone) Check(indoorDoneRow(it), Mark.OK) else if (streamOnly) Check("Indoor maps: $it", Mark.OPTIONAL, full = true)
+            else Check("$INDOOR_ROW: $it", Mark.OPTIONAL)) }
         i.client?.let { add(Check("Client build: $it", if (i.gameOutdated == null) Mark.OK else Mark.BAD)) }
         // the app's own update: optional, never a warning (an update waits for the player's press on the bottom screen)
         i.appLine?.let { add(Check(it, if (it.endsWith("up to date")) Mark.OK else Mark.OPTIONAL)) }

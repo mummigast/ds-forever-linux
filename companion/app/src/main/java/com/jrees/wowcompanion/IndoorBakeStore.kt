@@ -149,13 +149,27 @@ internal class IndoorBakeStore(artRoot: File) {
         }
     }
 
-    /** Only currently verified work is visible; unfinished/changed buildings show outdoors. */
-    @Synchronized fun publish(build: String, catalogue: List<Work>): Int {
+    /** the keys the last successful [publish] made visible (the scheduler's roots file, fix 5 of 2026-11-23) */
+    @Volatile var lastPublished: List<String> = emptyList()
+        private set
+
+    /**
+     * Only currently verified work is visible; unfinished/changed buildings show outdoors. One publication at a time in the process
+     * ([PUBLISH_LOCK]: 1525's carry-over publishes from the art run's thread while the bake's own store may finish one); [mayPublish] is
+     * asked under that lock (false: nothing written, -1 - the game moved to another build meanwhile, so this one is stale)
+     */
+    fun publish(build: String, catalogue: List<Work>, mayPublish: () -> Boolean = { true }): Int = synchronized(PUBLISH_LOCK) {
+        if (!mayPublish()) return -1
+        publishLocked(build, catalogue)
+    }
+
+    @Synchronized private fun publishLocked(build: String, catalogue: List<Work>): Int {
         require(build.matches(Regex("[0-9a-f]{32}")))
         require(catalogue.map { it.key }.distinct().size == catalogue.size)
         val models = linkedMapOf<String, JSONObject>()
         val places = linkedMapOf<String, JSONArray>()
         var count = 0
+        val keys = ArrayList<String>()
         for (work in catalogue.sortedBy { it.key }) {
             val complete = forPublication(work) ?: continue
             val dir = complete.directory
@@ -185,6 +199,7 @@ internal class IndoorBakeStore(artRoot: File) {
                 val target = places.getOrPut(continent) { JSONArray() }
                 for (i in 0 until list.length()) target.put(list.optJSONObject(i) ?: error("invalid placement"))
             }
+            keys.add(work.key)
             count++
         }
         val id = UUID.randomUUID().toString().replace("-", "")
@@ -203,6 +218,7 @@ internal class IndoorBakeStore(artRoot: File) {
             require(pointer.toString().toByteArray(Charsets.UTF_8).size <= 4096) { "interiors pointer budget exceeded" }
             Files.move(staging.toPath(), File(snapshots, generation).toPath(), ATOMIC_MOVE)
             atomicJson(File(root, "current.json"), pointer)
+            lastPublished = keys
             return count
         } finally {
             discardStaging(staging)
@@ -254,6 +270,8 @@ internal class IndoorBakeStore(artRoot: File) {
     }
 
     companion object {
+        /** every publication and every sweep of art/interiors in this process holds it (the stores are per caller; the folder is one) */
+        val PUBLISH_LOCK = Any()
         private val INDEXES = setOf("models.json", "places.json", "interiors.json")
         private const val MAX_FILE = 32L * 1024 * 1024
         private const val MAX_BUILDING = 128L * 1024 * 1024

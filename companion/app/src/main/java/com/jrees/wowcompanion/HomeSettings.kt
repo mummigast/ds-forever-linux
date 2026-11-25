@@ -253,12 +253,24 @@ object HomeSettings {
      * band GROWs (today's), keeps its rest SAME size, or stays at rest while the controls show on the TOP screen as the add-on's Wings
      * (TopCombatBar; CompanionHost sends the add-on's flag out of combat). The old key keeps Grow / Same size for an older build.
      */
+    /** (edit tabs, 2026-11-24: the In combat tab's Combat bars - the record's own field. The older routes' facades change the record as
+     *  they always did: a fight tab still a copy of the Out of combat places - Party mode's Combat bars still following In combat's -
+     *  follows them; Edit Home's tabs are the ones kept apart: HomeLayout.withTab) */
     var fightBand: HomeLayout.FightBand
         get() = layout.fight
         set(v) {
             if (v == fightBand) return
             prefs?.edit()?.putBoolean(KEY_COMBAT_GROW, v == HomeLayout.FightBand.GROW)?.apply()
             HomeLayoutStore.update { it.copy(fight = v) }
+        }
+    /** "CAST BAR IN FIGHTS" (the user's ruling 2026-11-23; with In fights = Top screen only): this character's cast bar and swing timer
+     *  in a Top-screen fight - across the top of the bottom screen (BOTTOM, the default) or the game's own on the top screen (TOP;
+     *  TopCombatBar.castWanted, CompanionHost sends the add-on's flag out of combat). The record's field: per character */
+    var fightCast: HomeLayout.FightCast
+        get() = layout.fightCast
+        set(v) {
+            if (v == fightCast) return
+            HomeLayoutStore.update { it.copy(fightCast = v) }
         }
 
     /** p-swing-timer (a player: "would rather turn this off"): the SWING line under the controller in a fight (batch 12: not the cast bar); true = shown (the
@@ -279,8 +291,12 @@ object HomeSettings {
         set(v) {
             if (v == castBarSide && prefs?.contains(KEY_CAST_SIDE) == true) return
             prefs?.edit()?.putString(KEY_CAST_SIDE, v.name)?.remove(KEY_CAST_STRIP)?.apply()
-            // an older route's screen side (Turn on = Both) means the dock under that column NOW (chat left or right)
-            if (!HomeLayoutStore.update { it.copy(cast = HomeLayout.dockOf(v, it.chatSide, keepTop = it.cast.top)) }) for (l in listeners) l()
+            // an older route's screen side (Turn on = Both) means the dock under that column NOW (chat left or right). EDIT TABS (2026-11-24:
+            // the one-time question's Yes and the Controller room's Turn on): the bar at that place on every tab that shows one - a fight
+            // tab with its own bar moves there; one with none keeps none unless its Controller room switch says on ("Show tap-to-cast" /
+            // "Bar in Party mode", the old keys: Show in combat Off by default - the 11-13 ruling's "hide in combat as the default"; Top
+            // screen always keeps it: "Always stay"); Off: off on every tab
+            if (!HomeLayoutStore.update { l -> barEverywhere(l, HomeLayout.dockOf(v, l.chatSide, keepTop = l.cast.top)) }) for (l in listeners) l()
         }
     /** movable Home: the bar's dock in words that follow the widgets (Off / Under or Above chat / Under or Above map / Across / Split) */
     var castDock: HomeLayout.CastDock
@@ -290,21 +306,59 @@ object HomeSettings {
             prefs?.edit()?.putString(KEY_CAST_SIDE, layout.copy(cast = v).castSide.name)?.remove(KEY_CAST_STRIP)?.apply()
             if (!HomeLayoutStore.update { it.copy(cast = v) }) for (l in listeners) l()
         }
+    /** EDIT TABS (the review): the bar has a place on some tab of this character's Home (Out of combat's, In combat's or Party mode's own).
+     *  "The bar is Off" - the Controller room's and the Spells bind box's veil with "Turn on" - means Off on EVERY tab: a bar laid only on
+     *  a fight tab (Edit Home's own layouts) is a bar the player fills and uses ([castBarSide] is the Out of combat tab's alone) */
+    val castBarOnAnyTab: Boolean get() = HomeTab.values().any { layout.own(it).places.cast != HomeLayout.CastDock.OFF }
     /** THE TAP-TO-CAST BAR IN A FIGHT (the user, 2026-11-13: "there should be a settings toggle to make them Hide/stay in combat"; the
      *  picks: its own section's row, "Hide in combat" by default): HIDE fades the bar out while Home shows a fight, STAY keeps it */
+    /** EDIT TABS (2026-11-24, the proposal's decision 5 A: the Controller room's "Show tap-to-cast" stays as a MIRROR): a facade on this
+     *  character's In combat tab - STAY = its bar is on (a place of its own), HIDE = Off there. Turning it on puts the bar back where the
+     *  Out of combat tab has it (under the chat when that tab has none). The old app-wide key is still written (an older build reads it;
+     *  the tabs' migration read it once: HomeTabsMigration) */
     var castBarCombat: CastStripModel.Combat
-        get() = CastStripModel.combatOf(prefs?.getString(KEY_CAST_COMBAT, null))
+        get() = if (prefs == null) CastStripModel.Combat.HIDE
+            else CastStripModel.combatFor(layout.own(HomeTab.COMBAT).places.cast != HomeLayout.CastDock.OFF)
         set(v) {
-            if (v == castBarCombat && prefs?.contains(KEY_CAST_COMBAT) == true) return
+            if (v == castBarCombat && prefs?.getString(KEY_CAST_COMBAT, null) == v.name) return
             prefs?.edit()?.putString(KEY_CAST_COMBAT, v.name)?.apply()
-            for (l in listeners) l()
+            if (!tabBar(HomeTab.COMBAT, v == CastStripModel.Combat.STAY)) for (l in listeners) l()
         }
+    /** [l] with its bar at [d] on every tab that shows one ([castBarSide]) */
+    private fun barEverywhere(l: HomeLayout, d: HomeLayout.CastDock): HomeLayout {
+        if (d == HomeLayout.CastDock.OFF) return l.castEverywhere(d)
+        fun on(t: HomeTab): Boolean = l.own(t).places.cast != HomeLayout.CastDock.OFF || (l.cast == HomeLayout.CastDock.OFF && when (t) {
+            HomeTab.COMBAT -> CastStripModel.combatOf(prefs?.getString(KEY_CAST_COMBAT, null)) == CastStripModel.Combat.STAY ||
+                l.fight == HomeLayout.FightBand.TOP
+            HomeTab.PARTY -> prefs?.getBoolean(KEY_CAST_PARTY, true) ?: true
+            HomeTab.OUT -> true
+        })
+        // (Out of combat first: a fight tab still its copy reads its other places from it - only the bar's place changed there)
+        return HomeTab.values().fold(l) { r, t ->
+            r.withOwn(t, r.own(t).let { it.copy(places = it.places.copy(cast = if (t == HomeTab.OUT || on(t)) d else HomeLayout.CastDock.OFF)) })
+        }
+    }
+    /** tab [t]'s bar on (at the Out of combat tab's place, else under the chat) or Off, nothing else of any tab changed; true = the
+     *  record changed */
+    private fun tabBar(t: HomeTab, on: Boolean): Boolean = HomeLayoutStore.update { l ->
+        val own = l.own(t)
+        val want = if (!on) HomeLayout.CastDock.OFF
+            else own.places.cast.takeIf { it != HomeLayout.CastDock.OFF } ?: l.cast.takeIf { it != HomeLayout.CastDock.OFF }
+                ?: HomeLayout.CastDock.UNDER_CHAT
+        if (own.places.cast == want) l else l.withOwn(t, own.copy(places = own.places.copy(cast = want)))
+    }
     /** cb15 BAR IN PARTY MODE (the user, 2026-11-20, the Controller room's Option C): while Party mode is on the tap-to-cast bar shows, in
      *  fights too, whatever [castBarCombat] says (party heals stay reachable), and its Party mode layer is armed; on by default. The
      *  Controller room's Party mode chip writes it; the add-on is told (padtab 39, 38 then 2 / 3) and keeps a copy (castBarPShow) */
+    /** EDIT TABS (2026-11-24): the Controller room's "Bar in Party mode" stays as a MIRROR of this character's Party mode tab - on = its
+     *  bar has a place, off = Off there (turned on: back where the Out of combat tab has it); the old key still written */
     var castBarPartyShow: Boolean
-        get() = prefs?.getBoolean(KEY_CAST_PARTY, true) ?: true
-        set(v) { if (v != castBarPartyShow) { prefs?.edit()?.putBoolean(KEY_CAST_PARTY, v)?.apply(); for (l in listeners) l() } }
+        get() = prefs == null || layout.own(HomeTab.PARTY).places.cast != HomeLayout.CastDock.OFF
+        set(v) {
+            if (v == castBarPartyShow && prefs?.contains(KEY_CAST_PARTY) == true && prefs?.getBoolean(KEY_CAST_PARTY, true) == v) return
+            prefs?.edit()?.putBoolean(KEY_CAST_PARTY, v)?.apply()
+            if (!tabBar(HomeTab.PARTY, v)) for (l in listeners) l()
+        }
     /** THE ONE-TIME "TRY THE TAP-TO-CAST BAR?" QUESTION (the user, 2026-11-13: "For this new install, I want it to have a one time pop
      *  up asking people if they want to try the new touch input bar"): true once it was answered (or never owed); app-wide, per
      *  install. [CastBarAsk] decides; the host shows it on Home */
@@ -332,6 +386,11 @@ object HomeSettings {
     var clockAmmo: Boolean
         get() = prefs?.getBoolean(KEY_CLOCK_AMMO, true) ?: true
         set(v) { if (v != clockAmmo) { prefs?.edit()?.putBoolean(KEY_CLOCK_AMMO, v)?.apply(); for (l in listeners) l() } }
+    /** feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the pet's
+     *  happiness face in the row (shown only while a pet with happiness is out: a hunter's); on by default, as the HUD's face was */
+    var clockPet: Boolean
+        get() = prefs?.getBoolean(KEY_CLOCK_PET, true) ?: true
+        set(v) { if (v != clockPet) { prefs?.edit()?.putBoolean(KEY_CLOCK_PET, v)?.apply(); for (l in listeners) l() } }
 
     fun onChange(l: () -> Unit) { listeners.add(l) }
     /** a reset (ResetRun) removed saved values: every listener reads them again */
@@ -349,6 +408,7 @@ object HomeSettings {
     private const val KEY_CLOCK_GOLD = "clockGold"
     private const val KEY_CLOCK_BAGS = "clockBags"
     private const val KEY_CLOCK_AMMO = "clockAmmo"
+    private const val KEY_CLOCK_PET = "clockPet"
     private const val KEY_COMBAT_GROW = "combatGrow"
     private const val KEY_SWING = "swingTimer"
     private const val KEY_PAUSE_TAP = "pauseTap"
@@ -719,6 +779,13 @@ class HomeSettingsSection(context: Context,
             listOf("Grow", "Same size", "Top screen"), HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand),
             listOf({ HomeSettings.fightBand = HomeLayout.FightBand.GROW }, { HomeSettings.fightBand = HomeLayout.FightBand.SAME },
                 { HomeSettings.fightBand = HomeLayout.FightBand.TOP }))
+        // the user's ruling 2026-11-23: with Top screen, where the cast bar and the swing timer go in the fight (feat/top-castbar, the
+        // user 2026-11-24: Top screen = our own bar above the HUD in the takeover, the swing with it; other casts stay on this screen)
+        if (HomeSettings.fightBand == HomeLayout.FightBand.TOP)
+            y = row(c, y + GAP, "Cast bar in fights", listOf("With the controller on top: the cast bar and swing timer in fights.",
+                "Top screen puts both above your HUD. Other casts stay here."),
+                listOf("Bottom screen", "Top screen"), HomeLayout.FightCast.values().indexOf(HomeSettings.fightCast),
+                listOf({ HomeSettings.fightCast = HomeLayout.FightCast.BOTTOM }, { HomeSettings.fightCast = HomeLayout.FightCast.TOP }))
         // p-swing-timer: the swing line under the controller in a fight (batch 12: the cast bar is not this setting)
         y = row(c, y + GAP, "Swing timer", listOf("The swing line under the controller in a fight. The cast bar stays."),
             listOf("On", "Off"), if (HomeSettings.swingTimer) 0 else 1,
@@ -759,6 +826,8 @@ class HomeSettingsSection(context: Context,
             listOf({ HomeSettings.clockBags = true }, { HomeSettings.clockBags = false }))
         y = row(c, y + GAP, "Ammo", listOf("In the row under the clock."), listOf("On", "Off"), if (HomeSettings.clockAmmo) 0 else 1,
             listOf({ HomeSettings.clockAmmo = true }, { HomeSettings.clockAmmo = false }))
+        y = row(c, y + GAP, "Pet happiness", listOf("In the row under the clock, with a hunter's pet."), listOf("On", "Off"),
+            if (HomeSettings.clockPet) 0 else 1, listOf({ HomeSettings.clockPet = true }, { HomeSettings.clockPet = false }))
         // START ATTACK ON CAST (Spells' m13): Off / On, from the add-on's word (null = an older add-on: no row); its notes under it
         HomeAttackSwitch.state?.let { s ->
             y = row(c, y + GAP, "Start the attack when a spell is cast",

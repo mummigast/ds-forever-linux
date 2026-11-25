@@ -67,8 +67,8 @@ import kotlin.math.abs
  * row, Clear, padtab 3 / 4 / 5): the add-on puts it on the cast bar's slot.
  *
  * p55 CONTROLLER | TAP TO CAST (the user, 2026-11-19, the approved proposal; PadTabCtl p55, ActionBar cb14): "castbar" is WoW Defaults >
- * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot shows
- * the slot's own thing faded, a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
+ * Tap to cast and "cbfight" In combat > Tap to cast (the bar's in-combat layer, [CastStripModel.Bar.fslots]): an empty fight slot draws
+ * blank (2026-11-23, see p56), a set one carries the crossed swords. The host's sub-tab row (and In combat's check boxes) sit above the
  * left page's content, which moves down [leftDy] (the right page does not). Show in combat off: In combat > Tap to cast is locked
  * (its slots grey, "Hidden in fights", no Change / Move). The bar Off in Settings: both Tap to cast pages dimmed, "Bar is off" and a
  * "Turn on" button ([onTurnOn]: the host sets the setting, D2).
@@ -77,8 +77,10 @@ import kotlin.math.abs
  * devices ([SituationPage]): the section "Controller" with the controller at 0.8 (the normal layers' own geometry through one canvas
  * transform; a finger's place is turned back into it), then the section "Tap-to-cast bar" with the situation's layer of the bar -
  * Out of combat the bar's own slots, In combat its fight layer, Party mode its party layer ("pbar"; the host draws Party mode's
- * controller): a set slot of the layer wears its badge (the swords, the party), an empty one shows what it falls through to,
- * faded. ONE cursor (the add-on's): on the controller (a controller view) or on a slot (a bar view: "castbar", "cbfight", "pbar").
+ * controller): a set slot of the layer wears its badge (the swords, the party), an empty one draws blank, as an empty Out of combat
+ * slot (the user, 2026-11-23: "just show them blank and be consistent like the controller bar out of combat"; what it casts still
+ * falls through, Party > In combat > own, and Home's strip in a fight still shows that). ONE cursor (the add-on's): on the
+ * controller (a controller view) or on a slot (a bar view: "castbar", "cbfight", "pbar").
  * A finger on a slot from the controller sends the bar view's pick first (39 then 29 / 1, or 39, 38 then 1), on the controller from
  * the bar the situation's tab first. Locks: Show in combat off = In combat's bar veiled "Hidden in fights", Bar in Party mode off =
  * Party mode's bar veiled "Off in Party mode", the bar Off = veiled "Bar is off" with ONE "Turn on" on the right page.
@@ -117,6 +119,7 @@ class PadTabPage(
         object Clear : Thing()
         object Uncombat : Thing()       // take a button's combat spell away (its Otherwise spell comes back)
         object Unface : Thing()         // take a base X / Y / A's fight spell away (it is the game's own again in fights)
+        object Unhold : Thing()         // p59 HOLD TO CAST: take the button's hold spell away
     }
 
     private class Box(val kind: String, val thing: Thing)
@@ -216,6 +219,7 @@ class PadTabPage(
         if (chooserList() != null || view == "ds") return null
         if (carryNow() != null) return when (key) { "PAD1" -> DOWN_PLACE; "PAD2" -> DOWN_CANCEL; else -> null }
         if (key == "PAD4" && k.focus == "buttons" && talkKind() != TALK_NONE) return DOWN_TALK          // m170: the talk rows (fights too)
+        if (key == "PAD4" && k.focus == "buttons" && !m.combat && holdButtonShown(m)) return DOWN_HOLD   // m190: Y Hold spell, pushed at the press
         if (k.focus != "buttons" || m.combat) return null
         if (toolAt(shown(), pos) != null) return null                                       // p34: the toolbar's
         if (view == "radial") return when (key) { "PAD1" -> DOWN_CHANGE; "PAD3" -> if (radId(pos) != 0) DOWN_MOVE else null; else -> null }   // p16
@@ -572,7 +576,7 @@ class PadTabPage(
     /** p56: Party mode's bar */
     private fun cbParty() = barView() == "pbar"
     /** p55 (D2): the bar is Off in Settings: the bar veiled, "Turn on" */
-    private fun barOffNow() = CastStripModel.barOff(HomeSettings.castBarSide)
+    private fun barOffNow() = !HomeSettings.castBarOnAnyTab                 // (edit tabs: Off on every tab of Home - the review)
     private fun cbOff() = castBar() && barOffNow()
     /** p55 (D5): Show in combat off: In combat's bar is locked ("Hidden in fights"); p56: Bar in Party mode off: Party mode's */
     private fun barHidden() = (cbFight() && !CastStripModel.showOf(HomeSettings.castBarCombat)) || (cbParty() && !HomeSettings.castBarPartyShow)
@@ -604,7 +608,7 @@ class PadTabPage(
     private fun cbTile(p: Int): RectF = SituationPage.tile(p)
     private fun cbWell() = SituationPage.well()
     /** p56 THE BAR'S SECTION of the situation on show: its heading, its well, the layer's 8 (a set one with its badge, an empty one
-     *  showing what it falls through to, faded), the numbers; the cursor only while it is on the bar; veiled while locked */
+     *  blank as on Out of combat: the user, 2026-11-23), the numbers; the cursor only while it is on the bar; veiled while locked */
     fun drawBar(c: Canvas) {
         val m = map ?: return
         val bv = barView() ?: return
@@ -622,13 +626,11 @@ class PadTabPage(
             val r = cbTile(p)
             val bs = layer?.getOrNull(p - 1)?.takeIf { it.filled }
             val spent = bs?.kind == CastStripModel.Kind.ITEM && bs.count == 0
-            // p55 / p56: an empty slot of a layer falls through (Party > In combat > own): what it casts then, drawn faded; a set one
-            // wears its layer's badge (the crossed swords, the party)
-            // (Party mode's page shows its fall-through out of a fight: the slot's own; In combat's the slot's own too)
-            val under = if (bs == null && bv != "castbar") bar?.slots?.getOrNull(p - 1)?.takeIf { it.filled } else null
-            val icon = if (bs != null) cbIcon(bs) else under?.let { cbIcon(it) }
-            UiKit.slot(c, icon, r.left, r.top, r.width(), count = (bs ?: under)?.countShown ?: 0,
-                dim = locked || under != null || spent || bs?.queued == true)
+            // p55 / p56: a set one wears its layer's badge (the crossed swords, the party). An empty slot of a layer still falls
+            // through when cast (Party > In combat > own) but draws blank, exactly as an empty Out of combat slot (the user,
+            // 2026-11-23: "No caption needed, just show them blank and be consistent like the controller bar out of combat")
+            UiKit.slot(c, bs?.let { cbIcon(it) }, r.left, r.top, r.width(), count = bs?.countShown ?: 0,
+                dim = locked || spent || bs?.queued == true)
             if (bs != null && !locked) {
                 if (bv == "cbfight") swords(c, r.right - 6f, r.top + 6f, 30f)
                 else if (bv == "pbar") Icons2.draw(c, SituationPage.Icon.PARTY, r.right - 6f, r.top + 6f, 30f)
@@ -652,7 +654,7 @@ class PadTabPage(
         if (carry != null) UiKit.carried(c, carryIcon(m, carry), cbTile(pos))
         drawFly(c)
     }
-    /** p55: a cast bar slot's own picture (the out-of-combat thing under an empty fight slot) */
+    /** p55: a cast bar slot's own picture */
     private fun cbIcon(s: CastStripModel.Slot): android.graphics.Bitmap? =
         if (s.kind == CastStripModel.Kind.COMMAND && PadMapModel.kitArt(s.key) != null) UiKit.tex(PadMapModel.kitArt(s.key)!!)
         else (s.icon ?: CastStripView.MACRO_QMARK.takeIf { s.kind == CastStripModel.Kind.MACRO })?.let { Icons.get(it) ?: UiKit.icon(it) }
@@ -793,8 +795,10 @@ class PadTabPage(
 
     /** spells only (the addon's onlySpells, PadTabCtl p43): the radial, and out of combat a combat button. Every In combat button has all
      *  five tabs (the user, 2026-11-12, on 1429: "In combat still does not show all 5 tabs", then the pick "All 5 on every button") */
-    private fun onlySpells(m: PadMapModel.Map): Boolean =
+    private fun onlySpells(m: PadMapModel.Map): Boolean = !holdChooser() &&
         ChooserTabs.spellsOnly(view, combatButton = slotOf(m, shown(), pos)?.kind == PadMapModel.Kind.COMBAT)
+    /** p59 HOLD TO CAST: the chooser open now puts the button's HOLD spell (the add-on's `hold`) */
+    private fun holdChooser(): Boolean = ctl?.takeIf { it.on }?.chooser?.hold == true     // (a finger's takeover keeps the add-on's chooser)
 
     /** p11 the chooser's tabs (the user 2026-10-07: "in the controller menu, when assigning a spell, the spell menu needs some tabs. start on spells, then general (including professions), then extra"); a fight spell's chooser has no Extra */
     private fun chooserTabs(m: PadMapModel.Map) = ChooserTabs.keys(onlySpells(m), stick = stickHere())   // p52: a stick: all five  // p14; p34: the DS tab ("dstool"); p39: In combat too
@@ -814,7 +818,7 @@ class PadTabPage(
         if ((list != "extra" && list != "macros") || onlySpells(m)) {
             val which = if (list == "extra" || list == "macros") "spells" else list
             // the combat view leaves out the spells already on the button (the same spell in and out of a fight only spends a macro)
-            val skip = if (fight()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
+            val skip = if (fight() && !holdChooser()) PadMapModel.onButton(slotOf(m, shown(), pos)) else emptySet()
             val spells = book?.let { b -> SpellsModel.tabSpells(b, which).filter { (it.spellId ?: it.actionId) !in skip }.map { Thing.Spell(it) } }
                 ?: emptyList()
             // (m45 / p24: no "suggestion" row - the user: nothing is ever suggested; the add-on's chooser has none either, so rows line up)
@@ -827,7 +831,7 @@ class PadTabPage(
         by["cmd"] = commandRows(m, false)                                    // m40: none while paused
         by["ds"] = commandRows(m, true)                                      // p34: DS Forever's own (the old 5th tab)
         // m34: the game's bindings (the router points the button's key at them); p53: the cast bar takes none (a key, not a cast)
-        by["bind"] = if (castBar()) emptyList() else m.binds.mapIndexed { j, b -> Thing.Binding(b, m.commands.size + j) }
+        by["bind"] = if (castBar() || holdChooser()) emptyList() else m.binds.mapIndexed { j, b -> Thing.Binding(b, m.commands.size + j) }   // p59: no hold
         val n0 = m.commands.size + m.binds.size
         by["mount"] = m.mounts.mapIndexed { j, x -> Thing.Mount(x, n0 + j) }
         by["item"] = m.items.mapIndexed { j, x -> Thing.Item(x, n0 + m.mounts.size + j) }
@@ -858,6 +862,7 @@ class PadTabPage(
     private fun pinned(m: PadMapModel.Map): Thing? {
         if (view == "radial") return if (radId(pos) != 0) Thing.Clear else null            // p16: "Clear this slice"
         val sl = slotOf(m, shown(), pos)
+        if (holdChooser()) return if (sl?.holdOf(fight()) != null) Thing.Unhold else null   // p59: the hold's own Clear (the tab's)
         return if (fight()) when {
             sl?.kind == PadMapModel.Kind.COMBAT -> Thing.Uncombat
             PadMapModel.isFace(sl) && sl!!.fight != null -> Thing.Unface
@@ -878,6 +883,7 @@ class PadTabPage(
         Thing.Clear -> "clear"
         Thing.Uncombat -> "uncombat"
         Thing.Unface -> "uncface"
+        Thing.Unhold -> "unhold"
     }
 
     private fun thingName(t: Thing): String = when (t) {
@@ -891,6 +897,7 @@ class PadTabPage(
         is Thing.Binding -> t.b.name
         Thing.Clear -> "Clear"
         Thing.Uncombat, Thing.Unface -> "Clear combat spell"
+        Thing.Unhold -> "Clear hold spell"
     }
 
     /** the thing a CONTROLLER box is about, found in the app's own lists */
@@ -898,6 +905,7 @@ class PadTabPage(
         "clear" -> Thing.Clear
         "uncombat" -> Thing.Uncombat
         "uncface" -> Thing.Unface
+        "unhold" -> Thing.Unhold
         "combat", "otherwise", "cface" -> book?.let { bk -> SpellsModel.tabSpells(bk).firstOrNull { idOf(Thing.Spell(it)) == b.what } }?.let { Thing.Spell(it) }
         "command" -> m.commands.indexOfFirst { it.key == b.what }.takeIf { it >= 0 }?.let { Thing.Command(PadMapModel.dress(m.commands[it]), it + 1) }
         "mount", "item", "bind" -> extraAll(book, m).firstOrNull { idOf(it) == b.what }
@@ -1009,6 +1017,11 @@ class PadTabPage(
         for (p in places) ctlSquare(p).let { r ->                           // m155: the sticks' glyph to their size
             val k = r.width() / 80f
             UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
+        }
+        // m190 HOLD TO CAST: a button with a hold spell wears it as a small round badge at its top left (the study's room mockup)
+        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true && HoldCast.usable) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
+            val r = ctlSquare(p); val k = r.width() / 80f
+            HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)
         }
         // p9 CARRYING: the place it left, a faint ghost; what is under the cursor shows the game's swap mark when it is taken
         if (carry != null && carry.set == s && !onBar) {
@@ -1509,7 +1522,7 @@ class PadTabPage(
         }
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
-        UiKit.button(c, act, if (filled) "Change" else "Choose", glyph(8), when {
+        UiKit.button(c, act, "Bind", glyph(8), when {
             m.combat || !changeHere() -> UiKit.Button.DISABLED; isDown(DOWN_CHANGE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
     }
 
@@ -1593,6 +1606,20 @@ class PadTabPage(
         if (fv && !changes && icon != null) c.drawRoundRect(RectF(r.left + 4f, r.top + 4f, r.right - 4f, r.bottom - 4f), 6f, 6f, PDIM)
         if (locked) UiKit.tex("talent_lock")?.let { c.drawBitmap(it, null, RectF(r.right - 20f, r.bottom - 30f, r.right - 2f, r.bottom - 4f), PBMP) }
         if (changes) swords(c, r.left + 8f, r.bottom - 10f, 34f)
+        // PadMap m188 SHOW WHAT'S ON TOP: one of ours over the player's own macro - the mark in the lower-right corner (the swords keep
+        // the left; a locked button holds no macro), on WoW Defaults and In combat alike; the right page's line says what
+        if (!castBar() && PadMapModel.overMacro(sl) != null) UiKit.overMark(c, r.right - 4f, r.bottom - 6f, 13f * sz / 80f)
+    }
+
+    /** m188: the "over your macro" line - the mark, then the words (translated, three lines at most: es / fr run longer), from [y] */
+    private fun drawOverLine(c: Canvas, words: String, x0: Float, x1: Float, y: Float) {
+        UiKit.overMark(c, x0 + 22f, y + 16f, 14f)
+        val pd = TextPaint(UiKit.inkPaint(22f))
+        val t = Tr.span(words)
+        val prose = StaticLayout.Builder.obtain(t, 0, t.length, pd, (x1 - x0 - 56f).toInt())
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(2f, 1f).setMaxLines(3)
+            .setEllipsize(TextUtils.TruncateAt.END).build()
+        c.save(); c.translate(x0 + 46f, y); prose.draw(c); c.restore()
     }
 
     /** where [UiKit.carried] draws a carried picture over [slot] (the same numbers) */
@@ -1640,6 +1667,7 @@ class PadTabPage(
         val slc = slotOf(m, s, pos)
         carryNow()?.let { drawMoveRight(c, m, s, it, w, h); return }
         toolAt(s, pos)?.let { drawToolRight(c, it, w, h); return }         // p34
+        if (holdHere(m) && talkKind() == TALK_NONE) { drawHoldPane(c, m, s, slc, w, h); return }     // m190: Press + Hold, the user's two rows
         if (view == "combat" || slc?.kind == PadMapModel.Kind.COMBAT) { drawCombatRight(c, m, s, slc, w, h); return }
         val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
         val sl = slc
@@ -1701,11 +1729,10 @@ class PadTabPage(
             fixed && sl?.fight != null -> "Out of combat the game keeps this button for itself. In a fight it casts ${sl.fight.name} (In combat, above)."
             PadMapModel.isFace(sl) -> "Out of combat the game keeps this button for itself. In combat (above) it can cast a spell in fights."
             fixed -> "The game keeps this button for itself in the base set: it cannot change. Hold $l or $r for buttons you can set."
-            cbFight() && sl?.kind == PadMapModel.Kind.NONE -> "Empty: slot $pos's own in fights"      // p55 (D10, terse)
-            cbParty() && sl?.kind == PadMapModel.Kind.NONE -> "Empty: slot $pos's own"               // p56 (it falls through)
             cbParty() && sl?.kind == PadMapModel.Kind.SPELL -> "Casts on your pick"                   // p56: Party mode's soft target
             castBar() -> "Spells, items, mounts and commands"                                        // p53 (terse)
-            else -> "Change puts a spell from your book, or one of the game's commands, on this button."
+            PadMapModel.overMacro(sl) != null -> PadMapModel.overMacro(sl)!!                          // m188: our command over the macro
+            else -> "Bind puts a spell from your book, or one of the game's commands, on this button."
         }
         if (talkKind() != TALK_NONE) drawTalkRows(c, w, top + 236f)                    // m170: the talk rows in the help's place
         else if (cbParty() && sl?.kind == PadMapModel.Kind.SPELL) drawPickList(c, x0, x1, top + 236f)   // p56: "Casts on your pick"
@@ -1731,8 +1758,116 @@ class PadTabPage(
         val moveOff = off || sl?.kind == PadMapModel.Kind.BIND || sl?.stick != null          // m34: a binding rides the key; p52: a stick too
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             moveOff -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
-        if (!fixed) UiKit.button(c, act, if (filled) "Change" else "Choose", glyph(8), when {
+        if (!fixed) UiKit.button(c, act, "Bind", glyph(8), when {
             off || !changeHere() -> UiKit.Button.DISABLED
+            isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
+            else -> UiKit.Button.UP
+        })
+    }
+
+    // ---------------------------------------------------------------- m190 HOLD TO CAST (the user's picks 2026-11-24, and the follow-up:
+    // "it should just be like the spell assigned and then the hold spell"; the In combat / Otherwise pair was "cluttered and confusing")
+    /** the hold pane belongs on this page: WoW Defaults / In combat's eight buttons (never a bar page, the radial, Party mode, a stick); an
+     *  add-on before m190 (no `hold` in its padmap) keeps the pages as they were */
+    private fun holdHere(m: PadMapModel.Map): Boolean = m.holdOn != null && !castBar() && cv() != "party" && view != "radial" && pos in 1..8
+    /** hold to cast works now (the add-on's word and the app's probe) */
+    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true && HoldCast.usable
+    /** the Hold spell button is on the page now: the pane's, nothing carried, the toolbar not on the button */
+    private fun holdButtonShown(m: PadMapModel.Map): Boolean =
+        holdHere(m) && holdOn(m) && talkKind() == TALK_NONE && carryNow() == null && toolAt(shown(), pos) == null && chooserList() == null
+            && PadMapModel.holdable(slotOf(m, shown(), pos))
+    /** the Bind hold button: in Move's place (the user, 2026-11-24: "the bind hold should be under the move"), so the order is X Move,
+     *  Y Bind hold, A Bind; with no Move (a base face) it sits right above Bind */
+    @Suppress("UNUSED_PARAMETER")
+    private fun holdRect(m: PadMapModel.Map, w: Float, h: Float): RectF = moveRect(w, h)
+    /** Move's place on the page now: one step above the Bind hold button while that shows, else its own */
+    private fun moveAt(w: Float, h: Float): RectF {
+        val mv = moveRect(w, h)
+        if (map?.let { holdButtonShown(it) } != true) return mv
+        val step = actRect(w, h).top - mv.top
+        return RectF(mv.left, mv.top - step, mv.right, mv.bottom - step)
+    }
+
+    /**
+     * THE SELECTED BUTTON'S PANE (the user's follow-up, 2026-11-24: "it should just be like the spell assigned and then the hold spell"):
+     * the button and the tab as its title, then TWO rows - PRESS, what the button casts on this tab (WoW Defaults: its own; In combat: its
+     * In combat entry, else its own; a base X / Y / B / A: the game's own, or its In combat action), and HOLD, its hold spell (an empty
+     * row when none; while hold to cast is not available, that line instead). Under them the buttons, top to bottom (the user, 2026-11-24:
+     * "the bind hold should be under the move", "Use the word bind instead of change"): X Move, Y Bind hold, A Bind. What the old In combat / Otherwise pair said now lives on the grid: the swords mark on a slot with an In combat entry and
+     * the corner mark on one over the player's own macro (left page and Home's bars), and the In combat tab's Press row. A real problem
+     * (the game not taking key changes, no key on a base face) is the red line over the buttons.
+     */
+    private fun drawHoldPane(c: Canvas, m: PadMapModel.Map, s: Int, sl: PadMapModel.Slot?, w: Float, h: Float) {
+        val x0 = SPLIT + 40f; val x1 = w - 56f; val top = 188f
+        val fightTab = view == "combat"
+        val fixed = sl?.kind == PadMapModel.Kind.FIXED
+        val face = PadMapModel.isFace(sl)
+        val isCombat = sl?.kind == PadMapModel.Kind.COMBAT
+        // the title: the button ("ZL + Y") and the tab
+        val shortButton = if (pos <= 4) arrayOf("Left", "Up", "Right", "Down")[pos - 1] else buttonWord(pos)
+        val title = Tr.t((if (s == 1) "" else setWord(s) + " + ") + shortButton)
+        val pt = UiKit.inkPaint(36f)                                         // (plain ink: the heading face draws its capitals as initials)
+        c.drawText(title, x0 + 8f, top + 46f, pt)
+        val pd = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        val tabWord = Tr.t(if (fightTab) "In combat" else "Out of combat")
+        c.drawText(tabWord, x0 + 8f + pt.measureText(title) + 22f, top + 46f, pd)
+        if (fightTab) swords(c, x0 + 8f + pt.measureText(title) + 22f + pd.measureText(tabWord) + 24f, top + 38f, 28f)
+        UiKit.tex("book_divider")?.let { c.drawBitmap(it, null, RectF(x0, top + 70f, x1, top + 81f), PBMP) }
+        // PRESS: what the button casts on this tab
+        val entry = if (fightTab) PadMapModel.fightRef(sl) else if (isCombat) sl!!.otherwise else null
+        val pressIcon: Bitmap?; val pressName: String; val pressRank: SpellRanks.Badge?; val pressLevel: Boolean
+        when {
+            entry != null -> { pressIcon = Icons.get(entry.icon); pressName = entry.name; pressRank = SpellRanks.of(entry.spellId); pressLevel = false }
+            !fightTab && isCombat -> { pressIcon = null; pressName = "Nothing"; pressRank = null; pressLevel = false }
+            else -> { pressIcon = iconOf(m, sl, pos); pressName = nameOf(m, sl); pressRank = slotRank(m, sl); pressLevel = fixed }
+        }
+        val pl = UiKit.inkPaint(24f).apply { color = Theme.parchmentInkDim }
+        val ps = UiKit.inkPaint(32f)
+        val r1 = top + PANE_ROW1
+        UiKit.spell(c, pressIcon, x0 + 8f, r1 + 8f, 80f, if (pressLevel) UiKit.Spell.LEVEL else UiKit.Spell.KNOWN, rank = pressRank)
+        val pressWord = Tr.t("Press")
+        c.drawText(pressWord, x0 + 112f, r1 + 34f, pl)
+        if (fightTab && entry != null) swords(c, x0 + 112f + pl.measureText(pressWord) + 22f, r1 + 26f, 28f)
+        c.drawText(TextUtils.ellipsize(Tr.t(pressName), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r1 + 80f, ps)
+        // HOLD: its hold spell (an empty row when none), or the line while hold to cast is not available
+        val r2 = r1 + PANE_ROW_STEP
+        if (holdOn(m) && PadMapModel.holdable(sl)) {                      // (an empty button: no Hold row, no Bind hold)
+            val hr = sl?.holdOf(fightTab)                                   // PER TAB: this tab's own hold (the user on 1528)
+            UiKit.spell(c, hr?.let { Icons.get(it.icon) }, x0 + 8f, r2 + 8f, 80f, UiKit.Spell.KNOWN, rank = SpellRanks.of(hr?.spellId))
+            val holdWord = Tr.t("Hold")
+            c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
+            val markX = x0 + 112f + pl.measureText(holdWord) + 22f
+            HoldArt.mark(c, markX, r2 + 26f, 11f, HOLD_MARK)
+            c.drawText(HoldCast.holdWord(), markX + 22f, r2 + 34f, pd)              // the hold time ("0.4 s"), beside its mark
+            if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
+        } else if (!holdOn(m)) {
+            c.drawText(Tr.t(HOLD_OFF_LINE), x0 + 8f, r2 + 50f, pd)
+        }
+        // the red line over the buttons: a note (a refusal, a fight), else a real problem of a base face
+        val act = actRect(w, h)
+        val filled = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
+        val holdBtn = holdButtonShown(m)
+        val above = if (filled) moveAt(w, h).top else if (holdBtn) holdRect(m, w, h).top else act.top
+        val problem = if (face && (fightTab || sl?.fight != null)) when {
+            m.faceRefused -> "Fight buttons unavailable: the game is not taking key changes right now"
+            PadMapModel.faceUnbound(m, sl) -> "The game has no key on ${buttonWord(pos)} now: check the game's controller keys"
+            else -> null
+        } else null
+        val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT
+            else if (sl?.taken == true) "The game keeps this key" else problem
+        note?.let {
+            val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
+            c.drawText(TextUtils.ellipsize(Tr.t(it), TextPaint(pw), x1 - x0, TextUtils.TruncateAt.END).toString(), act.centerX(), above - 22f, pw)
+        }
+        // the buttons: Y Hold spell / Change hold, X Move, A Change (the kit's red buttons, one size)
+        if (holdBtn) UiKit.button(c, holdRect(m, w, h), HOLD_BIND, glyph(6), when {
+            m.combat -> UiKit.Button.DISABLED; isDown(DOWN_HOLD) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        val moveOff = m.combat || sl?.storage == null || sl.kind == PadMapModel.Kind.BIND
+        if (filled) UiKit.button(c, moveAt(w, h), "Move", glyph(5), when {
+            moveOff -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
+        val canChange = if (face && fightTab) !m.combat else !fixed && sl?.storage != null && !m.combat && !(fightTab && m.paused)
+        if (!fixed || (face && fightTab)) UiKit.button(c, act, if (fightTab) "Bind combat spell" else "Bind", glyph(8), when {
+            !canChange || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
         })
@@ -1873,6 +2008,8 @@ class PadTabPage(
                     x0 + 92f, y + 66f, ps)
             }
             // m43: the two rows say it all (no description); the plain D-pad under the DS toolbar is refused when chosen
+            // m188 SHOW WHAT'S ON TOP: the In combat entry over the player's own macro is said (the user: "In combat wins")
+            PadMapModel.overMacro(sl)?.let { drawOverLine(c, it, x0, x1, top + 386f) }
         }
         // m43: any other button: no description under the spell (the user 2026-10-09)
         val act = actRect(w, h)
@@ -1887,7 +2024,7 @@ class PadTabPage(
         val canChange = if (face) inCombat && !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
         if (filled) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat || sl?.storage == null -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
-        if (!fixed || (face && inCombat)) UiKit.button(c, act, if (inCombat) "Change combat spell" else "Change", glyph(8), when {
+        if (!fixed || (face && inCombat)) UiKit.button(c, act, if (inCombat) "Bind combat spell" else "Bind", glyph(8), when {
             !canChange || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
@@ -1928,19 +2065,22 @@ class PadTabPage(
                 .setEllipsize(TextUtils.TruncateAt.END).build()
             c.save(); c.translate(x0 + 8f, FIGHT_ROW_Y + 94f); prose.draw(c); c.restore()
         }
+        // m188 SHOW WHAT'S ON TOP: this entry casts over the player's own macro in fights (a face's problem line keeps its place)
+        val over = if (why == null) PadMapModel.overMacro(sl) else null
+        over?.let { drawOverLine(c, it, x0, x1, FIGHT_ROW_Y + 94f) }
         val act = actRect(w, h)
         val moveShown = sl != null && sl.kind != PadMapModel.Kind.NONE && !fixed
         val above = if (moveShown) moveRect(w, h).top else act.top
         val note = flash?.takeIf { SystemClock.uptimeMillis() < flashUntil } ?: if (m.combat && (!fixed || face)) COMBAT else null
         note?.let {
             val pw = UiKit.inkPaint(24f).apply { color = Color.rgb(150, 30, 20); textAlign = Paint.Align.CENTER }
-            c.drawText(Tr.t(it), act.centerX(), above - (if (why != null) 14f else 40f), pw)
+            c.drawText(Tr.t(it), act.centerX(), above - (if (why != null || over != null) 14f else 40f), pw)
         }
         // m32: any button takes a combat spell (no "spell first" gate any more)
         val canChange = if (face) !m.combat else !fixed && sl?.storage != null && !m.combat && !m.paused   // m40
         if (moveShown) UiKit.button(c, moveRect(w, h), "Move", glyph(5), when {
             m.combat || sl?.storage == null -> UiKit.Button.DISABLED; isDown(DOWN_MOVE) -> UiKit.Button.DOWN; else -> UiKit.Button.UP })
-        if (!fixed || face) UiKit.button(c, act, "Change combat spell", glyph(8), when {
+        if (!fixed || face) UiKit.button(c, act, "Bind combat spell", glyph(8), when {
             !canChange || !changeHere() -> UiKit.Button.DISABLED
             isDown(DOWN_CHANGE) -> UiKit.Button.DOWN
             else -> UiKit.Button.UP
@@ -2058,7 +2198,7 @@ class PadTabPage(
     }
 
     /** the pinned row's words: "Clear this button / slot / slice", or "Clear combat spell" */
-    private fun clearWord(pin: Thing) = thingName(if (pin == Thing.Uncombat || pin == Thing.Unface) pin else Thing.Clear)
+    private fun clearWord(pin: Thing) = thingName(if (pin == Thing.Uncombat || pin == Thing.Unface || pin == Thing.Unhold) pin else Thing.Clear)
         .let { if (it == "Clear") (if (view == "radial") "Clear this slice" else if (castBar()) "Clear this slot" else "Clear this button") else it }
 
     /** a thing's picture (its icon; a command's kit art; a binding's) */
@@ -2260,8 +2400,9 @@ class PadTabPage(
                 }
                 return DOWN_NONE
             }
+            if (map?.let { holdButtonShown(it) } == true && holdRect(map!!, w, h).contains(x, y)) return if (map?.combat == true) DOWN_NONE else DOWN_HOLD   // m190
             if (actRect(w, h).contains(x, y)) return if (carrying) DOWN_PLACE else if (changeHere()) DOWN_CHANGE else DOWN_NONE
-            if (moveRect(w, h).contains(x, y)) return if (carrying) DOWN_CANCEL else DOWN_MOVE
+            if (moveAt(w, h).contains(x, y)) return if (carrying) DOWN_CANCEL else DOWN_MOVE
         }
         return DOWN_NONE
     }
@@ -2327,17 +2468,22 @@ class PadTabPage(
         if (was == DOWN_CANCEL && moveRect(w, h).contains(x, y)) {
             tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CANCEL)); localFirst(DOWN_CANCEL); return
         }
+        // m190: Y Hold spell by touch: the add-on's hold chooser for the button the cursor is on (Book b80 page-3 code 28; no game action)
+        if (was == DOWN_HOLD && holdButtonShown(m) && holdRect(m, w, h).contains(x, y)) {
+            if (m.combat) say(COMBAT) else tap(PadMapModel.holdCells())
+            return
+        }
         // Move: pick it up (a pick; the addon carries the chosen button)
         if (view == "radial" && was == DOWN_MOVE && radId(pos) == 0) return                     // p16: an empty slice has no Move
         if (view == "radial" && was == DOWN_CHANGE && actRect(w, h).contains(x, y)) {
             if (m.combat) say(COMBAT) else { tLock = null; tChooser = "spells"; scroll = 0f }
             return
         }
-        if (was == DOWN_MOVE && moveRect(w, h).contains(x, y) && slotOf(m, shown(), pos).let { it?.kind == PadMapModel.Kind.BIND || it?.stick != null }) {
+        if (was == DOWN_MOVE && moveAt(w, h).contains(x, y) && slotOf(m, shown(), pos).let { it?.kind == PadMapModel.Kind.BIND || it?.stick != null }) {
             say("It rides the key, not the bar: clear it and choose it where you want it"); return
         }
         if ((was == DOWN_TALK || was == DOWN_TALK_REL) && talkRowsAt(w).any { it.first == was && it.second.contains(x, y) }) { talkTap(was); return }
-        if (was == DOWN_MOVE && moveRect(w, h).contains(x, y)) {
+        if (was == DOWN_MOVE && moveAt(w, h).contains(x, y)) {
             if (m.combat) say(COMBAT) else { tap(listOf(PadMapModel.ROW_PADTAB to PadMapModel.COL_CARRY)); localFirst(DOWN_MOVE) }
             return
         }
@@ -2542,6 +2688,7 @@ class PadTabPage(
             Thing.Clear -> tap(pre + listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))
             Thing.Uncombat, Thing.Unface -> tap(pre + listOf(combatPick, PadMapModel.ROW to PadMapModel.COL_CLEAR))
                 ?: say("Use the controller: X on A, then the first row")
+            Thing.Unhold -> tap(pre + listOf(PadMapModel.ROW to PadMapModel.COL_CLEAR))     // p59: the add-on's hold chooser's Clear
         }
     }
 
@@ -2637,6 +2784,15 @@ class PadTabPage(
         private val PPLATE = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(235, 30, 24, 19) }
         /** the In combat tab's assigned-spell row (m160: where Smart Range's plate was; the first row of the page before m146) */
         private const val FIGHT_ROW_Y = 374f
+        /** m190: the pane's two rows (under its title), the hold mark's colour, its words */
+        private const val PANE_ROW1 = 104f
+        private const val PANE_ROW_STEP = 116f
+        private val HOLD_MARK = Color.rgb(150, 110, 40)
+        /** the user, 2026-11-24: "Use the word bind instead of change" - one word for the button, set or not */
+        const val HOLD_BIND = "Bind hold"
+        const val HOLD_OFF_LINE = "Hold to cast isn't available yet"
+        /** m190: the Hold spell button (touch: Book b80's page-3 code 28 opens the add-on's hold chooser) */
+        private const val DOWN_HOLD = 970
     }
 }
 

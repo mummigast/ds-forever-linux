@@ -110,10 +110,11 @@ object HomeTouch {
      * ([HomeGrow.minimize], then the takeover off: no taps, nothing secure; the guest hold and PadOwnerSync's ENTER follow from the
      * layout as after B), without B's grace or trigger checks (those guard a FIGHT BUTTON; a finger on the bottom screen never is).
      * A module the takeover was covering shows again. True = something changed.
-     * [keepGrow] (In fights = Top screen live in a fight: [TopCombatBar.bShrinks] false, the review of 11-22): the grow is NOT minimized -
-     * nothing grew on the bottom screen and the add-on's Wings stay on the top screen to the fight's end, so the module only covers the
+     * [keepGrow] (In fights = Top screen live: [TopCombatBar.touchKeepsGrow], the review of 11-22 kept by the 11-23 B rule): the grow is
+     * NOT minimized - a finger never reaches the add-on's give-back, so its Wings stay on the top screen and the module only covers the
      * page; closed, the takeover comes straight back ([takeover]: the opened-in-fight mark lapses with the module) and the band slides
-     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings.
+     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings. (B does minimize: the add-on's own
+     * secure B gives the Wings back at the same press.)
      */
     fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long, keepGrow: Boolean = false): Boolean {
         var changed = false
@@ -208,6 +209,7 @@ class HomeGrow(staleMs: Long = 20_000L) {
     private var attackWas = false                   // the last word of each, to see a START (false -> true)
     private var fightWas = false
     private var minimized = false
+    private var armed = false                       // Top screen live: the router's own switch (the padmap's `fight`, the Wings' word)
 
     /** a document said the auto-attack is [on] at [now] */
     fun noteAttack(on: Boolean, current: Boolean, now: Long) {
@@ -225,12 +227,38 @@ class HomeGrow(staleMs: Long = 20_000L) {
         fight.note(on, current, now)
     }
 
-    private fun on(now: Long) = attack.shown(now) || fight.shown(now)
+    private fun on(now: Long) = attack.shown(now) || fight.shown(now) || armed
+
+    /**
+     * THE WINGS' OWN START (In fights = Top screen, ActionBar nbar17; the user, 2026-11-23, testing 1523: "It also looks like the top
+     * slides out faster than the bottom slides up"): the Wings rise on the router's switch (the padmap's `fight`: a harmful press on a
+     * hostile target, PadMap's fightSw), the band only on an auto-attack / auto-repeat / combat word - for a caster that is the cast
+     * landing, 1.5-3 s after the Wings were up. With Top screen live (and not Party mode: its fights only) the switch is a THIRD start:
+     * on (0 -> 1) the grow shows as at a new start; off (1 -> 0) it no longer holds it (B / the give-back; the fight's own word still
+     * does). [on] = live && the switch. -> true when it changed
+     */
+    fun noteArmed(on: Boolean): Boolean {
+        if (on == armed) return false
+        if (on) minimized = false                   // a new start (as the router's re-arm)
+        armed = on
+        return true
+    }
 
     /** B while the big controller shows: shrink it until the next start. False when there was nothing to shrink. */
     fun minimize(now: Long): Boolean {
         if (minimized || !on(now)) return false
         minimized = true
+        return true
+    }
+
+    /**
+     * THE ADD-ON RE-ARMED (In fights = Top screen, the user's 11-23 B rule): after B shrank it mid-fight, the game's router armed its
+     * buttons again on a harmful press that started no auto-attack (a caster's next spell: no `aa` start the app could see) - the
+     * padmap's `fight` 0 -> 1. The grow shows again as at a new start; false when nothing was minimized
+     */
+    fun rearm(): Boolean {
+        if (!minimized) return false
+        minimized = false
         return true
     }
 

@@ -28,6 +28,7 @@ internal class NativeIndoorGenerator(
     private val sleep: (Long) -> kotlin.Unit = Thread::sleep
 ) : IndoorGenerator {
     override val algorithm: Int = ALGORITHM
+    override val identity: String get() = baseIdentity()
 
     private class Unit(val spec: JSONObject, val inputs: IntArray = IntArray(0))
     // JNI looks up read by name; keep a named implementation instead of a shrinker-generated SAM.
@@ -41,27 +42,52 @@ internal class NativeIndoorGenerator(
 
     init { check(IndoorGeneratorNative.available) { "libinteriors.so is not in this build" } }
 
-    override fun catalogue(yield: IndoorGenerator.Yield): List<IndoorBakeStore.Work> {
+    override fun catalogue(yield: IndoorGenerator.Yield): List<IndoorBakeStore.Work> = catalogue(yield, null)
+
+    /**
+     * 1525 ([IndoorCatalogueMemo], the user's "Reuse what didn't change"): with a [memo], a WDT's tiles, a file's placements, a root's
+     * units and a unit's input files are the library's earlier answers for the same content key (the file is not read at all), asked
+     * again only for a file whose content key changed. The list is the same as without it: every answer is a pure function of that one
+     * file's bytes and the numbers in its key, and each unit's digest is made below from the live content keys of the files it reads
+     */
+    override fun catalogue(yield: IndoorGenerator.Yield, memo: IndoorCatalogueMemo?): List<IndoorBakeStore.Work> {
         val maps = (game.db2(MAP_TABLE) ?: error("Map.db2 unreadable: ${game.lastReadWhy}")).rows(setOf(0))
+        instances = dungeonsAndRaids(maps)
+        // a file's content key for the memory (null without one, or not known: computed, never kept)
+        fun ck(fid: Int): String? = if (memo == null) null else game.contentKey(fid)?.takeIf { it.isNotEmpty() }?.let { hex(it) }
+        fun json(text: String?, where: String): String? = text?.takeIf {
+            runCatching { JSONObject(it) }.onFailure { e -> Log.w(TAG, "$where: ${e.message}") }.isSuccess
+        }
         // (root, doodad set) -> placements (continent = map id)
         val placed = LinkedHashMap<Pair<Int, Int>, MutableList<JSONObject>>()
         var skipped = 0
         for (map in maps.sortedBy { it.id }) {
             val wdtFid = map.int(MAP_WDT)
             if (wdtFid <= 0 || map.int(MAP_INSTANCE_TYPE) !in INSTANCE_TYPES) continue
-            val wdt = game.read(wdtFid)
-            if (wdt == null) {
-                Log.w(TAG, "map ${map.id}: WDT $wdtFid unreadable: ${game.lastReadWhy}")
-                continue
+            val wdtKey = ck(wdtFid)
+            var wdt: ByteArray? = null
+            var wdtRead = false
+            fun wdtBytes(): ByteArray? {
+                if (!wdtRead) {
+                    wdtRead = true
+                    wdt = game.read(wdtFid)
+                    if (wdt == null) Log.w(TAG, "map ${map.id}: WDT $wdtFid unreadable: ${game.lastReadWhy}")
+                }
+                return wdt
             }
-            val tiles = runCatching { IndoorGeneratorNative.objectTiles(wdt) }
-                .onFailure { Log.w(TAG, "map ${map.id}: ${it.message}") }.getOrNull() ?: continue
+            val tiles = (if (memo != null) memo.ints("tiles", wdtKey, "") { wdtBytes()?.let { objectTiles(map.id, it) } }
+                else wdtBytes()?.let { objectTiles(map.id, it) }) ?: continue
             val files: List<Pair<Int, Boolean>> = if (tiles.isEmpty()) listOf(wdtFid to true) else tiles.map { it to false }
             for ((fid, isWdt) in files) {
                 yield.point()
-                val bytes = (if (isWdt) wdt else game.read(fid)) ?: continue
-                val found = runCatching { JSONObject(IndoorGeneratorNative.placements(bytes, isWdt)) }
-                    .onFailure { Log.w(TAG, "placements in $fid: ${it.message}") }.getOrNull() ?: continue
+                fun answer(): String? {
+                    val bytes = (if (isWdt) wdtBytes() else game.read(fid)) ?: return null
+                    return json(runCatching { IndoorGeneratorNative.placements(bytes, isWdt) }
+                        .onFailure { Log.w(TAG, "placements in $fid: ${it.message}") }.getOrNull(), "placements in $fid")
+                }
+                val text = (if (memo != null) memo.text(if (isWdt) "wdtplaces" else "places", if (isWdt) wdtKey else ck(fid), "") { answer() }
+                    else answer()) ?: continue
+                val found = runCatching { JSONObject(text) }.getOrNull() ?: continue
                 skipped += found.optJSONArray("skipped")?.length() ?: 0
                 val list = found.optJSONArray("placements") ?: continue
                 for (i in 0 until list.length()) {
@@ -78,14 +104,25 @@ internal class NativeIndoorGenerator(
         for ((rootSet, places) in placed) {
             yield.point()
             val (rootFid, dset) = rootSet
-            val root = game.read(rootFid) ?: continue
+            // the root's bytes only when an answer is not known for its content key (without a memory: read first, as always)
+            var rootRead = false
+            var rootBytes: ByteArray? = null
+            fun root(): ByteArray? { if (!rootRead) { rootRead = true; rootBytes = game.read(rootFid) }; return rootBytes }
+            if (memo == null && root() == null) continue
+            val rootKey = ck(rootFid)
             // one placement per MODF unique id (the same record appears in every ADT tile the building overlaps)
             val unique = places.distinctBy { it.optInt("continent") to it.optLong("uid") }
             val profile = profileFor(rootFid)
             // recomputed live at every catalogue run from the shipped list and the root's CASC content key; nothing persisted
             val verdict = verdictFor(rootFid, game.contentKey(rootFid)?.let { hex(it) })
-            val found = runCatching { JSONObject(IndoorGeneratorNative.units(root, rootFid, dset, profile.workTile, profile.roomSpan)) }
-                .onFailure { Log.w(TAG, "root $rootFid set $dset: ${it.message}") }.getOrNull() ?: continue
+            fun unitsNow(): String? {
+                val r = root() ?: return null
+                return json(runCatching { IndoorGeneratorNative.units(r, rootFid, dset, profile.workTile, profile.roomSpan) }
+                    .onFailure { Log.w(TAG, "root $rootFid set $dset: ${it.message}") }.getOrNull(), "root $rootFid set $dset")
+            }
+            val unitsText = (if (memo != null) memo.text("units", rootKey, "$rootFid|$dset|${profile.workTile}|${profile.roomSpan}") { unitsNow() }
+                else unitsNow()) ?: continue
+            val found = runCatching { JSONObject(unitsText) }.getOrNull() ?: continue
             for (key in found.keys()) {
                 val unit = found.optJSONObject(key) ?: continue
                 val gis = (unit.optJSONArray("gis") ?: continue).let { a -> IntArray(a.length()) { a.optInt(it, -1) } }
@@ -99,8 +136,13 @@ internal class NativeIndoorGenerator(
                 verdict.dungeon?.let { spec.put("dungeon", it).put("dungeon_rule", DUNGEON_RULE_LIST) }
                 spec.put("dungeon_source", verdict.source).put("dungeon_provenance", IndoorGeneratorDungeonRoots.PROVENANCE_BUILD)
                 // a malformed unit is reported and left out (never produced, sealed or published); the catalogue goes on
-                val inputs = runCatching { IndoorGeneratorNative.inputs(root, rootFid, gis, dset, profile.portalHops, profile.clip) }
-                    .onFailure { Log.w(TAG, "unit $key: ${it.message}") }.getOrNull() ?: continue
+                fun inputsNow(): IntArray? {
+                    val r = root() ?: return null
+                    return runCatching { IndoorGeneratorNative.inputs(r, rootFid, gis, dset, profile.portalHops, profile.clip) }
+                        .onFailure { Log.w(TAG, "unit $key: ${it.message}") }.getOrNull()
+                }
+                val inputs = (if (memo != null) memo.ints("inputs", rootKey,
+                    "$rootFid|${gis.joinToString(",")}|$dset|${profile.portalHops}|${profile.clip}") { inputsNow() } else inputsNow()) ?: continue
                 val digest = MessageDigest.getInstance("SHA-256")
                 digest.update(spec.toString().toByteArray(Charsets.UTF_8))
                 for (fid in inputs) {
@@ -114,17 +156,34 @@ internal class NativeIndoorGenerator(
                 out.add(IndoorBakeStore.Work(key, hex(digest.digest()), algorithm, locations))
             }
         }
-        Log.i(TAG, "catalogue: ${out.size} buildings from ${placed.size} placed roots; $skipped placements skipped")
+        Log.i(TAG, "catalogue: ${out.size} buildings from ${placed.size} placed roots; $skipped placements skipped" +
+            (memo?.let { "; from memory ${it.hits}, read ${it.misses}" } ?: ""))
         return out
     }
 
+    /** a WDT's object tiles ([IndoorGeneratorNative.objectTiles]), or null (logged) */
+    private fun objectTiles(map: Int, wdt: ByteArray): IntArray? = runCatching { IndoorGeneratorNative.objectTiles(wdt) }
+        .onFailure { Log.w(TAG, "map $map: ${it.message}") }.getOrNull()
+
+    /** 1525: the scheduler's listing memory ([memory]): a listing inside [produce] (a cached catalogue) uses it too */
+    @Volatile private var memo: IndoorCatalogueMemo? = null
+    override fun memory(memo: IndoorCatalogueMemo?) { this.memo = memo }
+
+    /** 2026-11-24: the scheduler's "let go now" (Play, the game, a stop): the input fetches before a building start no more downloads */
+    @Volatile private var letGoNow: () -> Boolean = { false }
+    override fun letGo(check: () -> Boolean) { letGoNow = check }
+
     override fun produce(work: IndoorBakeStore.Work, out: File, yield: IndoorGenerator.Yield) {
-        if (work.key !in units) catalogue(yield)
+        // (a cached catalogue: the units listed once in this session, from the memory; its answers let go after)
+        if (work.key !in units) { val m = memo; try { catalogue(yield, m) } finally { m?.release() } }
         val unit = units[work.key] ?: error("building ${work.key} is not in this game build's catalogue")
         // its input files fetched together, several at a time, when many are missing (after a game update; issue #10)
-        if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList())
+        // (2026-11-24: Play or the game asks the run to let go: no further download starts, the next yield point ends the building)
+        if (unit.inputs.isNotEmpty()) game.prefetch(unit.inputs.toList(), letGo = { runCatching { letGoNow() }.getOrDefault(false) })
+        yield.point()
         var started = 0L
         var attempt: String? = null
+        var midStops = 0
         while (true) {
             started = System.nanoTime()
             try {
@@ -136,13 +195,22 @@ internal class NativeIndoorGenerator(
                     yield.point()
                 }
                 // named, @Keep callback objects: native code finds read()/point() by name, which R8 must not strip (IndoorGeneratorNative.kt)
-                attempt = IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                attempt = try {
+                    IndoorGeneratorNative.generate(unit.spec.toString(), GameSource(game), NativeYield(guarded), out.path)
+                } catch (e: IllegalStateException) {
+                    // D1 (2026-11-23): the builder's own rule (too big, no floors, a budget) is settled, anything else is tried again
+                    if (IndoorGenerator.isRule(e.message)) throw IndoorGenerator.Rejected(e.message!!.trim()) else throw e
+                }
                 break
             } catch (e: LowMemory) {
                 // the T3 parser and the threshold tuning read this exact line
                 Log.w(TAG, "memory guard: stopped (MemAvailable ${e.availableMiB} MiB, phase ${e.phase}) ${work.key}, retry in ${GUARD_BACKOFF_MS / 1000} s")
                 out.listFiles()?.forEach { it.deleteRecursively() }
                 lowMemoryStops++
+                // "Give up after 3 tries" (2026-11-23): a building that runs the device out of memory every time no longer loops here
+                // for good; given up for this run (a failure that may pass: no rule), it is counted as one failed run
+                if (e.phase == "mid" && ++midStops >= GUARD_MAX_MID_STOPS)
+                    throw IllegalStateException("low memory: the building stopped $midStops times mid-build (MemAvailable ${e.availableMiB} MiB)")
                 backoff(yield)
             }
         }
@@ -160,6 +228,16 @@ internal class NativeIndoorGenerator(
     }
 
     override fun close() { units.clear() }
+
+    /** the dungeons and raids of the last Map.db2 read ([catalogue]), or read now (a cached catalogue: one small table) */
+    @Volatile private var instances: Set<Int>? = null
+
+    override fun instanceMaps(): Set<Int>? = instances ?: runCatching {
+        dungeonsAndRaids(game.db2(MAP_TABLE)?.rows(setOf(0)) ?: return null)
+    }.onFailure { Log.w(TAG, "Map.db2: ${it.message}") }.getOrNull()?.also { instances = it }
+
+    private fun dungeonsAndRaids(maps: List<Db2.Row>): Set<Int> =
+        maps.filter { it.int(MAP_INSTANCE_TYPE) in DUNGEON_TYPES }.mapTo(HashSet()) { it.id }
 
     /** low-memory stops so far (each one a backoff and a fresh attempt at the same building) */
     @Volatile var lowMemoryStops = 0
@@ -236,6 +314,14 @@ internal class NativeIndoorGenerator(
         private const val MAP_INSTANCE_TYPE = 8        // 0 world, 1 dungeon, 2 raid, 3 battleground (checked on the PC build)
         private const val MAP_WDT = 21                 // WdtFileDataID (MapHarvest.MAP_WDT)
         private val INSTANCE_TYPES = setOf(0, 1, 2, 3)
+        /** the user's pick (2026-11-23) "Build last, leave out of count": dungeons (1) and raids (2); a battleground is counted */
+        private val DUNGEON_TYPES = setOf(1, 2)
+        /**
+         * a low-memory stop in the MIDDLE of a building (the building itself needs more than the device has: an 8 GB Thor) is tried this
+         * many times in a run, then given up as a failure that may pass (it counts as one failed run: IndoorDeferrals.MAX_TRIES of them
+         * settle it). A stop before it starts is the device's state, not the building's: it waits as before
+         */
+        const val GUARD_MAX_MID_STOPS = 3
         /** The legacy profile of the non-city references (inn, Deadmines, mines, Darnassus, Thunder Bluff): whole portal
          *  components in 150 yd work tiles, one portal hop, Recast 60 yd tiles. */
         val LEGACY = Profile("legacy-r1", workTile = 150.0, roomSpan = 0.0, roomHeight = 0.0, portalHops = 1, contextOnly = false,
@@ -249,6 +335,13 @@ internal class NativeIndoorGenerator(
         fun profileFor(rootFid: Int): Profile = if (rootFid in CITY_ROOTS) CITY_ROOM else LEGACY
 
         val factory = IndoorGenerator.Factory { NativeIndoorGenerator(it) }
+
+        /**
+         * the builder's identity without an open generator (the step's finished stamp is checked before the game files open): the
+         * algorithm and the native library's own version line; the step adds the library's bytes (IndoorSchedulerStep.builderKey)
+         */
+        fun baseIdentity(): String =
+            "a$ALGORITHM|" + (runCatching { if (IndoorGeneratorNative.available) IndoorGeneratorNative.version() else "no-lib" }.getOrNull() ?: "no-lib")
 
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it.toInt() and 255) }
     }

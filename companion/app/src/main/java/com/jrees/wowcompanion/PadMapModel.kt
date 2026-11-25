@@ -56,7 +56,19 @@ object PadMapModel {
                     val taken: Boolean = false,
                     /** m155 (the user, 2026-11-13: "L3 and R3 should show the wow default options on them by default"): an empty stick's
                      *  GAME binding (the doc's gd / gn / gi: the action, its name, an icon fileID or 0), shown until one of ours is put */
-                    val game: Bind? = null)
+                    val game: Bind? = null,
+                    /** m188 SHOW WHAT'S ON TOP (the user's pick 2026-11-23): the game's slot holds the player's OWN macro under our overlay
+                     *  (an In combat entry, [Kind.COMBAT] with [ov], or a command, [Kind.COMMAND]); the padmap's `um` */
+                    val overMacro: Boolean = false,
+                    /** m190 HOLD TO CAST (the user, 2026-11-24: "hold to cast on a button so that we can have 2 spells per button"): the
+                     *  place's HOLD spell (the padmap's `h`: a spell by its id, or a whole-button thing by `t` / `key`); null = none */
+                    val hold: Ref? = null,
+                    /** m190 PER TAB (the user on test 1528: "It should be seperate"): In combat's hold spell (the padmap's `hc`); [hold] is
+                     *  Out of combat's */
+                    val holdCombat: Ref? = null) {
+        /** the hold spell of tab [combat] (In combat / Out of combat) */
+        fun holdOf(combat: Boolean): Ref? = if (combat) holdCombat else hold
+    }
     /** m13 START ATTACK ON CAST (the user 2026-10-01): [on]; [n] buttons converted; [full] / [user] / [refused] buttons left plain (no
      *  Character Macro free / a macro of that name is the user's own / the game refused); [pending] waits for the fight to end; [colOn] /
      *  [colOff] the `spells` row's columns Home's Settings room taps (no-action notes, idempotent) */
@@ -159,6 +171,8 @@ object PadMapModel {
         /** m177 (PadTabCtl p58): the player's own saved macros (by name, the icon our buttons show), the chooser's Macros grid in the
          *  add-on's order (its touch page counts alike); empty = none or an add-on before m177 */
         val macs: List<Mac> = emptyList(),
+        /** m190 HOLD TO CAST: hold spells may be set (the add-on's probe saw the Guide marker, unbound); null = an add-on before m190 */
+        val holdOn: Boolean? = null,
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -221,7 +235,7 @@ object PadMapModel {
                 PadSet(s.optInt("set", 0), objects(s.optJSONArray("slots")).map { o ->
                     Slot(o.optInt("pos", 0), intOrNull(o, "s"), kind(o.optString("kind", "")), intOrNull(o, "id"), textOrNull(o, "n"), o.optInt("i", 0),
                         ref(o.optJSONObject("c")), ref(o.optJSONObject("o")), ref(o.optJSONObject("cf")), o.optBoolean("sa", false), key = textOrNull(o, "key"),
-                        ov = o.optBoolean("ov", false))
+                        ov = o.optBoolean("ov", false), overMacro = o.optBoolean("um", false), hold = ref(o.optJSONObject("h")), holdCombat = ref(o.optJSONObject("hc")))
                 })
             },
             general = count(macros?.optJSONObject("general")),
@@ -245,6 +259,7 @@ object PadMapModel {
             mounts = objects(m.optJSONArray("mounts")).mapNotNull { o -> extra(o) },
             items = objects(m.optJSONArray("items")).mapNotNull { o -> extra(o) },
             macs = objects(m.optJSONArray("macs")).mapNotNull { o -> textOrNull(o, "n")?.let { Mac(it, o.optInt("i", 0)) } },   // m177
+            holdOn = m.optJSONObject("hold")?.optBoolean("on", false),                                                          // m190
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
                 if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
@@ -312,6 +327,8 @@ object PadMapModel {
                     aside = textOrNull(d, "aside"),
                     undone = sides("undone"),
                     ct = if (d.has("ct")) d.optInt("ct", 0).coerceIn(0, 1) else null,
+                    cc = if (d.has("cc")) d.optInt("cc", 0).coerceIn(0, 1) else null,
+                    cs = if (d.has("cs")) d.optInt("cs", 1).coerceIn(0, 1) else null,
                     realmSource = who?.let { textOrNull(it, "rs") },
                     realmHint = who?.let { textOrNull(it, "rh") },
                     cls = who?.let { textOrNull(it, "c") },
@@ -350,12 +367,14 @@ object PadMapModel {
      *  (the once-per-character prompt); [dirs] D-pad position -> what it does (1 "left", 3 "right"; a missing position = the game's own);
      *  [aside] "room" / a game window's name while the router steps aside; [undone] what the one-time ZL+ZR cleanup took on this character
      *  ("left" / "up" / "right": the old m24 DS Bar commands); [ct] m179: this character's top-screen combat bar flag (1 on, 0 off,
-     *  null = an older add-on without it).
+     *  null = an older add-on without it); [cc] m187: this character's "Cast bar in fights" (1 Top screen, 0 Bottom screen, null = an
+     *  older add-on without it); [cs] m190: this character's swing line with our top cast bar (1 on - the default -, 0 off, null = an
+     *  older add-on without it or no key; m188's `gsw`, the game's own swing timer, is gone with the 1523 rule on it).
      *  m24's slot fields ([placed] / [skipped] / [taken]) are empty from m25 on. */
     data class Dpad(val on: Boolean, val placed: kotlin.collections.Map<String, Boolean>, val skipped: List<String>, val taken: List<String>,
                     val want: Boolean?, val colOn: Int?, val colOff: Int?, val name: String?, val realm: String?,
                     val dirs: kotlin.collections.Map<Int, String> = emptyMap(), val aside: String? = null,
-                    val undone: List<String> = emptyList(), val ct: Int? = null,
+                    val undone: List<String> = emptyList(), val ct: Int? = null, val cc: Int? = null, val cs: Int? = null,
                     /** PadMap m178: where the add-on's realm came from ("live" / "kept" / "none"; m180, Safety k10: "guid", "guid-id",
                      *  "sticky", "live", "hint", "picked", "new", "ask", "none"), null from an older add-on. [realm] is the STORED key's */
                     val realmSource: String? = null,
@@ -406,6 +425,31 @@ object PadMapModel {
             }
         }.toMap()
     }
+
+    /**
+     * m190 HOLD TO CAST: the `holdcd` message - each hold spell's running cooldown by its place ("<layer>:<pos>", layer bare / lt / rt /
+     * ltrt) -> the key layer * 8 + position - 1 (Home's band index); EMPTY = none runs. Null when it is not one. The whole state each time.
+     */
+    fun parseHoldCd(msg: JSONObject): kotlin.collections.Map<Int, FaceCd>? {
+        if (msg.optString("type") != "holdcd") return null
+        val k = msg.optJSONObject("k") ?: return emptyMap()
+        val out = HashMap<Int, FaceCd>()
+        for (place in k.keys()) {
+            val parts = place.split(':')
+            val key = parts.takeIf { it.size == 2 }?.let { HoldGate.keyOf(it[0], it[1].toIntOrNull() ?: 0) } ?: continue
+            val o = k.optJSONObject(place) ?: continue
+            val d = o.optDouble("d", 0.0); val l = o.optDouble("l", 0.0)
+            if (d > 0 && l > 0 && l <= d + 0.001) out[key] = FaceCd(d, l, false, o.optBoolean("e", false))
+        }
+        return out
+    }
+
+    /** m190 (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): the button does
+     *  something - its own spell / item / macro / command / binding, an In combat entry, or a base face's game action (PadMap holdOk) */
+    fun holdable(sl: Slot?): Boolean = sl != null && sl.pos != 7 && (sl.kind != Kind.NONE || sl.fight != null || sl.combat != null)   // never B
+
+    /** m190: the hold spell at set (1-4) / position (1-8) of [map] (its slot's `h`), or null */
+    fun holdAt(map: Map, set: Int, pos: Int): Ref? = slot(map, set, pos)?.hold
 
     /** Home's mapping onto the app's clock: the cooldown started (dur - left) before the message ARRIVED ([arrivalMs], elapsedRealtime) */
     fun cdStartMs(cd: FaceCd, arrivalMs: Long): Long = arrivalMs - Math.round((cd.dur - cd.left) * 1000.0)
@@ -531,7 +575,9 @@ object PadMapModel {
     /** p11: [list] "spells" / "general" / "extra" (an older addon's "commands" is read as "extra"); [tabs] = the cursor on its tab row */
     data class Chooser(val list: String, val row: Int, val id: String?, val tabs: Boolean = false,
                        /** p26 (b-bind-combat-toggle): the chooser puts on the In combat layout (true) or the normal one; null = an older add-on */
-                       val fight: Boolean? = null)
+                       val fight: Boolean? = null,
+                       /** p59 HOLD TO CAST: the chooser puts the button's HOLD spell (Y on a button) */
+                       val hold: Boolean = false)
 
     /** A box the controller opened: [kind] "replace" / "make" / "clear" / "full"; [what] a spell id as text or a command key;
      *  [thing] "spell" / "command" / "clear". */
@@ -622,7 +668,7 @@ object PadMapModel {
             page = c.optInt("page", 1).coerceIn(1, 3),
             chooser = ch?.let { Chooser(it.optString("list", "spells").let { l -> if (l == "commands" || l == "dstool") "extra" else l },   // p58: DS is Extra's
                 it.optInt("row", 1).coerceAtLeast(1), textOrNull(it, "id"), it.optBoolean("tabs", false),
-                if (it.has("fight")) it.optBoolean("fight", false) else null) },
+                if (it.has("fight")) it.optBoolean("fight", false) else null, hold = it.optBoolean("hold", false)) },   // p59
             box = bx?.let { b -> textOrNull(b, "kind")?.let { Box(it, textOrNull(b, "what"), textOrNull(b, "thing")) } },
             swap = c.optString("lay", "swap") != "plain",
             note = textOrNull(c, "note"),
@@ -742,6 +788,30 @@ object PadMapModel {
         else -> null
     }
 
+    /**
+     * m188 SHOW WHAT'S ON TOP (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button"; the user's picks "Show
+     * what's on top" and "In combat wins" - the order is kept, only shown): one of our overlays sits over the player's own macro on
+     * [sl] - an In combat entry (it casts there in fights) or a command (it runs there, in and out of fights). Null = none (or an older
+     * add-on without `um`). The Controller room's line and the mark on Home's and the room's button.
+     */
+    fun overMacro(sl: Slot?): String? = when {
+        sl == null || !sl.overMacro -> null
+        sl.kind == Kind.COMBAT && sl.ov -> sl.combat?.name?.let { "In combat: $it casts here in fights, over your macro" }
+            ?: "In combat: a spell casts here in fights, over your macro"
+        sl.kind == Kind.COMMAND -> "DS Forever's ${sl.name ?: sl.key ?: "command"} runs here, over your macro"
+        else -> null
+    }
+    /** m188: every set's slot (sets 1-4, positions 1-8) with [overMacro], by HomeFightFace.cmdKey (Home's bars, Cast's cell index) */
+    fun overMacroKeys(map: Map): Set<Int> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
+        st.slots.filter { it.pos in 1..8 && overMacro(it) != null }.map { (st.set - 1) * 8 + (it.pos - 1) }
+    }.toSet()
+
+    /** m190 HOLD TO CAST: every place's hold spell on the page shown, by Home's band key (layer * 8 + position - 1; layer 0 none, 1 LT,
+     *  2 RT, 3 LT + RT): the corner badge's picture */
+    fun holdRefs(map: Map, combat: Boolean = false): kotlin.collections.Map<Int, Ref> = map.sets.filter { it.set in 1..4 }.flatMap { st ->
+        st.slots.filter { it.pos in 1..8 && it.holdOf(combat) != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.holdOf(combat)!! }
+    }.toMap()
+
     /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
     fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref
 
@@ -756,6 +826,11 @@ object PadMapModel {
     private fun page3(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 37, ROW_PADTAB to code)
     /** p58: the player's macro [index] (0-based in [Map.macs]): its page pick (0-3 = from 0 / 40 / 80 / 120), then the "extra" row's column */
     fun macroCells(index: Int): List<Pair<String, Int>> = page3((index / 40).coerceIn(0, 3)) + (ROW_EXTRA to index % 40)
+    /** m190 (Book b79): the Controller room's Y Hold spell by touch - the add-on's hold chooser for the button the cursor is on
+     *  (PadTabCtl p60 holdOpen), page-3 code 28 (Book b80 on both the 1528b and 1529 merges: 26 on feat/hold-cast, but 26 / 27 are
+     *  feat/top-castbar's swing line off / on, P3_SWING_OFF / P3_SWING_ON) */
+    const val P3_HOLD = 28
+    fun holdCells(): List<Pair<String, Int>> = page3(P3_HOLD)
     /** p58: Extra's category [k] (1-based, ChooserTabs.CATS) folded / opened by touch (codes 4-8) */
     fun foldCells(k: Int): List<Pair<String, Int>> = page3(3 + k.coerceIn(1, 5))
     /** movable Home (Book b74; b76 the 1515 merge: off the sticky realm question's 9-19): the DS toolbar's mirror bit for this character,
@@ -766,6 +841,14 @@ object PadMapModel {
      *  22 (off) / 23 (on) */
     const val P3_TOP_OFF = 22
     const val P3_TOP_ON = 23
+    /** the user's ruling 2026-11-23 (Book b77, PadMap m187): "Cast bar in fights" for this character with In fights = Top screen, page-3
+     *  codes 24 (Bottom screen) / 25 (Top screen: the add-on's own cast bar above the HUD in the takeover, ActionBar nbar18) */
+    const val P3_CAST_OFF = 24
+    const val P3_CAST_ON = 25
+    /** feat/top-castbar (Book b78, PadMap m190): the swing line with our top cast bar for this character, page-3 codes 26 (off) / 27 (on)
+     *  - the app's Settings > Home "Swing timer" (TopCombatBar.swingWanted) */
+    const val P3_SWING_OFF = 26
+    const val P3_SWING_ON = 27
     /** the sticky realm question's codes (Book b74, test build 1515): [KeyPick.NEW_CODE] 9 = "a new character", [KeyPick.FIRST_CODE] 10
      *  .. 19 = the add-on's candidates 1-10 (KeyPick sends them; HomeLayoutStoreTest keeps these two equal to KeyPick's) */
     const val P3_KEY_NEW = 9
@@ -775,13 +858,18 @@ object PadMapModel {
     val PAGE3_CODES: kotlin.collections.Map<String, IntRange> = mapOf("macro pages" to 0..3, "extra folds" to 4..8,
         "key question" to P3_KEY_NEW..P3_KEY_LAST,
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
-        "controller room open" to P3_CROOM..P3_CROOM)
-    /** Linux Streaming Edition (2026-11-23, Book's P3[24]): the Controller room's open by keys (padtab is a key row); the spells row's
-     *  "croom" cell is a secure row's and went as a click, which missed now and then ("Open the Controller room first") */
-    const val P3_CROOM = 24
+        "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
+        "hold chooser" to P3_HOLD..P3_HOLD,
+        "controller room open" to P3_CROOM..P3_CROOM)        // m190 / Book b79 (b80: code 28, off the swing's 26)
+    /** Linux Streaming Edition (2026-11-23, Book's P3[29]; was 24 until the 1.0.41 merge, where upstream's fight cast bar took 24 / 25):
+     *  the Controller room's open by keys (padtab is a key row); the spells row's "croom" cell is a secure row's and went as a click,
+     *  which missed now and then ("Open the Controller room first") */
+    const val P3_CROOM = 29
     fun croomCells(): List<Pair<String, Int>> = page3(P3_CROOM)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
+    fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)
+    fun fightSwingCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_SWING_ON else P3_SWING_OFF)
     /** the tab's index (1-4) by its name */
     fun tabOf(view: String) = when (view) { "ds" -> 2; "combat" -> 3; "radial" -> 4; "party" -> 5; "castbar" -> 6; "cbfight" -> 7; "pbar" -> 8; else -> 1 }
     /** the room's tabs in order (PadTabCtl's TABS; p33: the 5th, Party mode; p53: the 6th, the Cast bar, opened by padtab 39 then 29) */

@@ -29,7 +29,7 @@ local S, SN, CALL = WC.S, WC.SN, WC.CALL
 -- same size as the name plate one, the name plate one should be slightly smaller"): the floating Y glyph (WowCompanionTargetY) in
 -- OV.tg.LAYER (MEDIUM, level 5: under Hub's target bar, uf22 TB.STRATA / TB.LVL) and sized by Hub's WC.uf.yPlate (0.85 of the bar's glyph),
 -- OV.tg.SIZE without Hub.
-local PV = "m187"   -- bump on every change; m187 THE 1.0.39 MERGE (Linux Streaming Edition, 2026-11-24): both lines kept. Upstream 1.0.39: m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky Fork: m186x (the user 2026-11-24, WSG: flags and corpses not taken by X in a fight): a bare X with a soft-interact target is Forever's Interact in fights too; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
+local PV = "m197"   -- bump on every change; m197 THE 1.0.41 MERGE (Linux Streaming Edition, 2026-11-25): both lines kept. Upstream 1.0.41: m196 THE 1530 MERGE OF TEST 1529 (m194 and m195 are feat/hold-cast's rebuild of hold to cast, made meanwhile on its branch, so this merge sits above them; the user on test 1529, 2026-11-24: "Where's my edit mode tabs?"; test 1529 = int/1528b, the 1530 build = int/1529 (Edit Home tabs, performance, the sign-in Menu) with it merged in): both sides took m192 for feat/hold-cast's Bind follow-up (a hold only on a button that has something), and test 1529's m193 (per-tab holds, never on B) came on top; the code is one (the same follow-up on both sides); all notes kept below as each wrote them (1529's m192 after 1528b's); nothing else changed; m193 THE 1528b MERGE OF feat/hold-cast's PER-TAB HOLDS (the user on test 1528: "Wait the hold buttons are showing on my out of combat bar? It should be seperate"; and "I want to remove the hold option on B it conflicts too hard and does weird shit"): a hold belongs to its tab (the store's normal / combat; Party mode none), holdAt / holdTab read the tab on show, test 1528's flat holds move onto In combat at their read, and B (position 7) never takes a hold (ack hold false "b"); m192 THE 1528b TEST BUILD MERGE: feat/hold-cast's follow-up (the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already"): OV.hold.has / holdOk = a place takes a hold only with a press of its own or as a base face, the hold place refuses an empty one (ack hold false "empty"), OV.hold.sweep drops a hold whose button has nothing any more (out of combat, once the bars are loaded); the app's Hold spell touch is Book b80's page-3 code 28; nothing else changed; m192 THE 1529 TEST BUILD MERGE: feat/hold-cast's Bind follow-up (a hold only on a button that has something: OV.hold.has, putHold refuses "empty", holdOk, OV.hold.sweep at the login / once the bars are loaded) came without a tag of its own over m190, merged into the 1528 merge's m191; the hold chooser's touch is Book b80's page-3 code 28 (26 on its branch, which is feat/top-castbar's swing off); nothing else changed; m191 THE 1528 TEST BUILD MERGE: three branches took m190 at once, all kept, their notes below as each wrote them: feat/top-castbar's m190 (the swing with our top cast bar: ctsw / `cs`), feat/smarty-campfire's m190 (Smart Y's Sit by the fire row: kind "fire", fireOff) and feat/hold-cast's m190 (hold to cast: holdBy, the router's hold texts, the holdmap, holdcd, `h` / hold.on); the app reads m191 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: our own cast bar above the HUD with the swing over it): this character's ctsw flag (Book b78's page-3 codes 26 / 27, `cs` in dpadState, combatCastSwingOn for ActionBar nbar18; the Layouts reset clears it); m188's read of the game's own swing timer (`gsw`, gameSwingOn) removed; m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a Smart Y row of its own (kind "fire", Add's select cell sel0 + 3), added once at the end of every list (removable: fireOff; never while the list is full); due out of combat while the player wears Cozy Fire (by spell id: 7353 Basic Campfire, 7358 Bright Campfire; by the names those ids give only when an aura's id is not readable), stands (our seat tracker: Y's own sit, an eating / drinking aura, the game's sit / stand / jump, a move, a cast, a fight, a mount), is not mounted / on a taxi / in a vehicle / flying / swimming / moving / casting / dead; Y then runs the client's own sit emote command as a secure macro (type macro, the command armed out of combat; mounted / swimming / channeling at the press: never); nothing saved but our list, no macro, binding or CVar written; m190 HOLD TO CAST (the user, 2026-11-24: "give another option in the controller menu to "hold to cast" on a button so that we can have 2 spells per button"; OV.hold below: the app times the press, the Guide button is its marker, the router runs the place's hold text; the probe first); m189 THE 1523 TEST BUILD MERGE: five branches took the next numbers from m186 at once, all kept, their notes below as each wrote them: feat/stream-smooth's m187 (the saved-settings pack only after a change), fix/lbrb-wheels' m187 (the friendly bumper: lbmap swap / fb), fix/ltrt-stancebar's m187 + m188 (the router follows the game's Stance / Possess Bar; the LT / RT macro fixes: the press log, the over-macro marks) and feat/fight-castbar's m187 + m188 (the cast bar in a Top-screen fight: ctcb / cc; the B rule and the game's swing timer: fightSw / gsw); the app reads m189 as all of them (each read is a field of its own, none keyed on one number); nothing else changed; m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE (stream smoothness, a tester's "stutters every few seconds" while streaming, the user's pick 2026-11-23): m51's svkeep serialized and sorted ALL of both saved tables every 5 s whatever happened - a few ms each time inside the PC's game, a hitch at 120 fps (8 ms a frame). Now the 5 s tick packs only when something may have changed since the last pack: a tap from the app (TapPad's landed count, WC.pad.rx.n: every room's action is one), a mouse click in the game (GLOBAL_MOUSE_UP), a fight's end (the work a fight queued), a new world or a spec change; never in a fight (it waits for the fight's end, then packs); and once every 30 s out of combat whatever happened (the net for a write by any other route); send(true) (login, a reset) is unchanged, and so is the "only when the text changed" rule. Nothing of the game's is written (no CVar, binding, macro); m187 THE FRIENDLY BUMPER (fix/lbrb-wheels, a tester 2026-11-23 with the game's target bumpers swapped: "LB ... is now target enemy for me"): the lbmap document follows GamepadSwapTargetModifiers (read only) - the party-target buttons are read under the FRIENDLY bumper's modifier (RB while swapped; LB's when no GamePadEmulate* CVar names RB), its tap is that bumper's binding, the document says swap / fb ("LB" / "RB") and OV.lbmap.last.fb tells Hub's party frames the word; a change of the swap CVar resends it (the CVAR_UPDATE filter is case-blind now); nothing of the game's is written; m188 THE LT / RT MACRO FIXES (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's picks: "Re-read the controller", "Say what was pressed", "Show what's on top", and "In combat wins" - the fight order is kept): (1) GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED / GAME_PAD_CONFIGS_CHANGED wire every routed button again and GAME_PAD_ACTIVE_CHANGED does when the triggers' button numbers differ from the ones wired (R.padEvent, R.trWired; Party mode's pad too; out of combat, a fight waits for PLAYER_REGEN_ENABLED; read only); (2) each routed key-down's facecast also says the two triggers as the snippet read them (tr: "L1R0", "-" = no button number, "none" = no controller state), the press's way (path: slotfight / slotmacro / native / command / room / none) and om (one of ours ran over the player's own macro on that slot); a slotfight names its bar now (not "ours"); (3) the padmap's combat and command views carry um (the slot holds the player's own macro under our In combat entry / command: Home and the Controller room mark it); m187 THE ROUTER FOLLOWS THE GAME'S STANCE / POSSESS BAR (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid target or cant cast when moving"; the user's question: a WoW setting for LT + RT): the game's Gamepad settings Stance Bar / Possess Bar move that bar to the LT / RT / LT + RT layer at once, and the router kept its last wiring until a form change or a fight's end - now GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED and CVAR_UPDATE for GamepadStanceBarOverride / GamepadPossessBarOverride / GamepadUseCompactActionBar wire every routed button again (R.rewireAll: out of combat; in a fight at PLAYER_REGEN_ENABLED; read only, nothing written), and each routed press's facecast says its layer (lay: bare / lt / rt / ltrt), the bar it clicked (bar: page<N> / stance / possess / override / ours / room / none) and that button's slot (OV.pressAt; the app's PressLog); (feat/fight-castbar's follow-up may take m187 too: the integration renumbers); m188 THE B RULE AND THE GAME'S SWING TIMER (the user, 2026-11-23: "The controller bar top grow is working off of being in combat again instead of our combat ruls where we press B and it grows back downwards"; the swing pick "Keep ours on the bottom"): WC.padMap.fightSw - the router's own switch (fightNow.now: the fight or an attack / auto-repeat armed, nothing given back by B over every router button), read by ActionBar nbar14's Wings so B hands them back in a fight too; WC.padMap.gameSwingOn + dpadState `gsw` - the game's own swing timer shown (Edit Mode's account setting ShowSwingTimer, read-only, out of combat, kept), so the Wings and the app's strip keep the swing in one place; nothing written; m187 THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23: "When the controller moves to the top, the cast bar should still show across the top of the bottom screen. We can add a setting ... to have the cast bar be on the top or the bottom. If its on the top we should really just turn back on the cast bar for the top screen dynamically ... Same thing with the swing timer"): a second per-character flag beside ctop, WowCompanionSpellsDB.ctcb[name-realm] = 1 (Top screen) / 0 (Bottom screen, the default; none = off), set by Book b77's page-3 codes 24 off / 25 on, read ONLY by ActionBar nbar13 (the Wings' swing lines and the fight's word to Hub hub76, which shows the game's own casting bar for the fight) - display only, no binding, no attribute, nothing secure: remembered at once, in a fight too; `cc` in dpadState says it (nil while no key, as `ct`); the Layouts reset clears it with ctop; m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky Fork: m187 THE 1.0.39 MERGE (Linux Streaming Edition, 2026-11-24): both lines kept. Upstream 1.0.39: m186 START WITH THE TOOLBAR OFF (issue 588, the user's ruling 2026-11-23, reversing m38's Q7 "(a) Follow toolbar switch"): Start opens Home's pause wheel whether the DS WoW toolbar is on or off, by the same rules (R.startWanted: the Game Menu, the game's radial, a guest and "Game's wheel" over a game window keep it the game's / the guest's), and menuArm works with it off too; start.why is never "toolbar" now (the app reads m186+ as "Start follows the settings with the toolbar off"); and (issue 555's side finding) svkeep leaves out smartModel, Smart Y's 10 s reload estimate, so it no longer sends the table every 10 s; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky Fork: m186x (the user 2026-11-24, WSG: flags and corpses not taken by X in a fight): a bare X with a soft-interact target is Forever's Interact in fights too; m185 THE WINGS' PARTY LAYER (ActionBar nbar12, the user's ruling C 2026-11-22: "It should stay at the top in party mode"): PM.sendCfg keeps the partycfg it sent (PM.cfgLast) and the party export hands it out (WC.padMap.party.cfgLast) - the top-screen Wings draw Party mode's spells from it in a fight, never calling cfg() / PM.resolve there (the spellbook walk); a table of ours, read only; (m184, the D-pad order, shipped in test build 1518 and is WITHDRAWN here: the user had the D-pad swap removed - 1519 rebuilds on m183's content, no rbp, and takes the next tag); m183 THE 1515 MERGE INTO MOVABLE HOME (feat/home-docks onto test build 1515's sticky
                                 -- realm key, Safety k12): every Home store here (rbm, ctop) is still read and written ONLY under whoKey() = WC.charKey(), which is nil
                                 -- while the add-on ASKS (one name holding settings under 2+ realms) and while the Spells table is unseen: nothing read, nothing
                                 -- written, `ct` absent; the answer (Book b76's third page 9 / 10-19, WC.charKeyPick) locks the key and the next padmap says that
@@ -472,11 +472,14 @@ function WC.collectPadMap()
         local row = { set = set, slots = {} }
         for pos = 1, POSITIONS do
             if fixed(set, pos) then
-                row.slots[pos] = { pos = pos, kind = "fixed", n = word(FIXED[pos]), cf = faceRef(pos) }
+                row.slots[pos] = { pos = pos, kind = "fixed", n = word(FIXED[pos]), cf = faceRef(pos), h = OV.hold.ref(OV.hold.at("f" .. pos)),
+                                   hc = OV.hold.ref(OV.hold.at("f" .. pos, "combat")) }
             else
                 local s = storage(page, set, pos)
                 local slot = OV.view(set, pos, s)                     -- m43: a binding, a command, the bar; a fight spell over it
                 slot.pos = pos
+                slot.h = OV.hold.ref(OV.hold.at(s))                       -- m190: the place's hold spell (Out of combat)
+                slot.hc = OV.hold.ref(OV.hold.at(s, "combat"))            -- m190: In combat's
                 row.slots[pos] = slot
             end
         end
@@ -529,6 +532,7 @@ function WC.collectPadMap()
     doc.dpad = dpadState()
     doc.start = startState and startState() or nil
     doc.pf = OV.pf and OV.pf.doc() or nil                               -- m165: B's pet follow (the app's row and its word)
+    doc.hold = { on = OV.hold.usable() or nil }                         -- m190: hold to cast may be set (the probe said the marker works)
     local a = attackDB()
     local nslots = 0
     for _ in pairs(a.slots) do nslots = nslots + 1 end
@@ -1096,13 +1100,19 @@ function OV.view(set, pos, s)
     if base.kind == "spell" then o = { n = base.n, id = base.id, i = base.i }
     elseif base.kind == "item" then o = { n = base.n, id = base.id, i = base.i, item = true }
     elseif base.kind ~= "none" then o = { n = base.n or base.key, i = base.i } end
-    return { kind = "combat", s = s, c = c, o = o, ov = true, base = base.kind, key = base.key, sa = base.sa }
+    -- m188 SHOW WHAT'S ON TOP (the user's picks 2026-11-23: "Show what's on top"; "In combat wins" - the order stays): `um` = the slot
+    -- holds the player's OWN macro under this entry (the router casts the In combat entry there in fights, the macro otherwise)
+    return { kind = "combat", s = s, c = c, o = o, ov = true, base = base.kind, key = base.key, sa = base.sa,
+             um = (base.kind == "macro" or base.um) and true or nil }
 end
 cmdSlot = function(s)
     local e = OV.at(s)
     if not e then return nil end
     local c = OV.byKey(e.k)
-    return { kind = "command", key = c.key, n = commandName(c), i = c.icon, b = c.body, s = s, ov = true }
+    -- m188: `um` = one of our commands sits over the player's own macro on this slot (the router runs the command, in and out of fights)
+    local under = readSlot(s)
+    return { kind = "command", key = c.key, n = commandName(c), i = c.icon, b = c.body, s = s, ov = true,
+             um = (under and under.kind == "macro") and true or nil }
 end
 -- the positions whose bare key the router owns for the overlay (any page / set): pos -> true
 -- the player's own spell / item / mount put on a slot takes the overlay command off it (it is what the button does now)
@@ -1112,9 +1122,126 @@ function OV.off(s)
     if routerMacrosSoon then pcall(routerMacrosSoon) end
     OV.rebind = true
 end
+-- m190 HOLD TO CAST (the user, 2026-11-24: "give another option in the controller menu to "hold to cast" on a button so that we can have
+-- 2 spells per button. The other wow forever controller app does this ... We need to find an intuitive way to show two cooldowns on one
+-- button"; the design study C:/dsf-work/design-hold-cast and the user's picks: "A: corner badge", "At the hold time, Settings: 0.3/0.4/
+-- 0.55 s", "Every button incl. B", "Yes, a quick test first"). Secure code has no clock, so THE APP times the press (its launcher gate,
+-- HoldGate.kt): a button whose place has a hold spell is held back; let go before the hold time = the press reaches the game then (the
+-- button's own action, on release); still held at the hold time = the press reaches the game WITH THE MARKER, the virtual pad's Guide
+-- button held at the press. The ROUTER's snippet (PRE) reads the marker at the press (GetGamePadState; "wc-gd" = the Guide's button
+-- number, armed out of combat from the probe's name) and runs the place's HOLD TEXT: the header's "wc-ht-<slot>" (the live slot under
+-- the press: any layer, page or form bar) or, for the base set's X / Y / B / A (no slot of their own), "wc-hf-<pos>". Armed out of combat
+-- (routerMacros) and carried into fights as the fight spells are; a position with a hold spell is the router's out of combat too
+-- (OV.positions). Stored per character in OUR saved data only: holdBy[name-realm][key] = { id, n, i, page, set, pos } (a spell; or t =
+-- "item" / "mount" / "macro" / "command" as the fight layer's whole-button things - never a binding), key = the slot, or "f<pos>" for a
+-- base face. Set / cleared out of combat only. No macro, no binding, no CVar is written. Nothing is armed or routed for it until THE
+-- PROBE said the marker works (db.holdGuide = the Guide's name in this client; the probe at the end of this file).
+OV.hold = { WATCH = 12, DELAY = 4, SETTLE = 1.5, NAMES = { "PADSYSTEM", "PADSOCIAL" }, LAYN = { "bare", "lt", "rt", "ltrt" },
+            -- the controller's usual buttons: never the marker (a press of one during the probe's watch is the player's)
+            STD = { PAD1 = true, PAD2 = true, PAD3 = true, PAD4 = true, PAD5 = true, PAD6 = true, PADDUP = true, PADDDOWN = true,
+                    PADDLEFT = true, PADDRIGHT = true, PADLSTICK = true, PADRSTICK = true, PADLSHOULDER = true, PADRSHOULDER = true,
+                    PADLTRIGGER = true, PADRTRIGGER = true, PADFORWARD = true, PADBACK = true },
+            cdNow = {}, sent = nil, sentAt = 0, loading = false }
+-- [create] = a put is about to write (only then is the character's table made: a read leaves no empty store behind)
+-- m190 PER TAB (the user on test 1528: "Wait the hold buttons are showing on my out of combat bar? It should be seperate"): a hold
+-- spell belongs to a TAB as the press does - holdBy[name-realm] = { normal = { [key] = entry }, combat = { ... } }: Out of combat's
+-- holds fire when the press is Out of combat's (the slot's own), In combat's when the press is the fight layer's (the router's fight
+-- switch, Combat controls on: exactly where "slotfight" / a face's fight action take the press). Party mode's presses are its pad's:
+-- no hold there (its tab has none). The flat store of test 1528 (one hold per button, every tab) is moved onto In combat at its read
+OV.hold.TABS = { "normal", "combat" }
+function OV.hold.root(create)
+    local k = whoKey()
+    if not k then return nil end
+    local db = _G.WowCompanionSpellsDB
+    local t = type(db) == "table" and type(db.holdBy) == "table" and db.holdBy[k] or nil
+    if type(t) == "table" then
+        if t.normal == nil and t.combat == nil and next(t) ~= nil then          -- test 1528's flat store: onto the In combat tab
+            local flat = {}
+            for key, e in pairs(t) do flat[key] = e; t[key] = nil end
+            t.combat = flat
+        end
+        return t
+    end
+    if not create then return nil end
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    db = _G.WowCompanionSpellsDB
+    if type(db.holdBy) ~= "table" then db.holdBy = {} end
+    db.holdBy[k] = {}
+    return db.holdBy[k]
+end
+-- [create] = a put is about to write (only then is the character's table made: a read leaves no empty store behind); [tab] "normal"
+-- (Out of combat, the default) / "combat" (In combat)
+function OV.hold.db(create, tab)
+    tab = tab == "combat" and "combat" or "normal"
+    local r = OV.hold.root(create)
+    if not r then return {} end
+    if type(r[tab]) ~= "table" then
+        if not create then return {} end
+        r[tab] = {}
+    end
+    return r[tab]
+end
+-- the Guide's name in this client while the last probe said "seen, unbound" (the client's, so account-wide), else nil
+function OV.hold.guide()
+    local db = _G.WowCompanionSpellsDB
+    local g = type(db) == "table" and db.holdGuide or nil
+    return (type(g) == "string" and g ~= "" and not OV.hold.STD[g]) and g or nil
+end
+function OV.hold.usable() return OV.hold.guide() ~= nil end
+-- the Guide's button number for the router's GetGamePadState (1-based, as the triggers' "wc-lt" / "wc-rt"), or nil
+function OV.hold.idx()
+    local g = OV.hold.guide()
+    if not g then return nil end
+    local ok, v = pcall(function() return C_GamePad.ButtonBindingToIndex(g) end)
+    v = ok and tonumber(v) or nil
+    return (v and v >= 0) and math.floor(v) + 1 or nil
+end
+-- the store's key for a place: its slot; the base set's X / Y / B / A by position ("f5" .. "f8")
+function OV.hold.key(page, set, pos)
+    if set == 1 and type(pos) == "number" and pos >= FIRST_RESERVED and pos <= 8 then return "f" .. pos end
+    if type(page) ~= "number" or type(set) ~= "number" or type(pos) ~= "number" or pos < 1 or pos > POSITIONS then return nil end
+    return storage(page, set, pos)
+end
+-- NEVER ON B (the user, 2026-11-24: "I want to remove the hold option on B it conflicts too hard and does weird shit"): position 7 takes
+-- no hold on any tab or layer (B is the router's "back" button on every layer: its give-back / pet recall / pull close / room escape);
+-- a saved one is ignored here and dropped by the sweep
+function OV.hold.noB(k, e) return k == "f7" or (type(e) == "table" and e.pos == 7) end
+function OV.hold.at(k, tab)
+    local e = k ~= nil and OV.hold.db(false, tab)[k] or nil
+    if OV.hold.noB(k, e) then return nil end
+    return (type(e) == "table" and type(e.n) == "string" and OV.ftKind(e) ~= "bind") and e or nil
+end
+-- what the documents carry for an entry (OV.ftRef: a spell by its id; a whole-button thing by `t` / `key`), or nil
+function OV.hold.ref(e) return e and OV.ftRef(e) or nil end
+-- the router's hold text: a spell as the fight spells ("/cast <the exact rank>", the attack lines first for a harmful one while Start
+-- attack on cast is on), a whole-button thing its fight text; nil = nothing to run
+function OV.hold.body(e) return e and OV.ftBody(e, attackOn()) or nil end
+-- the positions whose key the router carries for the holds (any page / set); none while hold to cast is unavailable
+-- the user, 2026-11-24: "You should only be able to bind a hold on a button that has something already" - the place does something of
+-- its own (a spell, an item, a macro, a mount, a command, a binding, an In combat entry over it) or is a base face (its game action:
+-- Jump / Interact / Inspect / Back - a tap does that, so a hold there is the second action the feature is for)
+function OV.hold.has(page, set, pos)
+    if pos == 7 then return false end                                   -- never on B
+    if set == 1 and type(pos) == "number" and pos >= FIRST_RESERVED and pos <= 8 then return true end
+    local s = type(page) == "number" and storage(page, set, pos) or nil
+    if not s then return false end
+    local ok, v = pcall(OV.view, set, pos, s)
+    return ok and type(v) == "table" and v.kind ~= nil and v.kind ~= "none" or false
+end
+function OV.hold.positions()
+    local out = {}
+    if not OV.hold.usable() then return out end
+    for _, tab in ipairs(OV.hold.TABS) do
+        for k, e in pairs(OV.hold.db(false, tab)) do
+            if OV.hold.at(k, tab) and type(e.pos) == "number" and e.pos >= 1 and e.pos <= 8 then out[e.pos] = true end
+        end
+    end
+    return out
+end
 function OV.positions()
     local out = {}
     for _, e in pairs(OV.db()) do if type(e) == "table" and type(e.pos) == "number" and OV.byKey(e.k) then out[e.pos] = true end end
+    for pos in pairs(OV.hold.positions()) do out[pos] = true end         -- m190: a hold spell's key is the router's out of combat too
     return out
 end
 bindSlot = function(set, pos, s)
@@ -1198,11 +1325,22 @@ local function T(fn) local ok, v = pcall(fn); if ok then return v end end      -
 -- says { mod, self, p1..p4 = "PAD1" / "PADDUP" ... or nil, keys = every key found } at login and when the bindings change.
 OV.lbmap = {}
 OV.lbmap.ACTS = { self = "TARGETSELF", p1 = "TARGETPARTYMEMBER1", p2 = "TARGETPARTYMEMBER2", p3 = "TARGETPARTYMEMBER3", p4 = "TARGETPARTYMEMBER4" }
-OV.lbmap.modOf = function()
-    for _, m in ipairs({ "Ctrl", "Shift", "Alt" }) do
-        if TS(function() return GetCVar("GamePadEmulate" .. m) end) == "PADLSHOULDER" then return m:upper() end
+-- m187: the game swaps its target bumpers (GamepadSwapTargetModifiers, read only): friendly targeting is RB's then
+OV.lbmap.swapped = function()
+    local v = TS(function() return GetCVar("GamepadSwapTargetModifiers") end)
+    return v == "1" or v == "true"
+end
+OV.lbmap.friendly = function(sw) return sw and "PADRSHOULDER" or "PADLSHOULDER" end
+-- the emulated modifier [bumper] is (nil: none); m187: RB with none of its own takes LB's (the game's swap may leave the CVars as they were)
+OV.lbmap.modOf = function(bumper)
+    local function under(b)
+        for _, m in ipairs({ "Ctrl", "Shift", "Alt" }) do
+            if TS(function() return GetCVar("GamePadEmulate" .. m) end) == b then return m:upper() end
+        end
+        return nil
     end
-    return nil
+    bumper = bumper or "PADLSHOULDER"
+    return under(bumper) or (bumper == "PADRSHOULDER" and under("PADLSHOULDER")) or nil
 end
 -- the keys bound to [act] (the controller's context first, then the plain one), every one
 OV.lbmap.keysOf = function(act)
@@ -1231,9 +1369,12 @@ OV.lbmap.button = function(keys, mod)
     return nil
 end
 OV.lbmap.send = function()
-    local mod = OV.lbmap.modOf()
-    local doc = { type = "lbmap", v = PV, mod = mod, keys = {} }
-    local last = {}
+    local sw = OV.lbmap.swapped()
+    local fbk = OV.lbmap.friendly(sw)
+    local mod = OV.lbmap.modOf(fbk)
+    local fb = sw and "RB" or "LB"
+    local doc = { type = "lbmap", v = PV, mod = mod, keys = {}, swap = sw, fb = fb }
+    local last = { fb = fb }
     for name, act in pairs(OV.lbmap.ACTS) do
         local keys = OV.lbmap.keysOf(act)
         doc.keys[name] = #keys > 0 and keys or nil
@@ -1244,7 +1385,7 @@ OV.lbmap.send = function()
     -- m121 (the user: "what LB will target if I release with no buttons"): a tap of the modifier button alone fires its own binding -
     -- its action and the game's name for it (read only)
     for _, ctx in ipairs({ bindCtx() or false, false }) do
-        local ok, a = pcall(GetBindingAction, "PADLSHOULDER", true, ctx or nil)
+        local ok, a = pcall(GetBindingAction, fbk, true, ctx or nil)
         if ok and type(a) == "string" and a ~= "" and WC.isPlain(a) then doc.tap = a; break end
     end
     if doc.tap then
@@ -1257,7 +1398,8 @@ do
     local f = CreateFrame("Frame")
     for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "UPDATE_BINDINGS", "CVAR_UPDATE" }) do pcall(f.RegisterEvent, f, e) end
     f:SetScript("OnEvent", function(_, e, a1)
-        if e == "CVAR_UPDATE" and not (type(a1) == "string" and a1:find("GamePadEmulate")) then return end
+        local n = type(a1) == "string" and a1:lower() or ""
+        if e == "CVAR_UPDATE" and not (n:find("gamepademulate", 1, true) or n:find("gamepadswaptargetmodifiers", 1, true)) then return end
         pcall(C_Timer.After, 2, function() pcall(OV.lbmap.send) end)
     end)
 end
@@ -1402,13 +1544,17 @@ local ANCHORS = { top = "TopCenteredAnchor", left = "LeftCenteredAnchor", right 
 local PRE = [=[
     if down then
         local lt, rt = false, false
+        local trs = "none"                                          -- m188: the two triggers as read ("none" = no controller state)
         local st = GetGamePadState and GetGamePadState()
         local bt = st and st.buttons
         if bt then
             local li, ri = self:GetAttribute("wc-lt"), self:GetAttribute("wc-rt")
             lt = (li and bt[li]) and true or false
             rt = (ri and bt[ri]) and true or false
+            -- m188: 1 held, 0 not, "-" no button number for it (the trigger cannot be read: the press is the bare one)
+            trs = "L" .. (li and (lt and "1" or "0") or "-") .. "R" .. (ri and (rt and "1" or "0") or "-")
         end
+        self:SetAttribute("wc-tr", trs)
         local anchor = "top"
         if lt and rt then anchor = "bottom" elseif lt then anchor = "left" elseif rt then anchor = "right" end
         local n = self:GetAttribute("wc-n-" .. anchor) or 0
@@ -1418,6 +1564,8 @@ local PRE = [=[
             if bar and bar:IsShown() then dest = self:GetAttribute("wc-dest-" .. anchor .. "-" .. i); at = i; break end
         end
         if not dest then dest = self:GetAttribute("wc-dest-" .. anchor .. "-1"); at = 1 end
+        -- m187: the layer and which of its wired bars this press took, for the post-click's facecast (OV.pressAt; our own attributes)
+        self:SetAttribute("wc-lay", anchor); self:SetAttribute("wc-bi", at)
         local mode = self:GetAttribute("wc-mode")
         -- m77 PARTY MODE: while "wc-party" is set (and no room holds: room mode first) every press goes to the party pad, as room mode delivers
         local pdest = mode ~= "room" and self:GetAttribute("wc-party") and self:GetAttribute("wc-party-dest") or nil
@@ -1439,6 +1587,28 @@ local PRE = [=[
             end
         end
         local on = self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")
+        -- m190 HOLD TO CAST: the app sent this press WITH ITS MARKER (the Guide button held at the press, "wc-gd" its number) because the
+        -- player held the button for the hold time: the place's hold text runs - the base X / Y / B / A's own ("wc-hf-<pos>", the top
+        -- anchor), else the live slot's ("wc-ht-<slot>": the slot under the press on its layer, as the fight spells read it). No hold
+        -- text there = the press is what it always is. Never in room / Party mode (that press is the room's)
+        local htxt = nil
+        local gd = self:GetAttribute("wc-gd")
+        if gd and bt and bt[gd] and dest and mode ~= "room" and not pdest and self:GetAttribute("wc-role") ~= "back" then   -- never B
+            local hh = self:GetFrameRef("wc-hdr")
+            local hp = self:GetAttribute("wc-pos")
+            if hh then
+                -- PER TAB: In combat's hold while the press is the fight layer's (the fight switch the fight spells use, not given
+                -- back, Combat controls on), else Out of combat's
+                local hsw = (self:GetAttribute("wc-state") == "fight" or self:GetAttribute("wc-pre")) and not self:GetAttribute("wc-given")
+                local sfx = (hsw and hh:GetAttribute("wc-hcc")) and "c" or ""
+                if anchor == "top" and hp and hp >= 5 then htxt = hh:GetAttribute("wc-hf" .. sfx .. "-" .. hp) end
+                if not htxt then
+                    local hb = self:GetFrameRef("wc-btn-" .. anchor .. "-" .. at)
+                    local hid = hb and hb.GetID and hb:GetID()
+                    if hid and hid > 0 then htxt = hh:GetAttribute("wc-ht" .. sfx .. "-" .. hid) end
+                end
+            end
+        end
         -- m53 (p-druid-lt-lb, a druid: forms): a FORM's / stance's bar laid over the top anchor is still the no-trigger press (its
         -- buttons are the form's own): fight spells, the D-pad toolbar and B's give-back keep working in Bear / Cat / a stance
         local bare = anchor == "top" and (at == 1 or self:GetAttribute("wc-stance-top-" .. at) == true)
@@ -1446,7 +1616,7 @@ local PRE = [=[
         local rearmed = false
         local bmacro = nil
         local petf = nil
-        if role == "back" then
+        if role == "back" and not htxt then                             -- m190: a hold on B is the hold spell alone (no give-back)
             -- m165 B: PET FOLLOW (the user, 2026-11-16: "I want a pet class specific option where pressing B in the out of combat home menu
             -- basically stops the pet attacking"): out of combat, on the rest layout (no fight state, or A / X / Y given back: read BEFORE
             -- this press's own give-back below), a bare B with nothing of ours holding (no room mode, no Party mode) also runs the game's
@@ -1574,11 +1744,18 @@ local PRE = [=[
             or SecureCmdOptionParse("[@target,exists] 1") == "1") then
             smart = nil
         end
+        -- m190 SIT BY THE FIRE: the sit (a macro of the client's own sit command, armed out of combat by OV.fireStep) never while mounted,
+        -- swimming or channeling at the press - the press's own checks; moving, casting, a taxi and the rest are the evaluator's (events)
+        if smart and self:GetAttribute("wc-smarty-t") == "sit" and SecureCmdOptionParse then
+            for _, c in ipairs(newtable("mounted", "swimming", "channeling")) do
+                if SecureCmdOptionParse("[" .. c .. "] 1") == "1" then smart = nil end
+            end
+        end
         -- m93 (the user, 2026-11-07: "smart Y for buffs does not work in combat ... I dont currently have a Y spell in combat, plus if I
         -- press B and drop the combat bars ... it should be able to [work]"): in a fight, a bare Y that reaches here (no fight spell,
         -- or given back) casts the top buff of the Smart buff list on yourself. The snippet cannot see auras, so it casts it each press
         local cbuff = nil
-        if not smart and bare and mode ~= "room" and role ~= "back" and not sw and not qi and SecureCmdOptionParse
+        if not smart and not htxt and bare and mode ~= "room" and role ~= "back" and not sw and not qi and SecureCmdOptionParse
             and SecureCmdOptionParse("[combat] 1") == "1" then
             cbuff = self:GetAttribute("wc-smarty-cb")
             if cbuff then
@@ -1602,10 +1779,19 @@ local PRE = [=[
             -- m135 (combat_nav_design Step 4, the user 2026-11-11): B in room mode is the room's own B (Interact's sink, PAD2); LT + RT + B
             -- is the secure escape, Interact's leave button (wc-esc), which clears the room mode itself
             if not pdest and role == "back" and lt and rt and self:GetAttribute("wc-esc") then dest = self:GetAttribute("wc-esc") end
+            self:SetAttribute("wc-bi", nil)                             -- m187: a room's / Party mode's press, not a bar's
         end
         self:SetAttribute("wc-mb", mb)
         self:SetAttribute("wc-pf", petf and true or nil)                -- m165: this press ran Pet Follow (the post-click says so)
-        if bmacro then
+        if htxt then
+            -- m190: the hold spell (its text, as a fight spell's); the button's tap is the press without the marker
+            self:SetAttribute("wc-kind", "slothold")
+            self:SetAttribute("wc-at", dest)
+            self:SetAttribute("pressAndHoldAction", nil)
+            self:SetAttribute("typerelease", nil)
+            self:SetAttribute("type", "macro")
+            self:SetAttribute("macrotext", htxt)
+        elseif bmacro then
             self:SetAttribute("wc-kind", "bstop")
             self:SetAttribute("pressAndHoldAction", nil)
             self:SetAttribute("typerelease", nil)
@@ -1646,6 +1832,9 @@ local PRE = [=[
                 self:SetAttribute("type", "spell"); self:SetAttribute("spell", smart); self:SetAttribute("unit", "player")
             elseif st == "or" then
                 self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", "/click WowCompanionPadSmartyOr")
+            elseif st == "sit" then
+                -- m190: the value IS the client's own sit command (the SIT emote's first command word), set out of combat
+                self:SetAttribute("type", "macro"); self:SetAttribute("macrotext", smart)
             elseif st == "manners" then
                 -- m78: Manners' own lines for this press (OV.mannersPre copied them off its prompt, after its own PreClick armed them);
                 -- none = nothing to cast this press (Manners says why in its chat line)
@@ -1785,6 +1974,8 @@ local function padIndex(name)
     v = ok and tonumber(v) or nil
     return (v and v >= 0) and math.floor(v) + 1 or nil
 end
+-- m188: the two triggers' button numbers now, as one plain word ("11/12"; "nil" for one the game has no number for)
+R.trNow = function() return tostring(padIndex("PADLTRIGGER")) .. "/" .. tostring(padIndex("PADRTRIGGER")) end
 -- wire one face button to the router (out of combat): the bars' buttons for its position, the triggers' indexes, the snippet, the driver
 -- Forever's buttons for one bar position (1-4 the D-pad, 5-8 the faces), per anchor, plus the triggers' indexes and the key's name
 local function routerWire(b, pos, key)
@@ -1792,13 +1983,19 @@ local function routerWire(b, pos, key)
     b:SetAttribute("wc-pos", pos)                                      -- m55: the per-form sets are kept by position
     -- m53: the stance / form bar, marked where it is wired (the snippet counts it as the bare press on the top anchor)
     local sb = T(function() local pu = _G.GamepadMainActionBarFrame.PageUnit; return pu.actionBars and pu.actionBars.stanceBar end)
+    -- m187: what each wired bar is (the press log's words, OV.pressAt): "page" (the anchor's own bar), "stance", "possess", "override"
+    local pb = T(function() local pu = _G.GamepadMainActionBarFrame.PageUnit; return pu.actionBars and pu.actionBars.possessBar end)
+    local kinds = {}
     for k in pairs(ANCHORS) do
         local n = 0
-        for _, bar in ipairs(bars[k] or {}) do
+        kinds[k] = {}
+        for i, bar in ipairs(bars[k] or {}) do
             local btn = T(function() return bar:GetActionButtonByIndex(pos) end)
             local name = btn and TS(function() return btn:GetName() end)
             if name and name ~= "" then
                 n = n + 1
+                kinds[k][n] = { k = (sb ~= nil and bar == sb) and "stance" or (pb ~= nil and bar == pb) and "possess"
+                                    or (i == 1 and "page" or "override"), n = name }
                 b:SetAttribute("wc-stance-" .. k .. "-" .. n, (sb ~= nil and bar == sb) or nil)
                 pcall(SecureHandlerSetFrameRef, b, "wc-bar-" .. k .. "-" .. n, bar)
                 pcall(SecureHandlerSetFrameRef, b, "wc-btn-" .. k .. "-" .. n, btn)        -- m26: its live slot (GetID)
@@ -1807,10 +2004,58 @@ local function routerWire(b, pos, key)
         end
         b:SetAttribute("wc-n-" .. k, n)
     end
+    R.wk = R.wk or {}
+    R.wk[b] = kinds                                                   -- m187: a table of ours (no attribute), read by OV.pressAt
+    R.wiredAt = (R.wiredAt or 0) + 1                                  -- m187: how many wirings ran (the tests' count)
     if R.hdr then pcall(SecureHandlerSetFrameRef, b, "wc-hdr", R.hdr) end          -- m26: the slots' macro texts
     b:SetAttribute("wc-lt", padIndex("PADLTRIGGER"))
     b:SetAttribute("wc-rt", padIndex("PADRTRIGGER"))
+    b:SetAttribute("wc-gd", OV.hold.idx())                            -- m190: the hold marker's button number (nil: hold to cast off)
+    R.trWired = R.trNow()                                             -- m188: the button numbers wired (a controller change compares)
     b:SetAttribute("wc-key", key)                                     -- the key's name: room mode sends it (Interact's contract)
+end
+-- m187 THE PRESS LOG'S WHERE (the tester, 2026-11-23: "couldn't use any macros on LT or RT with a face button, kept saying invalid
+-- target or cant cast when moving"): a routed press's layer ("bare" / "lt" / "rt" / "ltrt"), the bar it clicked ("page<N>" the
+-- player's own page, "stance", "possess", "override"; "ours" = one of our own actions, "room" = a room / Party mode had it, "none") and
+-- that button's slot. Our own plain words and numbers only (never a spell, macro or character name); read after the secure click
+OV.LAYW = { top = "bare", left = "lt", right = "rt", bottom = "ltrt" }
+OV.pressAt = function(b)
+    local lay = TS(function() return b:GetAttribute("wc-lay") end)
+    if not lay or not OV.LAYW[lay] then return nil end
+    local kind = TS(function() return b:GetAttribute("wc-kind") end)
+    local bi = TN(function() return b:GetAttribute("wc-bi") end)
+    local e = bi and R.wk and R.wk[b] and R.wk[b][lay] and R.wk[b][lay][bi] or nil
+    local bar
+    if not bi then bar = "room"
+    elseif kind == "none" then bar = "none"
+    elseif kind ~= "native" and kind ~= "slotmacro" and kind ~= "slotfight" and kind ~= "slothold" then bar = "ours"      -- m188: a slotfight read that bar's slot
+    else bar = e and e.k or "page" end
+    if bar == "page" then
+        local pg = TN(function() return _G.GamepadMainActionBarFrame.PageUnit:GetCurrentPage() end)
+        bar = "page" .. tostring(pg and pg > 0 and math.floor(pg) or 1)
+    end
+    local slot = e and TN(function() local f = _G[e.n]; return f and (tonumber(f.action) or f:GetID()) end) or nil
+    slot = (slot and slot > 0) and math.floor(slot) or nil
+    -- m188 (the tester's LT / RT + face report, the user's picks 2026-11-23 "Say what was pressed"): the two triggers as the snippet read
+    -- them (OV.trWord), which way the press went (OV.pathOf) and whether one of ours ran over the player's own macro on that slot
+    local path = OV.pathOf(kind, bi ~= nil, slot)
+    local om = (path == "slotfight" or path == "command") and slot ~= nil and readSlot(slot).kind == "macro" or nil
+    return OV.LAYW[lay], bar, slot, OV.trWord(TS(function() return b:GetAttribute("wc-tr") end)), path, om
+end
+-- m188: the snippet's trigger word ("L1R0": held / not / "-" no button number; "none": no controller state), only those shapes
+OV.trWord = function(s)
+    if s == "none" then return s end
+    return type(s) == "string" and s:match("^L[01%-]R[01%-]$") and s or nil
+end
+-- m188: the press's way - "slotfight" (an In combat entry over the slot: it wins in fights, the user's ruling 2026-11-23 "In combat
+-- wins"), "slotmacro" (the slot's own macro text), "native" (the game's own button), "command" (one of DS Forever's own: an overlay
+-- command's text on the slot, or our own action), "room" (a room / Party mode had it), "none"
+OV.pathOf = function(kind, onBar, slot)
+    if not onBar then return "room" end
+    if kind == "none" or kind == nil then return "none" end
+    if kind == "slotfight" or kind == "native" or kind == "slothold" then return kind end      -- m190: a hold to cast press
+    if kind == "slotmacro" then return (slot and OV.at and OV.at(slot)) and "command" or "slotmacro" end
+    return "command"
 end
 local function routerKey(pos)
     local ctx = bindCtx()
@@ -1887,11 +2132,15 @@ local function routerMake(pos, name, role, why)
         -- the post-click: B's padmap at once (why); m26: a press that REACHES B or the D-pad says where it went (as A / X / Y do)
         b:HookScript("PostClick", function(_, _, down)
             if why then pcall(routerAfterClick, why) end
+            if down then pcall(OV.hold.fired, b, pos) end                -- m190: a hold spell ran (the top bar's flash)
             pcall(function()
+                local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
+                if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end   -- m187: the layer, the bar, the slot; m188: tr / path / om
                 WC.send(WC.encode({ type = "facecast", v = PV, pos = pos, down = down and true or nil, fight = inCombat() or nil,
                                     kind = TS(function() return b:GetAttribute("wc-kind") end),
                                     at = TS(function() return b:GetAttribute("wc-at") end), holder = capHolder(),
-                                    pf = (down and TB(function() return b:GetAttribute("wc-pf") end)) or nil }))     -- m165
+                                    pf = (down and TB(function() return b:GetAttribute("wc-pf") end)) or nil,     -- m165
+                                    lay = lay, bar = bar, slot = slot, tr = tr, path = path, om = om }))
             end)
         end)
         made = b
@@ -2179,6 +2428,32 @@ local function routerMacros()
     end
     for slot, body in pairs(wantF) do
         if R.ft[slot] ~= body then pcall(function() hdr:SetAttribute("wc-ft-" .. slot, body) end); R.ft[slot] = body; changed = true end
+    end
+    -- m190 HOLD TO CAST: the hold texts ("wc-ht-<slot>", a base face's "wc-hf-<pos>"), only while the probe said the marker works
+    -- m190 PER TAB: Out of combat's "wc-ht-<slot>" / "wc-hf-<pos>", In combat's "wc-htc-<slot>" / "wc-hfc-<pos>" (with Combat controls
+    -- on: "wc-hcc", the snippet's switch, as the fight spells are armed only then)
+    local wantH = {}
+    if OV.hold.usable() then
+        for _, tab in ipairs(OV.hold.TABS) do
+            local sfx = tab == "combat" and "c" or ""
+            if tab ~= "combat" or combatOn() then
+                for k, e in pairs(OV.hold.db(false, tab)) do
+                    local body = OV.hold.at(k, tab) and OV.hold.body(e) or nil
+                    if body and #body <= 1023 then
+                        if type(k) == "number" then wantH["wc-ht" .. sfx .. "-" .. k] = body
+                        elseif type(k) == "string" and k:match("^f[5-8]$") then wantH["wc-hf" .. sfx .. "-" .. k:sub(2)] = body end
+                    end
+                end
+            end
+        end
+        if combatOn() then wantH["wc-hcc"] = true end
+    end
+    R.ht = R.ht or {}
+    for k in pairs(R.ht) do
+        if wantH[k] == nil then pcall(function() hdr:SetAttribute(k, nil) end); R.ht[k] = nil; changed = true end
+    end
+    for k, body in pairs(wantH) do
+        if R.ht[k] ~= body then pcall(function() hdr:SetAttribute(k, body) end); R.ht[k] = body; changed = true end
     end
     return changed
 end
@@ -2704,6 +2979,11 @@ faceSetup = function()
                             pcall(function()
                                 b:HookScript("PreClick", function(self, _, down) if down then pcall(OV.mannersPre, self) end end)
                                 b:HookScript("PostClick", function(self, _, down) if down then pcall(OV.mannersPost, self) end end)
+                                -- m190: Y's own sit (the fire row) seats the player (the seat tracker; the DoEmote hook hears it too)
+                                b:HookScript("PostClick", function(self, _, down)
+                                    if down and TS(function() return self:GetAttribute("wc-kind") end) == "smarty"
+                                        and TS(function() return self:GetAttribute("wc-smarty-t") end) == "sit" then pcall(OV.seatOn, "sit") end
+                                end)
                                 -- m101: the radial's press: the target's menu for it (Quests q51, src "radial")
                                 b:HookScript("PostClick", function(self, _, down)
                                     if down and TS(function() return self:GetAttribute("wc-kind") end) == "tradial" then pcall(OV.tg.read) end
@@ -2714,12 +2994,16 @@ faceSetup = function()
                         pcall(function()
                             b:HookScript("PostClick", function(_, button, down)
                                 if down then pcall(routerAfterClick, "rearm") end
+                                if down then pcall(OV.hold.fired, b, p) end      -- m190: a hold spell ran (the top bar's flash)
                                 pcall(function()
+                                    local lay, bar, slot, tr, path, om = nil, nil, nil, nil, nil, nil
+                                    if down then lay, bar, slot, tr, path, om = OV.pressAt(b) end    -- m187 / m188 (PressLog)
                                     WC.send(WC.encode({ type = "facecast", v = PV, pos = p, down = down and true or nil,
                                                         fight = inCombat() or nil, n = (faceStore()[p] or {}).n,
                                                         kind = TS(function() return b:GetAttribute("wc-kind") end),
                                                         at = TS(function() return b:GetAttribute("wc-at") end),
-                                                        holder = capHolder() }))
+                                                        holder = capHolder(), lay = lay, bar = bar, slot = slot,
+                                                        tr = tr, path = path, om = om }))
                                     WC.push()
                                 end)
                             end)
@@ -3456,6 +3740,50 @@ R.combatTop = function(on)
     soon()
     return true
 end
+-- m187 THE CAST BAR IN A TOP-SCREEN FIGHT: this character's "Cast bar in fights" (WowCompanionSpellsDB.ctcb[name-realm] = 1 = Top screen;
+-- 0 / none = Bottom screen, the default), set by Book b77's page-3 codes 24 off / 25 on. Read only by ActionBar nbar13 (with ctop on, the
+-- Wings' fight shows the game's own casting bar through Hub hub76 and keeps the Wings' swing lines; off, both stay on the bottom screen).
+-- A display flag like ctop: no binding, no attribute - remembered at once, in a fight too. `cc` in dpadState says it.
+R.ctcbDB = function()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.ctcb) ~= "table" then db.ctcb = {} end
+    return db.ctcb
+end
+R.ctcbOn = function()
+    local k = whoKey()
+    return k ~= nil and R.ctcbDB()[k] == 1
+end
+R.combatCastTop = function(on)
+    local k = whoKey()
+    if not k then return false, "no character" end
+    R.ctcbDB()[k] = on and 1 or 0
+    soon()
+    return true
+end
+-- m190 THE SWING WITH OUR TOP CAST BAR (the user, 2026-11-24: Cast bar in fights = Top screen is our own bar above the HUD, the swing
+-- line over it - "With the cast bar on top"; the swing follows the cast bar's choice, never both screens): this character's swing line
+-- with it on or off (WowCompanionSpellsDB.ctsw[name-realm] = 0 = off; none / 1 = on, the default), the app's Settings > Home "Swing
+-- timer" sent by Book b78's page-3 codes 26 off / 27 on (out of combat, re-sent until `cs` says it, as ctcb). Read only by ActionBar
+-- nbar18. A display flag like ctcb: remembered at once, in a fight too. `cs` in dpadState says it. m188's read of the GAME's own swing
+-- timer (Edit Mode's ShowSwingTimer, `gsw`, gameSwingOn) is gone with nbar14's gate on it: the swing goes where the cast bar goes now.
+R.ctswDB = function()
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    local db = _G.WowCompanionSpellsDB
+    if type(db.ctsw) ~= "table" then db.ctsw = {} end
+    return db.ctsw
+end
+R.ctswOn = function()
+    local k = whoKey()
+    return k == nil or R.ctswDB()[k] ~= 0
+end
+R.combatCastSwing = function(on)
+    local k = whoKey()
+    if not k then return false, "no character" end
+    R.ctswDB()[k] = on and 1 or 0
+    soon()
+    return true
+end
 -- the switch: true / false for this character, remembered; refused in a fight (no binding change then; one red pulse)
 local function dpadSet(on)
     local op = on and "dpad-on" or "dpad-off"
@@ -3542,6 +3870,8 @@ dpadState = function()
              nc = ki.nc, uc = ki.uc, gs = ki.gs, pk = (not k) and ki.pk or nil, ls = ki.ls, ad = k and ki.ad or nil } or nil, d = d,
              m = (rbT == R.RB_M) and 1 or 0,
              ct = k and (R.ctopOn() and 1 or 0) or nil,                          -- m179: the top-screen combat bar's flag; m181: nil while no key (not "off")
+             cc = k and (R.ctcbOn() and 1 or 0) or nil,                          -- m187: "Cast bar in fights: Top screen" (nil while no key)
+             cs = k and (R.ctswOn() and 1 or 0) or nil,                          -- m190: the swing with our top cast bar (nil while no key)
              aside = (want == true and R.aside) or nil, undone = type(z) == "table" and #z.undone > 0 and z.undone or nil }
 end
 
@@ -4635,8 +4965,80 @@ function OV.macRename(old, new, general)
     if n > 0 then soon() end
     return n
 end
+-- m190 HOLD TO CAST: a hold entry for [kind] / [v] (a spell from a book slot, an item / a mount by id, a macro by name, a command by
+-- key; never a binding: a press cannot hold a key binding) -> entry, or nil + why
+function OV.hold.entry(kind, v)
+    if kind == "spell" then
+        local cid, cname, cpet = bookSpell(v)
+        if not cname then return nil, "bad spell" end
+        local r = spellRef(cname) or {}
+        return { id = cid, n = cname, i = (cpet and OV.petIcon(cid)) or r.i or 0, pet = cpet or nil }
+    elseif kind == "command" then
+        local c = OV.byKey(v)
+        if not c then return nil, "unknown command" end
+        return { t = "command", key = c.key, n = commandName(c), i = c.icon }
+    elseif kind == "item" then
+        local name = type(v) == "number" and TS(function() return C_Item.GetItemNameByID(v) end)
+        if not name then return nil, "bad item" end
+        return { t = "item", id = v, n = name, i = TN(function() return C_Item.GetItemIconByID(v) end) }
+    elseif kind == "mount" then
+        local okm, name, spellID, icon = false, nil, nil, nil
+        if type(v) == "number" then okm, name, spellID, icon = CALL(function() return C_MountJournal.GetMountInfoByID(v) end) end
+        local sp = okm and WC.isPlain(spellID) and type(spellID) == "number" and TS(function() return C_Spell.GetSpellName(spellID) end)
+        if not (okm and WC.isPlain(name) and type(name) == "string" and sp) then return nil, "bad mount" end
+        return { t = "mount", id = v, n = name, sp = sp, i = WC.isPlain(icon) and type(icon) == "number" and icon or nil }
+    elseif kind == "macro" then
+        return OV.macEntry(v)
+    elseif kind == "bind" then
+        return nil, "bind"
+    end
+    return nil, "unknown"
+end
 WC.padMap = {
     version = 1,
+    -- m190 HOLD TO CAST: a place's hold spell / thing (out of combat; this character; only while the probe said the marker works).
+    -- [kind] / [v] as OV.hold.entry. Answer: padack "hold" / "unhold"
+    putHold = function(page, set, pos, kind, v, tab)
+        if inCombat() then ack("hold", false, "combat") return false, "combat" end
+        if not OV.hold.usable() then ack("hold", false, "unavailable") return false, "unavailable" end
+        if type(set) ~= "number" or set < 1 or set > SETS or type(pos) ~= "number" or pos < 1 or pos > POSITIONS then
+            ack("hold", false, "bad place") return false, "bad place"
+        end
+        if pos == 7 then ack("hold", false, "b") return false, "b" end      -- never on B (the user, 2026-11-24)
+        local k = OV.hold.key(page, set, pos)
+        if k == nil then ack("hold", false, "no slot") return false, "no slot" end
+        if not OV.hold.has(page, set, pos) then ack("hold", false, "empty") return false, "empty" end      -- a hold needs a press
+        if not whoKey() then ack("hold", false, "no character") return false, "no character" end
+        local e, why = OV.hold.entry(kind, v)
+        if not e then ack("hold", false, why) return false, why end
+        e.page, e.set, e.pos = page, set, pos
+        OV.hold.db(true, tab)[k] = e
+        pcall(routerMacros); pcall(routerBind, "hold")
+        ack("hold", true, nil, type(k) == "number" and k or nil)
+        soon(); pcall(OV.hold.tick, true)
+        return true
+    end,
+    clearHold = function(page, set, pos, tab)
+        if inCombat() then ack("unhold", false, "combat") return false, "combat" end
+        local k = OV.hold.key(page, set, pos)
+        if k == nil or OV.hold.db(false, tab)[k] == nil then ack("unhold", false, "none") return false, "none" end
+        OV.hold.db(false, tab)[k] = nil
+        pcall(routerMacros); pcall(routerBind, "hold")
+        ack("unhold", true, nil, type(k) == "number" and k or nil)
+        soon(); pcall(OV.hold.tick, true)
+        return true
+    end,
+    holdAt = function(page, set, pos, tab) return OV.hold.at(OV.hold.key(page, set, pos), tab) end,
+    holdTab = function() return OV.hold.tabNow() end,                    -- the tab whose holds would fire now (the top bar's badges)
+    holdOk = function(page, set, pos) return OV.hold.has(page, set, pos) end,            -- the place may take a hold (it has a press)
+    -- the app's hold marker is down NOW (add-on code's read of the controller; the Bind box asks at the press: Book b78)
+    holdMarked = function()
+        local gi = OV.hold.idx()
+        if not gi then return false end
+        local ok, st = pcall(function() return C_GamePad.GetDeviceMappedState(C_GamePad.GetActiveDeviceID()) end)
+        return ok and type(st) == "table" and type(st.buttons) == "table" and st.buttons[gi] == true or false
+    end,
+    holdOn = function() return OV.hold.usable() end,
     emit = function(force) if emit(force) then WC.push() end end,
     showPage = function(page)
         if type(page) ~= "number" or page < 1 or page > PAGES then return false, "bad page" end
@@ -4650,9 +5052,12 @@ WC.padMap = {
     page = function() return shownPage or gamePage() end,
     slotAt = function(page, set, pos)
         if BINDS.STICK[pos] then return OV.stk.view(set, pos) end      -- m150: L3 / R3 (no bar slot)
-        if fixed(set, pos) then return { kind = "fixed", n = word(FIXED[pos]), pos = pos, face = FACE[pos] or nil, cf = faceRef(pos) } end
+        if fixed(set, pos) then return { kind = "fixed", n = word(FIXED[pos]), pos = pos, face = FACE[pos] or nil, cf = faceRef(pos),
+                                         h = OV.hold.ref(OV.hold.at("f" .. pos)), hc = OV.hold.ref(OV.hold.at("f" .. pos, "combat")) } end   -- m190: its holds
         local s = storage(page, set, pos)
-        return OV.view(set, pos, s)                                    -- m41 / m43: the overlay's command, its fight spell
+        local v = OV.view(set, pos, s)                                 -- m41 / m43: the overlay's command, its fight spell
+        if type(v) == "table" then v.h = OV.hold.ref(OV.hold.at(s)); v.hc = OV.hold.ref(OV.hold.at(s, "combat")) end   -- m190: its holds
+        return v
     end,
     -- m34 a game binding onto a button (out of combat; the place must allow it): stored for the character, the router binds it
     putBind = function(page, set, pos, key)
@@ -5011,6 +5416,11 @@ WC.padMap = {
     dpadMirror = function(on) return R.dpadMirror(on) end,              -- m178: Book b74's page-3 codes 9 / 10
     combatTop = function(on) return R.combatTop(on) end,                -- m179: Book b75's page-3 codes 11 / 12
     combatTopOn = function() return R.ctopOn() end,                     -- m179: ActionBar nbar7's Wings read it
+    combatCastTop = function(on) return R.combatCastTop(on) end,        -- m187: Book b77's page-3 codes 24 / 25
+    combatCastTopOn = function() return R.ctcbOn() end,                 -- m187: ActionBar nbar13 reads it
+    fightSw = function() return fightNow.now() end,                     -- m188: the router's own switch (ActionBar nbar14's B rule)
+    combatCastSwing = function(on) return R.combatCastSwing(on) end,    -- m190: Book b78's page-3 codes 26 / 27
+    combatCastSwingOn = function() return R.ctswOn() end,               -- m190: ActionBar nbar18 reads it
     zlClean = function() return zlClean() end,
     -- m45: the m23 class starter "suggestion" is gone (the user: remove it): nothing is ever suggested; empty means empty
     -- m22, Interact's contract: the keys the router can carry and their buttons (stable names, made at login, never destroyed)
@@ -5318,15 +5728,55 @@ local WANT = { "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "UPDATE_MACROS
 -- (no new main-chunk locals: Lua's 200; all on R)
 function R.rewireAll()
     R.rewireQueued = false
-    if inCombat() then return end
+    if inCombat() then R.rewireFight = true; return end              -- m187: said so; PLAYER_REGEN_ENABLED (below) wires it then
+    R.rewireFight = nil
     for pos, b in pairs(face.buttons) do if R.wrapped[pos] then pcall(routerWire, b, pos, R.keys[pos]) end end
     for i = 1, 4 do if R.dbtn[i] then pcall(routerWire, R.dbtn[i], i, R.keys[i]) end end
     if R.bbtn then pcall(routerWire, R.bbtn, 7, R.keys[7]) end
+    -- m188: a controller change also re-reads Party mode's pad's trigger numbers (PM.link: its own copy of them; out of combat)
+    if R.padRelink then R.padRelink = nil; if OV.pm and OV.pm.link then pcall(OV.pm.link) end end
 end
+-- m188 THE CONTROLLER CHANGED (the tester's LT / RT + face report; the user's pick 2026-11-23 "Re-wire the trigger reading when a
+-- controller connects or changes"): the router reads LT / RT from the controller's state by the button numbers routerWire saved
+-- (C_GamePad.ButtonBindingToIndex), and nothing read them again when a controller came or went - streaming, the PC's pad can appear
+-- after WoW has loaded, or another pad can become the active one. Now the game's GAME_PAD_CONNECTED / GAME_PAD_DISCONNECTED /
+-- GAME_PAD_CONFIGS_CHANGED wire every routed button again (and Party mode's pad), and GAME_PAD_ACTIVE_CHANGED (it comes with every
+-- mouse <-> pad switch) does so only when the numbers differ from the ones wired (R.trWired). Out of combat; in a fight it waits for
+-- PLAYER_REGEN_ENABLED (attributes cannot change in the lockdown). READ ONLY: no CVar, binding or macro is written
+-- (Blizzard_APIDocumentationGenerated/GamePadDocumentation.lua's events)
+R.PAD_EV = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true }
+R.padEvent = function(e)
+    -- m188 review: nothing wired yet (R.trWired nil: the first wiring reads the numbers of the moment) is no reason either - every
+    -- mouse <-> pad switch would otherwise run the whole re-wire and Party mode's link for nothing
+    if e == "GAME_PAD_ACTIVE_CHANGED" and (R.trWired == nil or R.trWired == R.trNow()) then return false end
+    R.padWhy = e
+    R.padRelink = true
+    if inCombat() then R.rewireFight = true; return true end
+    if not R.rewireQueued then R.rewireQueued = true; C_Timer.After(0.3, R.rewireAll) end
+    return true
+end
+-- m187 THE ROUTER FOLLOWS THE GAME'S BAR SETTINGS (the tester's report, 2026-11-23, and the read-only investigation): the game's Gamepad
+-- settings Stance Bar / Possess Bar (GamepadStanceBarOverride / GamepadPossessBarOverride: Page 1 Left / Right / Bottom = the LT, RT,
+-- LT + RT layers) move the form's / the possess bar to its new layer AT ONCE (gamepadoverridebarmixin.lua OnOverrideCVarChanged, on
+-- the game's own GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED / GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED); the router kept the layout it wired at the
+-- last form change / fight end / loading screen, so LT / RT + a face button could click a button other than the one the screen shows.
+-- Now those two events, and CVAR_UPDATE for the two settings and Compact (GamepadUseCompactActionBar), wire every routed button again
+-- the same way (out of combat; a change in a fight waits for PLAYER_REGEN_ENABLED). READ ONLY: no CVar, binding or macro is written
+R.LAYOUT_CV = { gamepadstancebaroverride = true, gamepadpossessbaroverride = true, gamepadusecompactactionbar = true }
+R.layoutCv = function(name) return type(name) == "string" and R.LAYOUT_CV[name:lower()] == true end
 R.fs = CreateFrame("Frame")
 for _, e in ipairs({ "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS", "PLAYER_REGEN_ENABLED", "UPDATE_BONUS_ACTIONBAR",
-                     "PLAYER_ENTERING_WORLD" }) do pcall(function() R.fs:RegisterEvent(e) end) end
-R.fs:SetScript("OnEvent", function()
+                     "PLAYER_ENTERING_WORLD", "GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED", "GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED",
+                     "CVAR_UPDATE", "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED",
+                     "GAME_PAD_CONFIGS_CHANGED" }) do pcall(function() R.fs:RegisterEvent(e) end) end
+R.fs:SetScript("OnEvent", function(_, e, a1)
+    if R.PAD_EV[e] then pcall(R.padEvent, e); return end              -- m188: the controller came / went / changed (above)
+    -- m187: of CVAR_UPDATE only the bar settings (every other setting goes by); the game's two bar events and those: said in R.layoutWhy
+    if e == "CVAR_UPDATE" and not R.layoutCv(TS(function() return a1 end)) then return end
+    if e == "CVAR_UPDATE" or e == "GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED" or e == "GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED" then
+        R.layoutWhy = e
+        if inCombat() then R.rewireFight = true end
+    end
     C_Timer.After(0.2, function()                                       -- m57: the form now's own bar (the game names it a moment later)
         pcall(OV.formLearn)
         -- m142 review: the Controller room open follows the new stance (its auto form, OV.fe) before the next input
@@ -5426,8 +5876,8 @@ end
 -- SMARTY-ORDER-END
 -- SMARTY-WALK-BEGIN (pure: tools/test_smarty.py) m127 ANY ORDER (the user, 2026-11-11: "it shouldnt hardcode food and water as first and
 -- second, let people move spell priorities above them"): ONE ordered list, walked top to bottom; the first row with something due wins.
--- [rows] = the player's list ({ k = "food" | "drink" | "manners" } or a buff row { ids }); [due] = what each kind would do now (a step,
--- or nil): due.food / due.drink / due.manners, and due.buff for the row due.buffAt (the first unsatisfied buff row: sbFirst's); a
+-- [rows] = the player's list ({ k = "food" | "drink" | "manners" | "fire" } or a buff row { ids }); [due] = what each kind would do now
+-- (a step, or nil): due.food / due.drink / due.manners / due.fire (m190), and due.buff for the row due.buffAt (the first unsatisfied buff row: sbFirst's); a
 -- step's [cost] = its mana cost (nil = none). m75's rule KEPT in the one place it still means something with an explicit order: a buff
 -- the mana does not cover gives way to Food / Water FURTHER DOWN (Y would only say "not enough mana"; the drink brings the mana back).
 -- A buff below Food is never lifted above it any more: the order is the player's. -> the step, its kind ("food" / "drink" / "manners"
@@ -5437,7 +5887,7 @@ OV.smartWalk = function(rows, due, mana)
     for r, row in ipairs(rows or {}) do
         local k = type(row) == "table" and row.k or nil
         local st
-        if k == "food" or k == "drink" or k == "manners" then st = due[k]
+        if k == "food" or k == "drink" or k == "manners" or k == "fire" then st = due[k]
         elseif k == nil and r == due.buffAt then st = due.buff end
         if st then list[#list + 1] = { k = k or "buff", st = st } end
     end
@@ -5716,6 +6166,179 @@ function OV.setSmartOn(on)
     if OV.pm and OV.pm.smartChanged then pcall(OV.pm.smartChanged) end   -- m77: Smart Y's party picks follow the switch
     pcall(faceSetup)                                                      -- m87: Y routed (or given back) with the switch
 end
+-- m190 SIT BY THE FIRE (the user, 2026-11-24: "I want to add a smart y option to sit when the player has the nearby campfire buff"): a
+-- row of the list ({ k = "fire" }). Due out of combat while the player wears a campfire's Cozy Fire aura, stands, and is still and on
+-- foot; Y then runs the client's own sit emote command as a secure macro (the router's "sit" kind: the command armed out of combat,
+-- never while mounted / swimming / channeling at the press). The game has no "am I sitting" reader, so the seat is OURS to follow
+-- (OV.seated): Y's own sit, an eating / drinking aura and the game's own /sit set it; the game's own stand (DoEmote, the sit / stand
+-- key), a jump, a move, a cast, a fight, a mount, a taxi, death and a new world end it - post-hooks and events only, nothing of the
+-- game's changed. Seated = the row is not due: Y goes on down the list, and with nothing due below it Y is as with no pick (Forever's
+-- own Inspect). A wrong guess is harmless either way: a second sit keeps you seated; a stale seat ends at the next move or jump.
+-- FIRE-BEGIN (pure: tools/test_smarty_fire.py)
+-- the Cozy Fire auras by spell id (the 3.3.5 server's Spell.dbc / gameobject_template: the Basic Campfire's trap object 31442 casts
+-- 7353, +4 Spirit; the Bright Campfire's 31510 casts 7358, +8); no other "near a fire" aura exists in that data
+OV.FIRE_IDS = { 7353, 7358 }
+-- [auras] = the player's helpful auras ({ id = spell id, nil when the client keeps it hidden; n = name }); [names] = name -> id for
+-- OV.FIRE_IDS (the names the ids themselves give: GetSpellInfo) -> the campfire aura's id, nil = none. A readable id decides alone;
+-- the name only stands in for an id the client keeps hidden
+OV.fireAura = function(auras, names)
+    local ids = {}
+    for _, id in ipairs(OV.FIRE_IDS) do ids[id] = true end
+    for _, a in ipairs(auras or {}) do
+        if type(a) == "table" then
+            if type(a.id) == "number" then
+                if ids[a.id] then return a.id end
+            elseif type(a.n) == "string" and type(names) == "table" and names[a.n] then
+                return names[a.n]
+            end
+        end
+    end
+    return nil
+end
+-- s = { fire, combat, dead, seated, eating, drinking, mounted, taxi, vehicle, flying, swimming, moving, casting } -> true, or false and
+-- the first reason ("no fire" or the flag's name)
+OV.FIRE_NOT = { "combat", "dead", "seated", "eating", "drinking", "mounted", "taxi", "vehicle", "flying", "swimming", "moving", "casting" }
+OV.fireDue = function(s)
+    if type(s) ~= "table" or not s.fire then return false, "no fire" end
+    for _, k in ipairs(OV.FIRE_NOT) do if s[k] then return false, k end end
+    return true
+end
+-- the seat: [seated] now, [ev] what happened -> seated after it ("sit" / "eat": seated; "toggle": the game's sit / stand key flips it;
+-- "stand" / "move" / "jump" / "cast" / "combat" / "mount" / "dead" / "world": standing; anything else: as it was)
+OV.SEAT_UP = { stand = true, move = true, jump = true, cast = true, combat = true, mount = true, dead = true, world = true }
+OV.seatNext = function(seated, ev)
+    if ev == "sit" or ev == "eat" then return true end
+    if ev == "toggle" then return not seated end
+    if OV.SEAT_UP[ev] then return false end
+    return seated and true or false
+end
+-- the client's own sit command: the emote table's SIT token, its first command (a localized client's own word), one slash word only;
+-- else /sit
+OV.sitCmd = function(G, max)
+    for i = 1, max or 1000 do
+        if G["EMOTE" .. i .. "_TOKEN"] == "SIT" then
+            local c = G["EMOTE" .. i .. "_CMD1"]
+            if type(c) == "string" and c:match("^/[^%s]+$") then return c end
+            break
+        end
+    end
+    return "/sit"
+end
+-- FIRE-END
+OV.seated = false
+-- the seat after [ev]; a change out of combat re-arms Y (the row comes or goes)
+function OV.seatOn(ev)
+    local was = OV.seated
+    OV.seated = OV.seatNext(OV.seated, ev)
+    if OV.seated ~= was and not inCombat() then OV.smartLater() end
+end
+-- one smartApply per 0.3 s, however many events (the same gate as OV.smartF's)
+function OV.smartLater()
+    if OV.smartSoon then return end
+    OV.smartSoon = true
+    C_Timer.After(0.3, function() OV.smartSoon = nil; pcall(OV.smartApply) end)
+end
+-- the Cozy Fire ids' own names (name -> id), for an aura whose id the client keeps hidden
+function OV.fireNames()
+    local m = {}
+    for _, id in ipairs(OV.FIRE_IDS) do
+        local n = TS(function() return OV.sbName(id) end)
+        if n and not m[n] then m[n] = id end
+    end
+    return m
+end
+-- the player's helpful auras as { id, n } (each read alone through the safe readers: a secret one is left out, never put in a table)
+function OV.fireAuras()
+    local out = {}
+    local ca = type(C_UnitAuras) == "table" and type(C_UnitAuras.GetAuraDataByIndex) == "function"
+    for i = 1, 40 do
+        local id, n
+        if ca then
+            local a = T(function() return C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL") end)
+            if type(a) ~= "table" then break end
+            id, n = TN(function() return a.spellId end), TS(function() return a.name end)
+        else
+            if type(T(function() return (UnitBuff("player", i)) end)) == "nil" then break end
+            id, n = TN(function() return (select(10, UnitBuff("player", i))) end), TS(function() return (UnitBuff("player", i)) end)
+        end
+        out[#out + 1] = { id = id, n = n }
+    end
+    return out
+end
+-- the fire row's step now ([state] = smartState's: eating / drinking), nil = not due (OV.fireWhy says why)
+function OV.fireStep(state)
+    local id = OV.fireAura(OV.fireAuras(), OV.fireNames())
+    if state and (state.eating or state.drinking) then OV.seated = OV.seatNext(OV.seated, "eat") end   -- eating / drinking sits you
+    local mounted = TB(function() return IsMounted() end) == true
+    local taxi = TB(function() return UnitOnTaxi("player") end) == true
+    if mounted or taxi then OV.seated = OV.seatNext(OV.seated, "mount") end
+    local dead = TB(function() return UnitIsDeadOrGhost("player") end) == true
+    if dead then OV.seated = OV.seatNext(OV.seated, "dead") end
+    local sp = TN(function() return (GetUnitSpeed("player")) end)
+    local s = {
+        fire = id ~= nil, combat = inCombat(), dead = dead, seated = OV.seated == true,
+        eating = state ~= nil and state.eating == true, drinking = state ~= nil and state.drinking == true,
+        mounted = mounted, taxi = taxi,
+        vehicle = TB(function() return UnitInVehicle and UnitInVehicle("player") end) == true,
+        flying = TB(function() return IsFlying and IsFlying() end) == true,
+        swimming = TB(function() return IsSwimming() end) == true,
+        moving = (sp ~= nil and sp > 0) or TB(function() return IsPlayerMoving and IsPlayerMoving() end) == true,
+        casting = type(T(function() return (UnitCastingInfo("player")) end)) ~= "nil"
+            or type(T(function() return (UnitChannelInfo("player")) end)) ~= "nil",
+    }
+    local ok, why = OV.fireDue(s)
+    local w = ok and ("due " .. id) or why
+    if w ~= OV.fireWhy and (id ~= nil or (OV.fireWhy ~= nil and OV.fireWhy ~= "no fire")) then
+        pcall(function() WC.send(WC.encode({ type = "cap", padmap = PV, smartfire = w })) end)    -- near a fire only: why Y sits or not
+    end
+    OV.fireWhy = w
+    if not ok then return nil end
+    if not OV.sitText then
+        local okc, c = pcall(OV.sitCmd, _G, TN(function() return MAXEMOTEINDEX end) or 1000)
+        OV.sitText = okc and c or "/sit"
+    end
+    local icon = TN(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or GetSpellTexture(id) end) or 0
+    return { val = OV.sitText, typ = "sit", shown = { id = id, n = TS(function() return OV.sbName(id) end) or "Cozy Fire", i = icon, k = "fire" } }
+end
+-- the game's own sit / stand / jump, heard after the fact (post-hooks: the game's functions run as they always do, nothing changed)
+function OV.fireHooks()
+    if OV.fireHooked then return end
+    OV.fireHooked = true
+    pcall(function()
+        hooksecurefunc("DoEmote", function(token)
+            local t = type(token) == "string" and WC.isPlain(token) and token:upper() or nil
+            if t == "SIT" then OV.seatOn("sit") elseif t == "STAND" then OV.seatOn("stand") end
+        end)
+    end)
+    pcall(function() hooksecurefunc("SitStandOrDescendStart", function() OV.seatOn("toggle") end) end)
+    pcall(function() hooksecurefunc("JumpOrAscendStart", function() OV.seatOn("jump") end) end)
+end
+pcall(OV.fireHooks)
+-- the events that move the seat or change what the row needs (the player's own casts only); re-armed out of combat only, and only
+-- while the fire row is on the list (smartApply itself waits for a fight's end)
+OV.FIRE_EV = { PLAYER_STARTED_MOVING = "move", PLAYER_REGEN_DISABLED = "combat", UNIT_SPELLCAST_START = "cast",
+               UNIT_SPELLCAST_CHANNEL_START = "cast", UNIT_SPELLCAST_SUCCEEDED = "cast", PLAYER_MOUNT_DISPLAY_CHANGED = "mount",
+               PLAYER_CONTROL_LOST = "mount", PLAYER_DEAD = "dead", PLAYER_ENTERING_WORLD = "world" }
+OV.fireF = CreateFrame("Frame")
+for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_STOP",
+                     "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED" }) do
+    pcall(function()
+        if OV.fireF.RegisterUnitEvent then OV.fireF:RegisterUnitEvent(e, "player") else OV.fireF:RegisterEvent(e) end
+    end)
+end
+for _, e in ipairs({ "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING", "PLAYER_MOUNT_DISPLAY_CHANGED", "PLAYER_CONTROL_LOST",
+                     "PLAYER_CONTROL_GAINED", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_REGEN_DISABLED",
+                     "PLAYER_ENTERING_WORLD" }) do
+    pcall(function() OV.fireF:RegisterEvent(e) end)
+end
+OV.fireF:SetScript("OnEvent", function(_, e, unit)
+    if e:sub(1, 15) == "UNIT_SPELLCAST_" and unit ~= "player" then return end
+    local ev = OV.FIRE_EV[e]
+    if ev then OV.seated = OV.seatNext(OV.seated, ev) end
+    if inCombat() or not OV.sbHas(OV.sbdb().rows, "fire") then return end
+    OV.smartLater()
+end)
+-- m190 END
 function OV.smartApply()
     if inCombat() then OV.smartPending = true; return end
     OV.smartPending = nil
@@ -5736,6 +6359,11 @@ function OV.smartApply()
     if OV.sbHas(rows, "manners") then
         local ms, mw = OV.mannersArmed()
         if ms then due.manners = { val = "manners", typ = "manners", shown = { id = 0, n = mw and (ms .. " on " .. mw) or ms, i = OV.mannersIcon(ms), k = "manners" } } end
+    end
+    -- m190 SIT BY THE FIRE: its row's step (OV.fireStep: the Cozy Fire aura, standing, still and on foot)
+    if OV.sbHas(rows, "fire") then
+        local okf, fs = pcall(function() return OV.fireStep(state) end)
+        if okf and fs then due.fire = fs end
     end
     local st, sk = OV.smartWalk(rows, due, OV.smartMana())
     -- m128 (review of m127): the why line and the model's eating / drinking rate from the step the walk CHOSE (m70's rate per kind)
@@ -6027,7 +6655,8 @@ function OV.sbdb()
     local k = whoKey()
     if not k then return OV.sbMigrate({ rows = {} }, false) end
     if type(db.smartBuffs[k]) ~= "table" then db.smartBuffs[k] = { rows = {} } end
-    return OV.sbMigrate(db.smartBuffs[k], OV.mannersOn())
+    local mn = OV.mannersOn()
+    return OV.sbFire(OV.sbMigrate(db.smartBuffs[k], mn), mn)            -- m190: the fire row once
 end
 -- SB-MIGRATE-BEGIN (pure: tools/test_smarty.py) m127 THE TYPED LIST, v2 (the user, 2026-11-11: food and water movable; Manners a row of
 -- its own): rows = { { k = "food" }, { k = "drink" }, { k = "manners" }, { ids = { spell id, ... } } } in the player's order. v1 (rows
@@ -6035,7 +6664,8 @@ end
 -- installed. Manners' row is added (at the end) whenever Manners is installed and the list has none, unless the player removed it
 -- (mnOff); it stays in the list while Manners is not installed, hidden (OV.sbVis). Every call drops a malformed row and a second row
 -- of the same kind.
-OV.SB_KINDS = { "food", "drink", "manners" }                        -- after Add, select cell sel0 + 0 / 1 / 2 adds that kind
+-- m190 SIT BY THE FIRE: { k = "fire" } is a kind like Food (kept, moved, removed); OV.sbFire adds it.
+OV.SB_KINDS = { "food", "drink", "manners", "fire" }                -- after Add, select cell sel0 + 0 / 1 / 2 / 3 adds that kind
 OV.sbMigrate = function(e, mannersOn)
     if type(e.rows) ~= "table" then e.rows = {} end
     if e.v ~= 2 then
@@ -6046,7 +6676,7 @@ OV.sbMigrate = function(e, mannersOn)
     local out, seen = {}, {}
     for _, row in ipairs(e.rows) do
         local k = type(row) == "table" and row.k or nil
-        if k == "food" or k == "drink" or k == "manners" then
+        if k == "food" or k == "drink" or k == "manners" or k == "fire" then
             if not seen[k] then seen[k] = true; out[#out + 1] = { k = k } end
         elseif type(row) == "table" and k == nil and type(row.ids) == "table" and #row.ids > 0 then
             out[#out + 1] = row
@@ -6067,6 +6697,14 @@ end
 OV.sbHas = function(rows, kind)
     for _, row in ipairs(rows or {}) do if row.k == kind then return true end end
     return false
+end
+-- m190 SIT BY THE FIRE: its row added at the end of the list (an existing list keeps its order) unless the player removed it (fireOff)
+-- or the list is full (the 16 selects); always shown. Its own step after sbMigrate (that one's contract unchanged)
+OV.sbFire = function(e, mannersOn)
+    if e.fireOff or OV.sbHas(e.rows, "fire") then return e end
+    if #OV.sbVis(e.rows, mannersOn) >= (OV.SB_MAX or 16) then return e end
+    e.rows[#e.rows + 1] = { k = "fire" }
+    return e
 end
 -- SB-MIGRATE-END
 -- the self-buffs this character knows (the book's spells, by name): { id, n, i, k = "aura" | "imbue" }, SB_IDS' order; byName for checks
@@ -6158,6 +6796,7 @@ function OV.sbOp(col)
     if not sel or not rows[sel] then OV.sbAck("row", false, "no row picked") return end
     if col == OV.SB_OPS.remove then
         if rows[sel].k == "manners" then e.mnOff = true end             -- removed by the player: not added back by itself
+        if rows[sel].k == "fire" then e.fireOff = true end              -- m190: the same for Sit by the fire
         table.remove(rows, sel)
     elseif col == OV.SB_OPS.up and sv > 1 then rows[sel], rows[vis[sv - 1]] = rows[vis[sv - 1]], rows[sel]
     elseif col == OV.SB_OPS.down and sv < #vis then rows[sel], rows[vis[sv + 1]] = rows[vis[sv + 1]], rows[sel]
@@ -6179,6 +6818,7 @@ function OV.sbAddKind(kind)
     if #OV.sbVis(e.rows, mn) >= OV.SB_MAX then OV.sbAck("add", false, OV.SB_MAX .. " rows at most") return end
     e.rows[#e.rows + 1] = { k = kind }
     if kind == "manners" then e.mnOff = nil end
+    if kind == "fire" then e.fireOff = nil end                         -- m190
     OV.sbAck("add", true)
     pcall(OV.smartApply); pcall(emit, true); WC.push()
 end
@@ -6268,12 +6908,15 @@ function OV.sbDoc()
         if r == OV.sbAt then at = v end
     end
     local mi = (OV.smarty and OV.smarty.k == "manners" and OV.smarty.i) or T(function() return C_Spell.GetSpellTexture(1126) end) or 0
+    -- m190: the fire row's picture: the Cozy Fire spell's own icon
+    local fi = T(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(OV.FIRE_IDS[1])) or GetSpellTexture(OV.FIRE_IDS[1]) end)
     local kinds = {}
     for k, kind in ipairs(OV.SB_KINDS) do kinds[kind] = OV.SB_SEL0 + k - 1 end
     OV.sbDocNow = { v = 2, rows = rows, list = list, at = at, row = "gamemenu", pad = OV.sbRow ~= nil,
                     sel0 = OV.SB_SEL0, ops = OV.SB_OPS, on = OV.smartOn(), onCol = OV.SMART_ON_COL, offCol = OV.SMART_OFF_COL,
                     mn = mn, kinds = kinds, max = OV.SB_MAX,
-                    icons = { food = OV.sbItemIcon(4540), drink = OV.sbItemIcon(159), manners = type(mi) == "number" and mi or 0 } }
+                    icons = { food = OV.sbItemIcon(4540), drink = OV.sbItemIcon(159), manners = type(mi) == "number" and mi or 0,
+                              fire = type(fi) == "number" and fi or 0 } }
 end
 -- m72: the vitals DIAGNOSTIC (m65-m69, rounds 2-5) is GONE (the user on test41: "I keep getting lua errors from wow companion": round 4's
 -- secure snippet called UnitHealth, which the restricted environment does not have). What it found built m70's model below.
@@ -6679,7 +7322,7 @@ end
 -- m51 THE SETTINGS' OWN SAVE FILE, KEPT BY THE APP (the user's pick after test22, "Write the add-on's save file"): this client writes
 -- SavedVariables only on a clean exit, and Android kills it, so nothing the player set ever reached the disk. Every 5 s (and at once
 -- at login) each of OUR saved tables is written out as Lua source - sorted keys, plain values only - and sent as `svkeep` when it
--- changed; the app keeps it in Documents/DS Forever and writes OUR OWN WowCompanion*.lua before the next game start, only when the
+-- changed (m187: the 5 s pack only after a tap, a click, a fight's end or a new world, never in a fight, else every 30 s: svkeepTick); the app keeps it in Documents/DS Forever and writes OUR OWN WowCompanion*.lua before the next game start, only when the
 -- game has nothing newer. Left out: what is not a setting (crash-recovery key state, probes, learned cooldowns, chat lines).
 do
     -- m186 (upstream, issue 555's side finding): smartModel is Smart Y's health / mana estimate kept for a /reload (OV.hmStep, rewritten
@@ -6757,10 +7400,38 @@ do
         WC.send(WC.encode({ type = "padfix", v = PV, slot = FIX.slot, what = what }))
         if type(WC.flush) == "function" then pcall(WC.flush) else WC.push() end
     end
-    WC.svKeep = { send = send, ser = ser, fix181 = fix181, FIX = FIX }
+    -- m187 THE PACK ONLY AFTER A CHANGE (see the tag): st.dirty = something may have changed since the last pack. The signals are
+    -- cheap reads (a counter, a few plain events); the pack itself stays m51's (the same text compare, so nothing unchanged is sent).
+    -- In a function of its own: this file's main chunk is at Lua's 200-local limit
+    WC.svKeep = (function()
+        local st = { dirty = true, at = -1, taps = -1, packs = 0, skips = 0 }
+        local K = { send = send, ser = ser, fix181 = fix181, FIX = FIX, state = st, SAFETY_S = 30 }
+        local function tapsNow()
+            local p = type(WC.pad) == "table" and type(WC.pad.rx) == "table" and WC.pad.rx.n or nil
+            return type(p) == "number" and p or -1
+        end
+        function K.tick()
+            local n = tapsNow()
+            if n ~= st.taps then st.taps = n; st.dirty = true end
+            if inCombat() then st.skips = st.skips + 1; return end                  -- a fight: never packed (its end marks dirty)
+            local okT, t = pcall(GetTime)
+            t = okT and type(t) == "number" and t or 0
+            if not st.dirty and st.at >= 0 and t - st.at < K.SAFETY_S then st.skips = st.skips + 1; return end
+            st.dirty = false
+            st.at = t
+            st.packs = st.packs + 1
+            send(false)
+        end
+        local f = CreateFrame("Frame")
+        for _, e in ipairs({ "GLOBAL_MOUSE_UP", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "LOADING_SCREEN_DISABLED",
+                             "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_SPECIALIZATION_CHANGED" }) do
+            pcall(function() f:RegisterEvent(e) end)
+        end
+        f:SetScript("OnEvent", function() st.dirty = true end)
+        return K
+    end)()
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        -- Linux Streaming Edition: every 30 s (was 5) and never in a fight - each pass reads and sorts the whole tables
-        pcall(C_Timer.NewTicker, 30, function() if not inCombat() then pcall(send, false) end end)
+        pcall(C_Timer.NewTicker, 5, function() local k = WC.svKeep; if type(k) == "table" and k.tick then pcall(k.tick) end end)
     end
 end
 
@@ -6775,9 +7446,9 @@ end
 -- route. Nothing of the game's own is touched (bars, bindings, macros, CVars: the leave-no-trace rule). Answer: {type = "dsfreset"}.
 do
     local SPELLS = {
-        layouts = { "dpad", "rbm", "ctop" },                                      -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag
+        layouts = { "dpad", "rbm", "ctop", "ctcb", "ctsw" },                      -- m178: the DS toolbar's mirror bit (none = off); m179: the top-screen combat bar's flag; m187: its cast bar's screen; m190: its swing
         skills = { "faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn",
-                   "smartBuffs", "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty" },   -- m176
+                   "smartBuffs", "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty", "holdBy" },   -- m176; m190: the hold spells
     }
     local DBK = {
         layouts = { "lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW" },
@@ -8215,4 +8886,340 @@ do
     clf:SetScript("OnEvent", function()
         if C_Timer and C_Timer.After then C_Timer.After(2, function() pcall(giveBack, "login") end) else pcall(giveBack, "login") end
     end)
+end
+
+-- m190 HOLD TO CAST, THE PROBE (the user's pick "Yes, a quick test first"; the app's half: HoldCast.kt). Once per UI load, out of
+-- combat, OV.hold.DELAY s after the login: READ the game's bindings on the Guide button's names (PADSYSTEM, PADSOCIAL; also a controller
+-- modifier emulated on one) - any binding there and we say so ("ready", bound) and the app pulses nothing; hold to cast stays off. Else
+-- "ready" and a watch of OV.hold.WATCH s: the app pulses the Guide button alone for a moment; we record whether we SAW it - the game's
+-- GAME_PAD_BUTTON_DOWN (its name), add-on code's controller state (C_GamePad), and the ROUTER's own read (the header's secure
+-- GetGamePadState, the read hold to cast uses) - any button that is not one of the controller's usual ones; whether a binding is on the
+-- name seen; and whether the game did something (its menu opened). Nothing is cast, bound, changed or undone. "done" carries it; a seen,
+-- unbound, quiet marker read by the router = db.holdGuide (hold to cast on), a seen one that is bound or acted = off; nothing seen = as
+-- it was (the app may not have pulsed: a /reload in a session it already probed).
+OV.hold.RT = [=[
+    local st = GetGamePadState and GetGamePadState()
+    local bt = st and st.buttons
+    local out = nil
+    if bt then
+        for i = 1, 40 do
+            if bt[i] then out = (out and (out .. ",") or "") .. i end
+        end
+    end
+    self:SetAttribute("wc-probe-rt", out)
+]=]
+function OV.hold.binding(name)
+    local a = TS(function() return GetBindingAction(name, true) end)
+    if a and a ~= "" then return a end
+    for _, cv in ipairs({ "GamePadEmulateShift", "GamePadEmulateCtrl", "GamePadEmulateAlt" }) do
+        local v = TS(function() return (C_CVar and C_CVar.GetCVar or GetCVar)(cv) end)
+        if v == name then return "EMULATE" end                        -- read only: the player's controller modifier is on it
+    end
+    return nil
+end
+-- a binding's word for the app's log: the game's command name, "CLICK" for a click binding, else "other" (never a frame or a name)
+function OV.hold.word(a)
+    if type(a) ~= "string" then return nil end
+    if a:match("^CLICK ") then return "CLICK" end
+    if a:match("^[A-Z0-9_]+$") and #a <= 40 then return a end
+    return "other"
+end
+function OV.hold.setGuide(g)
+    if type(_G.WowCompanionSpellsDB) ~= "table" then _G.WowCompanionSpellsDB = {} end
+    if _G.WowCompanionSpellsDB.holdGuide == g then return end
+    _G.WowCompanionSpellsDB.holdGuide = g
+    pcall(OV.hold.rearm)
+end
+-- the marker's number on every router button, the hold texts, the keys (out of combat; at the fight's end else)
+function OV.hold.rearm()
+    if inCombat() then OV.hold.pend = true return end
+    OV.hold.pend = nil
+    local idx = OV.hold.idx()
+    for _, x in ipairs(routerAll()) do pcall(function() x.b:SetAttribute("wc-gd", idx) end) end
+    pcall(routerMacros); pcall(routerBind, "hold")
+    soon(); pcall(OV.hold.tick, true)
+end
+function OV.hold.ready()
+    if OV.hold.asked then return end
+    if inCombat() then OV.hold.later = true return end
+    OV.hold.asked = true
+    local bn, ba = nil, nil
+    for _, n in ipairs(OV.hold.NAMES) do
+        local a = OV.hold.binding(n)
+        if a then bn, ba = n, a break end
+    end
+    if bn then pcall(OV.hold.setGuide, nil) end                         -- bound now: hold to cast off (nothing pulsed)
+    pcall(function() WC.send(WC.encode({ type = "holdprobe", v = PV, st = "ready", bound = bn and true or nil, bn = bn, ba = OV.hold.word(ba) })); WC.push() end)
+    if not bn then OV.hold.watch() end
+end
+function OV.hold.watch()
+    OV.hold.w = { t0 = GetTime(), menu0 = R.menuOpen() }
+    local f = OV.hold.f or CreateFrame("Frame")
+    OV.hold.f = f
+    pcall(f.RegisterEvent, f, "GAME_PAD_BUTTON_DOWN")
+    f:SetScript("OnEvent", function(_, e, name)
+        local w = OV.hold.w
+        if e ~= "GAME_PAD_BUTTON_DOWN" or not w then return end
+        local n = TS(function() return name end)
+        if n and not OV.hold.STD[n] and not w.ev then w.ev = n; w.seenAt = w.seenAt or GetTime() end
+    end)
+    f:SetScript("OnUpdate", function(_, el) pcall(OV.hold.poll, el) end)
+end
+function OV.hold.nameOf(i)
+    local n = TS(function() return C_GamePad.ButtonIndexToBinding(i - 1) end)
+    return (n and not OV.hold.STD[n]) and n or nil
+end
+function OV.hold.poll(el)
+    local w = OV.hold.w
+    if not w then return end
+    w.acc = (w.acc or 0) + (tonumber(el) or 0)
+    if w.acc < 0.03 then return end
+    w.acc = 0
+    if not w.sn then                                                    -- add-on code's read of the controller
+        local ok, st = pcall(function()
+            local id = C_GamePad.GetActiveDeviceID and C_GamePad.GetActiveDeviceID()
+            return C_GamePad.GetDeviceMappedState(id)
+        end)
+        local bt = ok and type(st) == "table" and st.buttons or nil
+        if type(bt) == "table" then
+            for i, v in pairs(bt) do
+                local n = v == true and type(i) == "number" and OV.hold.nameOf(i) or nil
+                if n then w.sn = n; w.seenAt = w.seenAt or GetTime() break end
+            end
+        end
+    end
+    if not w.rn and not inCombat() and R.hdr then                       -- the router's own read (secure, the header's snippet)
+        pcall(SecureHandlerExecute, R.hdr, OV.hold.RT)
+        local list = TS(function() return R.hdr:GetAttribute("wc-probe-rt") end)
+        pcall(function() R.hdr:SetAttribute("wc-probe-rt", nil) end)
+        for i in (list or ""):gmatch("%d+") do
+            local n = OV.hold.nameOf(tonumber(i))
+            if n then w.rn = n; w.seenAt = w.seenAt or GetTime() break end
+        end
+    end
+    if not w.acted and not w.menu0 and R.menuOpen() then w.acted = "menu" end
+    local now = GetTime()
+    if (w.seenAt and now - w.seenAt >= OV.hold.SETTLE) or now - w.t0 >= OV.hold.WATCH then OV.hold.done() end
+end
+function OV.hold.done()
+    local w = OV.hold.w
+    if not w then return end
+    OV.hold.w = nil
+    if OV.hold.f then
+        pcall(OV.hold.f.UnregisterAllEvents, OV.hold.f)
+        OV.hold.f:SetScript("OnUpdate", nil); OV.hold.f:SetScript("OnEvent", nil)
+    end
+    local name = w.rn or w.sn or w.ev
+    local gb = name and OV.hold.binding(name) or nil
+    if w.rn and not gb and not w.acted then pcall(OV.hold.setGuide, w.rn)
+    elseif name then pcall(OV.hold.setGuide, nil) end
+    pcall(function()
+        WC.send(WC.encode({ type = "holdprobe", v = PV, st = "done", ev = w.ev, sn = w.sn, rn = w.rn, gb = OV.hold.word(gb), acted = w.acted }))
+        WC.push()
+    end)
+end
+
+-- m190 THE APP'S MAP (`holdmap`, the launcher gate's input): the places ("bare:8", "lt:6", ...) whose press the router turns into the hold
+-- spell RIGHT NOW - the router carries the key (not stepped aside for a game window or a room, not in room mode), the live slot under
+-- the press on that layer has a hold text (a base face: its own), Party mode off, no loading screen. Every other press is never held
+-- back. Two of the game's own holds keep their button: the bare A while mounted, flying or swimming (Jump / ascend is held there) and,
+-- out of combat, the bare X while the game has something to interact with (its Interact, and its hold, on what is there). Sent when
+-- it changes (and every 15 s: an app that came up mid-game), on a 0.25 s ticker; read only.
+-- the tab a press of router button [b] takes its source from NOW (the router's own fight switch, as its snippet decides slotfight:
+-- [combat] or an attack running, not given back by B; Combat controls on), or of the game now without one
+function OV.hold.tabOf(b)
+    if not combatOn() then return "normal" end
+    if b then
+        local st = TS(function() return b:GetAttribute("wc-state") end)
+        local pre = TB(function() return b:GetAttribute("wc-pre") end) == true
+        local given = TB(function() return b:GetAttribute("wc-given") end) == true
+        return ((st == "fight" or pre) and not given) and "combat" or "normal"
+    end
+    return (fighting() and not face.given) and "combat" or "normal"
+end
+function OV.hold.tabNow() return OV.hold.tabOf(face.buttons[6] or face.buttons[8] or face.buttons[5]) end
+function OV.hold.mapNow()
+    if OV.hold.bound then return nil, "bound" end
+    if not OV.hold.usable() then return nil, "off" end
+    if OV.hold.loading then return nil, "loading" end
+    if OV.pm and OV.pm.on and OV.pm.on() then return nil, "party" end
+    -- Book b78 THE BIND BOX (out of combat, waiting for a controller press): every place but the plain B (its way out) and the sticks -
+    -- a press held for the hold time places the box's spell as that button's hold spell (UNDO.holdPlace); a short one binds as always
+    local bk = WC._spellsBook
+    local bc = type(bk) == "table" and bk.ctl or nil
+    if type(bc) == "table" and bc.bind and not bc.bind.cb and not bc.bind.party and bc.mode == "bind" and not inCombat() then
+        local all = {}
+        for _, lay in ipairs(OV.hold.LAYN) do
+            for pos = 1, 8 do if not (lay == "bare" and pos == 7) then all[#all + 1] = lay .. ":" .. pos end end
+        end
+        return table.concat(all, ","), "box"
+    end
+    if next(OV.hold.db(false, "normal")) == nil and next(OV.hold.db(false, "combat")) == nil then return nil, "none" end
+    local bars = routerBars()
+    local fight = inCombat()
+    local air = TB(function() return IsMounted() end) == true or TB(function() return IsFlying() end) == true
+        or TB(function() return IsSwimming() end) == true
+    local soft = not fight and TB(function() return UnitExists("softinteract") end) == true
+    local out = {}
+    for pos = 1, 8 do
+        local b = (pos ~= 7) and ((FACE[pos] and face.buttons[pos]) or (pos <= 4 and R.dbtn[pos])) or nil   -- never B
+        local key = R.keys[pos]
+        local carried = b and key and TS(function() return GetBindingAction(key, true) end) == routerAct(b:GetName())
+        if carried and TS(function() return b:GetAttribute("wc-mode") end) ~= "room" then
+            local tab = OV.hold.tabOf(b)                                -- PER TAB: the state this button's press uses now
+            for si, lay in ipairs(OV.hold.LAYN) do
+                local anchor = ({ "top", "left", "right", "bottom" })[si]
+                local has = (anchor == "top" and pos >= 5) and OV.hold.at("f" .. pos, tab) or nil
+                if not has then
+                    local list, slot = bars[anchor] or {}, nil
+                    for i = #list, 1, -1 do
+                        if TB(function() return list[i]:IsShown() end) == true or i == 1 then
+                            local btn = T(function() return list[i]:GetActionButtonByIndex(pos) end)
+                            slot = btn and TN(function() return btn:GetID() end) or nil
+                            break
+                        end
+                    end
+                    has = (slot and slot > 0) and OV.hold.at(slot, tab) or nil
+                end
+                if has and anchor == "top" and pos == 8 and air then has = nil end
+                if has and anchor == "top" and pos == 5 and soft then has = nil end
+                if has then out[#out + 1] = lay .. ":" .. pos end
+            end
+        end
+    end
+    if #out == 0 then return nil, "none" end
+    return table.concat(out, ","), "on"
+end
+-- a hold whose button has nothing any more (its press cleared or moved away, the game's bar emptied - or saved before the rule) is
+-- dropped with it, out of combat, once the bars are loaded (a login's first reads are empty): store, router texts, keys
+function OV.hold.sweep()
+    if inCombat() or not barsLoaded() then return false end
+    local gone = false
+    for _, tab in ipairs(OV.hold.TABS) do
+    local t = OV.hold.db(false, tab)
+    for k, e in pairs(t) do
+        local keep
+        if OV.hold.noB(k, e) then keep = false                          -- never on B: a saved one goes
+        elseif type(k) == "number" then
+            keep = type(e) == "table" and type(e.set) == "number" and type(e.pos) == "number"
+                and (function() local ok, v = pcall(OV.view, e.set, e.pos, k); return ok and type(v) == "table" and v.kind ~= nil and v.kind ~= "none" end)()
+        else keep = type(k) == "string" and k:match("^f[5-8]$") ~= nil end
+        if not keep then t[k] = nil; gone = true end
+    end
+    end
+    if gone then pcall(routerMacros); pcall(routerBind, "hold"); soon() end
+    return gone
+end
+function OV.hold.tick(force)
+    pcall(OV.hold.sweep)
+    -- a binding put on the Guide's name since the probe (the player, another add-on): hold to cast off at once (the map says it; the
+    -- kept answer dropped out of combat), as the probe would have said
+    local g = OV.hold.guide()
+    if g ~= nil and OV.hold.binding(g) ~= nil then
+        OV.hold.bound = true
+        if not inCombat() then pcall(OV.hold.setGuide, nil) end
+    elseif g ~= nil then OV.hold.bound = nil end                        -- (a new probe's answer clears it)
+    local b, why = OV.hold.mapNow()
+    local word = (b or "") .. "|" .. why
+    local now = GetTime()
+    if force or word ~= OV.hold.sent or now - (OV.hold.sentAt or 0) >= 15 then
+        OV.hold.sent, OV.hold.sentAt = word, now
+        WC.send(WC.encode({ type = "holdmap", v = PV, on = b and true or nil, b = b, why = why }))
+        WC.push()
+    end
+end
+
+-- m190 THE HOLD SPELLS' COOLDOWNS (the user's pick "A: corner badge": the hold spell's own sweep on its badge): every hold spell of the
+-- page in use (a macro's: the spell it casts now), as the fight faces' are read - SPELL_UPDATE_COOLDOWN's isActive / isOnGCD (never
+-- secret), the real length out of combat (LEARNED by name, the fight faces' own table), in fights the learned one or the tooltip's; a
+-- cast landing starts its cooldown. Only a real cooldown (over 1.5 s; the GCD is not drawn on a badge). `holdcd` on a change: k =
+-- { ["<layer>:<pos>"] = { d, l, e } }; a place not in it has none running.
+function OV.hold.cds(cast)
+    if not OV.hold.usable() then return end
+    local now, learned, changed = GetTime(), cdLearned(), false
+    local page = gamePage()
+    local seen = {}
+    local tab = OV.hold.tabNow()                                        -- PER TAB: the holds that would fire now
+    for set = 1, SETS do
+        for pos = 1, POSITIONS do
+            local e = OV.hold.at(OV.hold.key(page, set, pos), tab)
+            local c = e and ((OV.ftKind(e) == "spell" and e) or (OV.ftKind(e) == "macro" and OV.macSpell(e.n))) or nil
+            local place = OV.hold.LAYN[set] .. ":" .. pos
+            local cur = OV.hold.cdNow[place]
+            if cur and (now >= cur.t0 + cur.d or not c or cur.n ~= c.n) then OV.hold.cdNow[place] = nil; cur = nil; changed = true end
+            if type(c) == "table" and type(c.n) == "string" then
+                seen[place] = true
+                if cast then
+                    if cast == c.n then
+                        local d = learned[c.n] or OV.tcdOf(c.id)
+                        if d and d > 1.5 then OV.hold.cdNow[place] = { d = d, t0 = now, e = true, n = c.n, cast = true }; changed = true end
+                    end
+                else
+                    local ok, info = pcall(C_Spell.GetSpellCooldown, c.id or c.n)
+                    local active = ok and type(info) == "table" and TB(function() return info.isActive end) == true
+                    local gcd = ok and type(info) == "table" and TB(function() return info.isOnGCD end) == true
+                    if not active then
+                        if cur and not (cur.cast and now < cur.t0 + cur.d - 0.2) then OV.hold.cdNow[place] = nil; changed = true end
+                    elseif not gcd then
+                        local dur = SN(function() return info.duration end)
+                        local st = SN(function() return info.startTime end)
+                        if dur and dur > 1.5 then
+                            learned[c.n] = dur
+                            if not cur or math.abs((cur.t0 + cur.d) - ((st or now) + dur)) > 0.05 then
+                                OV.hold.cdNow[place] = { d = dur, t0 = st or now, n = c.n }; changed = true
+                            end
+                        elseif not cur then
+                            local d = learned[c.n] or OV.tcdOf(c.id)
+                            if d and d > 1.5 then OV.hold.cdNow[place] = { d = d, t0 = now, e = true, n = c.n }; changed = true end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for place in pairs(OV.hold.cdNow) do if not seen[place] then OV.hold.cdNow[place] = nil; changed = true end end
+    if changed then OV.hold.cdSend() end
+end
+function OV.hold.cdSend()
+    pcall(function()
+        local k, now = {}, GetTime()
+        for place, c in pairs(OV.hold.cdNow) do
+            local left = c.d - (now - c.t0)
+            if left > 0 then k[place] = { d = c.d, l = math.floor(left * 1000 + 0.5) / 1000, e = c.e or nil } end
+        end
+        WC.send(WC.encode({ type = "holdcd", v = PV, k = next(k) and k or nil }))
+        WC.push()
+    end)
+end
+-- a press that ran a hold spell (the router's post-click, kind "slothold"): the top-screen bar's flash (ActionBar's WC.holdFired)
+function OV.hold.fired(b, pos)
+    if TS(function() return b:GetAttribute("wc-kind") end) ~= "slothold" then return end
+    local lay = OV.LAYW[TS(function() return b:GetAttribute("wc-lay") end) or ""] or "bare"
+    if type(WC.holdFired) == "function" then pcall(WC.holdFired, pos, lay) end
+end
+WC.padMapHold = function() return OV.hold end                          -- the off-device tests' handle (read only)
+do
+    local hf = CreateFrame("Frame")
+    for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED",
+                         "SPELL_UPDATE_COOLDOWN", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR" }) do pcall(hf.RegisterEvent, hf, e) end
+    pcall(function() hf:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") end)
+    hf:SetScript("OnEvent", function(_, e, a1, a2, a3)
+        if e == "PLAYER_ENTERING_WORLD" then
+            OV.hold.loading = false
+            if C_Timer and C_Timer.After then C_Timer.After(OV.hold.DELAY, function() pcall(OV.hold.ready) end) end
+        elseif e == "PLAYER_REGEN_ENABLED" then
+            if OV.hold.pend then pcall(OV.hold.rearm) end
+            if OV.hold.later then OV.hold.later = nil; if C_Timer and C_Timer.After then C_Timer.After(OV.hold.DELAY, function() pcall(OV.hold.ready) end) end end
+        elseif e == "LOADING_SCREEN_ENABLED" then
+            OV.hold.loading = true; pcall(OV.hold.tick)
+        elseif e == "LOADING_SCREEN_DISABLED" then
+            OV.hold.loading = false; pcall(OV.hold.tick)
+        elseif e == "UNIT_SPELLCAST_SUCCEEDED" then
+            local n = SN(function() return a3 end) and TS(function() return C_Spell.GetSpellName(a3) end)
+            if n then pcall(OV.hold.cds, n) end
+        else
+            pcall(OV.hold.cds)
+        end
+    end)
+    if C_Timer and C_Timer.NewTicker then pcall(C_Timer.NewTicker, 0.25, function() pcall(OV.hold.tick) end) end
 end

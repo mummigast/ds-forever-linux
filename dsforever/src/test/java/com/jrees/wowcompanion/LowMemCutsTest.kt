@@ -48,7 +48,11 @@ class LowMemCutsTest {
         val c = File(repo, "dsforever/src/main/jni/dsf/dsf_heap.c").readText()
         assertTrue(c.contains("Java_com_jrees_wowcompanion_NativeHeap_purge") && c.contains("M_PURGE_ALL") && c.contains("M_PURGE"))
         assertTrue("R8 keeps its JNI name", File(repo, "app/proguard-rules.pro").readText().contains("class com.jrees.wowcompanion.NativeHeap { native <methods>; }"))
-        assertTrue(File(repo, "companion/tools/interiors_device/apk_jni_check.py").readText().contains("Java_com_jrees_wowcompanion_NativeHeap_purge"))
+        // the APK check names libdsf-heap.so's symbols as a prefix + names (purge among the page-out ones since the page-out branch)
+        val heapLib = File(repo, "companion/tools/interiors_device/apk_jni_check.py").readLines()
+            .first { it.contains("\"lib/arm64-v8a/libdsf-heap.so\"") }
+        assertTrue(heapLib.contains("\"Java_com_jrees_wowcompanion_NativeHeap_\" + n for n in (\"purge\"") ||
+            heapLib.contains("\"Java_com_jrees_wowcompanion_NativeHeap_purge\""))
     }
 
     // ------------------------------------------------------------------ (b) the loading pictures
@@ -199,6 +203,9 @@ class LowMemCutsTest {
     @Test fun theIndoorMapsLineSaysWhenTheyReallyBuild() {
         val flow = text("SetupFlow.kt")
         assertFalse(flow.contains("builds while playing"))
-        assertTrue(flow.contains("\"Indoor maps (builds while the game is closed): \$it\""))
+        // 2026-11-24 (the user: "build on the first screen if people wait there"): it builds on the start screen too - the row no
+        // longer says it waits for the game to close
+        assertFalse(flow.contains("builds while the game is closed"))
+        assertTrue(flow.contains("const val INDOOR_ROW = \"Indoor maps (optional)\""))
     }
 }

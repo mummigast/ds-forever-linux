@@ -32,6 +32,12 @@ import kotlin.math.*
  */
 class MapView(context: Context) : View(context) {
 
+    // 1529 PERFORMANCE MODE (FramePace): this view's animation frames, paced to ~30 Hz while the player moves or fights on Home. The
+    // field is nullable on purpose: View's constructor runs before it is set
+    private val pace: FramePace.Gate? = FramePace.gate(this) { vsyncFrame() }
+    private fun vsyncFrame() = super.postInvalidateOnAnimation()
+    override fun postInvalidateOnAnimation() { pace?.frame() ?: super.postInvalidateOnAnimation() }
+
     private var map: JSONObject? = null
     private var staleMs: Long = 0
 
@@ -39,6 +45,12 @@ class MapView(context: Context) : View(context) {
     // (assets/maps, stitched from the same tiles) left the APK with the art harvest (the user 2026-10-09: no game art in the
     // APK); in their place a SMALL copy of each tile is drawn at any width, the full tile over it while the view is close.
     private val pArt = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    /**
+     * the game's indoor minimap tiles (review of 2026-11-23, compare_ring_openmap.png: a dark hairline at every tile edge): drawn turned
+     * through a matrix, an anti-aliased edge is half covered on both sides and the scrim shows through where two tiles meet; without
+     * anti-aliasing each pixel belongs to exactly one tile (the tiles' outer edges are their own transparent slack)
+     */
+    private val pTile = Paint(Paint.FILTER_BITMAP_FLAG)
     private val tileDst = RectF()
     // Full-size tiles only while the view is at most this many yards across (then at most ~4 x 3 are on screen)
     private val TILE_MAX_YD = 1600f
@@ -409,6 +421,8 @@ class MapView(context: Context) : View(context) {
         return floatArrayOf((dispX / ydW).toFloat(), (dispY / ydH).toFloat(), dispF)
     }
 
+    /** 1529 (FramePace): the player is moving (the trail is live) */
+    fun movingNow(): Boolean = trailLive()
     private fun trailLive() = trail.size >= 2 && clkOff != Long.MIN_VALUE &&
         android.os.SystemClock.elapsedRealtime() - clkOff - trail.last().g < STALE_MS.toLong()
 
@@ -619,7 +633,7 @@ class MapView(context: Context) : View(context) {
             val g = runCatching { readGrid(meta) }.getOrNull()
             mainHandler.post {
                 gridLoading.remove(p.fid)
-                if (g != null) { gridCache[p.fid] = g; while (gridCache.size > 3) gridCache.remove(gridCache.keys.first()); invalidate() }
+                if (g != null) { gridCache[p.fid] = g; while (gridCache.size > 3) gridCache.remove(gridCache.keys.first()); gridArrivals++; invalidate() }
             }
         }
         return null
@@ -680,17 +694,44 @@ class MapView(context: Context) : View(context) {
     private fun placeHere(m: JSONObject): Place? {
         val cont = rect?.continent ?: return null
         ensurePlaces(cont)
-        if (!m.optBoolean("indoors", false)) return null
+        if (!indoorsNow(m)) return null
         if (placesFor != cont) return null            // still parsing on the other thread
         val wx = m.optDouble("wx", Double.NaN)
         val wy = m.optDouble("wy", Double.NaN)
         if (wx.isNaN() || wy.isNaN()) return null
+        val list = places ?: return null
+        // asked several times a frame (the draw, the framing, the spine, the tracker): once per position and grid arrival
+        if (hereList === list && hereWx == wx && hereWy == wy && hereGrids == gridArrivals) return herePlace
         // SMALLEST match, not the first. Footprints nest: a tavern sits inside the district
         // WMO that contains it, and a Caverns of Time arm is a 900 yd box that would swallow
         // anything sharing its map. The most specific building is the one you are in.
-        return places?.filter { it.contains(wx, wy) }
-            ?.minByOrNull { (it.wxmax - it.wxmin) * (it.wymax - it.wymin) }
+        // FIX 3 (2026-11-23, Ironforge): the world box is only the first cut. The room must hold the point in its own LOCAL (rotated)
+        // storey rects, and have walkable floor near it once its height field is read (IndoorPick): a turned city's shop box no longer
+        // claims the hall beside it. Only the smallest room not yet read asks for its field (one at a time: never a churn of 13 MB reads)
+        var asked = false
+        val cands = ArrayList<IndoorPick.Candidate>()
+        val byId = HashMap<String, Place>()
+        for (p in list.filter { it.contains(wx, wy) }.sortedBy { (it.wxmax - it.wxmin) * (it.wymax - it.wymin) }) {
+            val lx = p.localX(wx, wy); val ly = p.localY(wx, wy)
+            val local = IndoorPick.insideLocal(p.levels.map { doubleArrayOf(it.lxmin, it.lxmax, it.lymin, it.lymax) }, lx, ly)
+            val walk: Boolean? = if (!local) false else gridCache[p.fid]?.let { g ->
+                IndoorPick.walkNear(g.cell, lx, ly) { x, y -> g.layersAt(x, y, layerBuf) }
+            } ?: if (p.gridMeta == null) true else if (!asked) { asked = true; gridFor(p); null } else false
+            cands.add(IndoorPick.Candidate(p.fid, (p.wxmax - p.wxmin) * (p.wymax - p.wymin), local, walk))
+            byId[p.fid] = p
+            if (local && walk != false) break             // the smallest room that may hold the point: the rest are bigger
+        }
+        val out = IndoorPick.choose(cands)?.let { byId[it.id] }
+        hereList = list; hereWx = wx; hereWy = wy; hereGrids = gridArrivals; herePlace = out
+        return out
     }
+    private var hereList: List<Place>? = null
+    private var hereWx = Double.NaN
+    private var hereWy = Double.NaN
+    private var hereGrids = -1
+    private var herePlace: Place? = null
+    /** counts the height fields that arrived (placeHere asks again once one has) */
+    private var gridArrivals = 0
 
     private fun track(p: Place, wx: Double, wy: Double) {
         val g = gridFor(p) ?: return
@@ -916,12 +957,216 @@ class MapView(context: Context) : View(context) {
                 planDst[i * 2 + 1] = sy(r.ny(p.worldX(lx[i], ly[i])))
             }
             planMatrix.setPolyToPoly(planSrc, 0, planDst, 0, 3)
-            pArt.alpha = alpha
-            c.drawBitmap(bm, planMatrix, pArt)
+            pTile.alpha = alpha
+            c.drawBitmap(bm, planMatrix, pTile)
         }
-        pArt.alpha = 255
+        pTile.alpha = 255
         planBitmap(f.outline)?.let { drawPlan(c, p, f, it, alpha, sx, sy) }
         return true
+    }
+
+    // ---- THE CAPITALS BY POSITION (2026-11-23, Ironforge; the user's D2 pick "Game's art now, slice later"): IndoorCityArt picks the
+    // groups the player is in, by the root's own placement; drawn under any built room, on the outdoor map in the city's own shape
+    // (1526: the city's painted map, 1524's base B, is gone, and no dark rectangle: "part of the world around it").
+
+    /** this frame's game tiles drawn for a capital by position, the "no indoor map" note drawn (the tests) */
+    var cityArtDrawn = 0
+        private set
+    /** this frame drew the floor's one picture ([IndoorCityArt.Mosaic]: the open map zoomed out past its tiles' cap; the tests) */
+    var cityMosaicDrawn = false
+        private set
+    var indoorNoteDrawn = false
+        private set
+    /** the tests: the built room the player is in now (its key), or null */
+    fun indoorPlaceKey(): String? = map?.let { placeHere(it) }?.fid
+
+    private class CitySel(val city: IndoorCityArt.City, val t: DoubleArray, val groups: List<WmoMinimap.Group>, val pick: IndoorCityArt.Pick)
+    private val cityTracker = IndoorCityArt.Tracker()
+    /** the floor last known in a capital's built room (its root's own space), carried into the hall for [CITY_Z_MS] */
+    private var cityZ = Float.NaN
+    private var cityZAt = 0L
+    private var cityZRoot = 0
+    private val CITY_Z_MS = 4_000L
+
+    /** a capital's built room and the height its tracker knows (that room's root and its own space), or null */
+    private fun cityRoomZ(p: Place): Pair<Int, Float>? {
+        val root = p.fid.substringBefore('_').toIntOrNull() ?: return null
+        if (IndoorCityArt.byRoot(root) == null || zEst.isNaN()) return null
+        return root to zEst
+    }
+
+    /** the root's placement: a built room of it on this continent (the same transform), else the city's own */
+    private fun cityTransform(city: IndoorCityArt.City): DoubleArray {
+        if (placesFor == city.continent) places?.firstOrNull { it.fid.startsWith("${city.root}_") }?.let { return doubleArrayOf(it.ox, it.oy, it.cs, it.sn) }
+        return city.l2w
+    }
+
+    private fun cityArtHere(m: JSONObject, indoors: Boolean, place: Place?): CitySel? {
+        val r = rect ?: return null
+        val wx = m.optDouble("wx", Double.NaN); val wy = m.optDouble("wy", Double.NaN)
+        val city = IndoorCityArt.cityAt(r.continent, wx, wy) ?: run { cityTracker.reset(); return null }
+        if (!IndoorCityArt.shows(city, indoors, m.optInt("mapID", 0), m.optInt("onTaxi", 0) == 1)) return null
+        val groups = gameArtNow()[city.root.toString()]?.filter { it.tiles.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: return null
+        val t = cityTransform(city)
+        val now = android.os.SystemClock.elapsedRealtime()
+        val z = when {
+            place != null && cityRoomZ(place)?.first == city.root && !floorUnsure() -> zEst
+            cityZRoot == city.root && now - cityZAt < CITY_Z_MS -> cityZ
+            else -> Float.NaN
+        }
+        val pick = cityTracker.pick(city.root, groups.map { it.bb }, city.localX(wx, wy, t), city.localY(wx, wy, t), z) ?: return null
+        return CitySel(city, t, groups, pick)
+    }
+
+    /**
+     * the city's own shape (1526, the user: "I want it to look like its still part of the world around it ... Can't we just make it
+     * seemless like with stormwind?"): the floor's groups' own boxes, turned with the city, one path (no seam where two meet), in the
+     * indoor dark ([IndoorCityArt.BACKING]) under the art - the gaps inside the city no art covers; outside it the outdoor map. Not
+     * anti-aliased, as the tiles ([pTile]): the dark and the art end on the same pixels, no dark rim past the art
+     */
+    private val cityShape = Path()
+    private val cityCorners = FloatArray(8)
+    private val pCityShape = Paint().apply { color = IndoorCityArt.BACKING; style = Paint.Style.FILL; isAntiAlias = false }
+
+    /** A: the city's own shape in the dark, then the game's tiles of the picked groups that are in view, unsure at 55 % */
+    private fun drawCityArt(c: Canvas, sel: CitySel, left: Float, top: Float, fw: Float, fh: Float,
+                            sx: (Double) -> Float, sy: (Double) -> Float) {
+        val r = rect ?: return
+        val t = sel.t
+        fun wX(lx: Double, ly: Double) = t[0] - lx * t[2] + ly * t[3]
+        fun wY(lx: Double, ly: Double) = t[1] - lx * t[3] - ly * t[2]
+        fun scrX(lx: Double, ly: Double) = sx(r.nx(wY(lx, ly)))
+        fun scrY(lx: Double, ly: Double) = sy(r.ny(wX(lx, ly)))
+        cityShape.rewind()
+        cityShape.fillType = Path.FillType.WINDING
+        for (gi in sel.pick.groups) {
+            val b = sel.groups.getOrNull(gi)?.bb ?: continue
+            // the box's corners (x1, y1), (x2, y1), (x2, y2), (x1, y2) on screen, kept in one array (no garbage per frame)
+            var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+            for (k in 0..3) {
+                val lx = (if (k == 1 || k == 2) b[3] else b[0]).toDouble(); val ly = (if (k >= 2) b[4] else b[1]).toDouble()
+                val a = scrX(lx, ly); val e = scrY(lx, ly)
+                cityCorners[k * 2] = a; cityCorners[k * 2 + 1] = e
+                x0 = min(x0, a); x1 = max(x1, a); y0 = min(y0, e); y1 = max(y1, e)
+            }
+            if (x1 < left || x0 > left + fw || y1 < top || y0 > top + fh) continue
+            cityShape.moveTo(cityCorners[0], cityCorners[1])
+            for (k in 1..3) cityShape.lineTo(cityCorners[k * 2], cityCorners[k * 2 + 1])
+            cityShape.close()
+        }
+        c.drawPath(cityShape, pCityShape)
+        val vis = ArrayList<Pair<WmoMinimap.Group, IntArray>>()
+        for (gi in sel.pick.groups) {
+            val g = sel.groups.getOrNull(gi) ?: continue
+            for (tile in g.tiles) {
+                val q = WmoMinimap.tileRect(g.bb, tile[0], tile[1], tile[3], tile[4])
+                var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+                for (lx in doubleArrayOf(q[0], q[2])) for (ly in doubleArrayOf(q[1], q[3])) {
+                    val a = scrX(lx, ly); val b = scrY(lx, ly)
+                    x0 = min(x0, a); x1 = max(x1, a); y0 = min(y0, b); y1 = max(y1, b)
+                }
+                if (x1 < left || x0 > left + fw || y1 < top || y0 > top + fh) continue
+                vis.add(g to tile)
+            }
+        }
+        // the view's pixels a yard (one projection for every tile): full size unless a half-size tile loses nothing
+        val pxPerYd = Math.hypot((scrX(1.0, 0.0) - scrX(0.0, 0.0)).toDouble(), (scrY(1.0, 0.0) - scrY(0.0, 0.0)).toDouble())
+        val alpha = if (sel.pick.sure) 255 else 140
+        /** a picture over the local rect x0..x1, y0..y1 (its top row the high-y side, as WmoMinimap's tiles) */
+        fun drawLocal(bm: Bitmap, x0: Double, y0: Double, x1: Double, y1: Double) {
+            planSrc[0] = 0f; planSrc[1] = 0f
+            planSrc[2] = bm.width.toFloat(); planSrc[3] = 0f
+            planSrc[4] = 0f; planSrc[5] = bm.height.toFloat()
+            // top-left (x0, y1), top-right (x1, y1), bottom-left (x0, y0)
+            planDst[0] = scrX(x0, y1); planDst[1] = scrY(x0, y1)
+            planDst[2] = scrX(x1, y1); planDst[3] = scrY(x1, y1)
+            planDst[4] = scrX(x0, y0); planDst[5] = scrY(x0, y0)
+            planMatrix.setPolyToPoly(planSrc, 0, planDst, 0, 3)
+            pTile.alpha = alpha
+            c.drawBitmap(bm, planMatrix, pTile)
+        }
+        fun drawTile(bm: Bitmap, g: WmoMinimap.Group, tile: IntArray) {
+            val q = WmoMinimap.tileRect(g.bb, tile[0], tile[1], tile[3], tile[4])
+            drawLocal(bm, q[0], q[1], q[2], q[3])
+            cityArtDrawn++
+        }
+        if (vis.size > IndoorCityArt.TILES_MAX) {
+            // zoomed out over the city (1526 follow-up: it was the dark alone here, a dark block): the floor's one picture, at the view's
+            // level of detail, built off the UI thread; until it lands, one of another level, else the tiles already decoded, stand in
+            val lod = IndoorCityArt.Mosaic.lod(pxPerYd)
+            val key = IndoorCityArt.Mosaic.key(sel.city.root, sel.groups, sel.pick.groups, lod)
+            val lay = mosaicLays[key] ?: IndoorCityArt.Mosaic.layout(sel.groups, sel.pick.groups, lod)?.also { l ->
+                mosaicLays[key] = l
+                while (mosaicLays.size > MOSAIC_LAYS) mosaicLays.remove(mosaicLays.keys.first())
+            }
+            val prefix = key.substringBefore('@') + "@"
+            val shown = lay?.let { l -> cityMosaic(key, l)?.let { it to l } }
+                ?: mosaicLays.entries.firstNotNullOfOrNull { (k, l) -> if (k.startsWith(prefix)) planCache[k]?.let { it to l } else null }
+            if (shown != null) {
+                val (bm, l) = shown
+                drawLocal(bm, l.x0, l.y0, l.x1, l.y1)
+                cityMosaicDrawn = true
+            } else for ((g, tile) in vis) (planCache["wmomm2:" + tile[2]] ?: planCache["wmomm:" + tile[2]])?.let { drawTile(it, g, tile) }
+            pTile.alpha = 255
+            return
+        }
+        val half = IndoorCityArt.halfSize(vis.size, pxPerYd)
+        for ((g, tile) in vis) {
+            val bm = planBitmap((if (half) "wmomm2:" else "wmomm:") + tile[2], half = half, from = ArtHarvest.file(WmoMinimap.tileFile(tile[2]))) ?: continue
+            drawTile(bm, g, tile)
+        }
+        pTile.alpha = 255
+    }
+
+    /** the mosaics' layouts by their cache name (a few: the levels of the floor in view) */
+    private val mosaicLays = LinkedHashMap<String, IndoorCityArt.Mosaic.Layout>()
+    private val MOSAIC_LAYS = 6
+
+    /**
+     * the floor's one picture ([IndoorCityArt.Mosaic]) from the plan cache (its 24 MB budget, its trims), or null while it is built: asked
+     * for once, built on the plans' thread from its tiles decoded small (one at a time), landed as a plan does ([planArrived])
+     */
+    private fun cityMosaic(key: String, lay: IndoorCityArt.Mosaic.Layout): Bitmap? {
+        planCache[key]?.let {
+            planCache.remove(key); planCache[key] = it       // touch: keep LRU honest
+            return it
+        }
+        if (!planWanted.add(key)) return null
+        val files = lay.cells.map { ArtHarvest.file(WmoMinimap.tileFile(it.fid)) }
+        val gen = planGen
+        planDecoder.execute {
+            val bm = try {
+                val out = Bitmap.createBitmap(lay.w, lay.h, Bitmap.Config.ARGB_8888)
+                val cv = Canvas(out)
+                // no anti-aliasing: each pixel belongs to exactly one tile, no seam where two meet (pTile's rule)
+                val p = Paint(Paint.FILTER_BITMAP_FLAG)
+                val o = BitmapFactory.Options().apply { inSampleSize = lay.sample }
+                val dst = RectF()
+                var drew = 0
+                var lastFid = Int.MIN_VALUE; var last: Bitmap? = null
+                for ((i, cell) in lay.cells.withIndex()) {
+                    if (cell.fid != lastFid) {
+                        last?.recycle()
+                        last = runCatching { BitmapFactory.decodeFile(files[i].path, o) }.getOrNull(); lastFid = cell.fid
+                    }
+                    val t = last ?: continue
+                    dst.set(cell.l, cell.t, cell.r, cell.b)
+                    cv.drawBitmap(t, null, dst, p)
+                    drew++
+                }
+                last?.recycle()
+                if (drew == 0) { out.recycle(); null } else out
+            } catch (t: Throwable) { null }
+            post { planArrived(gen, key, bm) }
+        }
+        return null
+    }
+
+    /** the note may show: the rooms of this continent are read (or there is no published snapshot at all) and the player has a place */
+    private fun indoorNoteDue(m: JSONObject): Boolean {
+        val r = rect ?: return false
+        if (!m.optDouble("wx", Double.NaN).isFinite() || !m.optDouble("wy", Double.NaN).isFinite()) return false
+        return placesFor == r.continent || !placesSnapshot.directory.isDirectory
     }
 
     /** World AABB of a level, from the four corners of its local rect. */
@@ -1037,7 +1282,7 @@ class MapView(context: Context) : View(context) {
     private val ZOOM_EASE_TAU = 0.18f              // seconds
 
     init {
-        Settings.onChange { applySettings() }
+        Settings.onChange(weakly(this) { v -> v.applySettings() })      // weakly: a map made again never keeps this one ([weakly])
     }
 
     /** Settings changed (from the Settings room): take them on now. */
@@ -1047,8 +1292,22 @@ class MapView(context: Context) : View(context) {
     }
 
     private fun noteIndoor(m: JSONObject?) {
-        val ind = m?.optBoolean("indoors", false) ?: return
+        val ind = m?.let { indoorsNow(it) } ?: return
         if (ind != indoorSeen) indoorSeen = ind
+    }
+
+    /**
+     * THE MAP'S INDOORS (1525; the device read on test 1524: Ironforge's ring says "indoors": false, so the city's art never drew there;
+     * the user's pick "Ironforge + Undercity"): the add-on's own flag, or Ironforge / the Undercity by position - inside the city's
+     * footprint AND on the city's own map (the gates are Dun Morogh's, the Ruins of Lordaeron above the Undercity Tirisfal's), never on a
+     * taxi ([IndoorCityArt.indoorsHere]). Every indoor decision asks it: the built rooms, the game's art, the dark under them, the note, the
+     * framing and the small map's indoor width. (The walked-ground record keeps the game's own flag.)
+     */
+    private fun indoorsNow(m: JSONObject): Boolean {
+        if (m.optBoolean("indoors", false)) return true
+        val r = rect ?: return false
+        return IndoorCityArt.indoorsHere(false, m.optInt("mapID", 0), r.continent, m.optDouble("wx", Double.NaN), m.optDouble("wy", Double.NaN),
+            m.optInt("onTaxi", 0) == 1)
     }
 
     /** zoom factor that shows [yards] across the map width in the current zone, or NaN */
@@ -1111,7 +1370,7 @@ class MapView(context: Context) : View(context) {
             return floatArrayOf(cx, cy, (0.5f / half), 1f, 1f)
         }
 
-        if (m.optBoolean("indoors", false)) {
+        if (indoorsNow(m)) {
             // frame the actual building when we have its floorplan, not a guessed radius.
             // On the stairs the two storeys' rects are BLENDED by the same u that crossfades
             // them, so the camera travels up the building rather than jumping at the top.
@@ -2333,6 +2592,8 @@ class MapView(context: Context) : View(context) {
      *  over samples, so running it once per frame would make it depend on the frame rate. */
     private fun trackFromMap(m: JSONObject?) {
         val here = m?.let { placeHere(it) }
+        // a capital's rooms share the root's own space: the floor known in one carries out into the hall (IndoorCityArt)
+        if (here != null && !zEst.isNaN() && !floorUnsure()) cityRoomZ(here)?.let { (root, z) -> cityZRoot = root; cityZ = z; cityZAt = android.os.SystemClock.elapsedRealtime() }
         if (here == null) {
             if (trackFor != "") {          // left the building: forget everything about it
                 trackFor = ""; zEst = Float.NaN; pinnedLevel = -1; zAt = 0L
@@ -7496,11 +7757,30 @@ class MapView(context: Context) : View(context) {
         val tilesShown = HomeMapNote.terrainShown(terrain, drew || worldDrew, allAbsent && !worldDrew, artNote != null)
         artNote = if (HomeMapNote.shows(morphOn, tilesShown, MinimapTiles.building())) HomeMapNote.TEXT
             else if (HomeMapNote.otherShows(morphOn, offOwn, worldDrew)) HomeMapNote.NOT_BUILT else null
-        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
-        artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
         // the floorplan sits ON the terrain, under every marker -- same projection, so it
         // lines up with the world by construction rather than by a second transform
         val flPlace = placeHere(m)
+        // 2026-11-23 (Ironforge: "I cant see iron forges map at all when walking around in it"): indoors in a capital, the game's own
+        // indoor art of the groups the player is in, by position (A: IndoorCityArt), our built room on top where there is one. 1526 (the
+        // user: "I want it to look like its still part of the world around it"): on the outdoor map as everywhere else, in the city's own
+        // shape (its gaps dark), never its painted map (1524's B) nor a dark rectangle over its footprint
+        val indoorsNow = indoorsNow(m)
+        val citySel = if (rect != null) cityArtHere(m, indoorsNow, flPlace) else null
+        // (review: on the open map, in the part the quest list leaves - where the player is centred - not under the list)
+        artNote?.let { drawArtNote(c, it, left + trackPx, top, fw - trackPx, fh, compact) }
+        cityArtDrawn = 0; cityMosaicDrawn = false; indoorNoteDrawn = false
+        if (citySel != null && flPlace == null && rect != null) {
+            // (1526: no scrim - the outdoor map as everywhere else around the city's own shape)
+            c.save()
+            c.clipRect(left, top, left + fw, top + fh)
+            drawCityArt(c, citySel, left, top, fw, fh, ::sx, ::sy)
+            c.restore()
+        }
+        // 4 (2026-11-23): indoors with no indoor map at all here, said on the map, not a silent blur (Home's column and the open map);
+        // 1526: in a capital, where the player stands on none of the game's art (between its groups) though the city is drawn around
+        if (HomeMapNote.indoorShows(morphOn, indoorsNow, flPlace != null, citySel != null && citySel.pick.own >= 0, artNote != null, indoorNoteDue(m))) {
+            drawArtNote(c, HomeMapNote.INDOOR, left + trackPx, top, fw - trackPx, fh, compact); indoorNoteDrawn = true
+        }
         if (flPlace != null && rect != null) {
             val bl = floorBlend(flPlace)
             val lo = bl[0].toInt()
@@ -7517,8 +7797,11 @@ class MapView(context: Context) : View(context) {
             // Indoors the frame is ~60 yd wide, and 0.96 px/yd terrain at 34x is a smear that
             // fights the plan for attention. Scrim it: the roof and the road outside still
             // give you your bearings, just quietly. No plan decoded yet: the outdoor map as it is.
-            pScrim.color = 0xA0100C08.toInt()
-            if (bmLo != null || bmHi != null || artLo != null) c.drawRect(left, top, left + fw, top + fh, pScrim)
+            // A capital (1526): no scrim - the outdoor map as everywhere else around the city's own shape, the game's art of the groups
+            // around the room (A) in place on it, the room on top
+            pScrim.color = (0xA0 shl 24) or IndoorCityArt.DARK_RGB
+            if (citySel == null && (bmLo != null || bmHi != null || artLo != null)) c.drawRect(left, top, left + fw, top + fh, pScrim)
+            if (citySel != null) drawCityArt(c, citySel, left, top, fw, fh, ::sx, ::sy)
             // ALWAYS DRAW THE WHOLE BUILDING. The storeys you are not on are stroked as
             // ghosts, cool below and warm above, so being on the wrong one is one glance from
             // being obvious instead of being a dead end.

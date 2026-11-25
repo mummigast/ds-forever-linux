@@ -59,6 +59,30 @@ object PartyLayout {
     fun defaultTop(mode: Mode) = if (mode == Mode.FIGHT_OFF) FIGHT_TOP else REST_TOP
     fun plateH(mode: Mode) = when (mode) { Mode.REST -> REST_H; Mode.FIGHT_ON, Mode.FIGHT_TOP -> FIGHT_H; Mode.FIGHT_OFF -> TAKEOVER_H }
 
+    /**
+     * PARTY SIZING (the user, 2026-11-23; HomeLayout.partyGrow / partySize, the player's picks): the rows' height in [mode] with Party
+     * mode [on] (a REST page with it off, and the takeover - Party mode off - keep today's 64 / 56 whatever is picked); null = FILL (a
+     * Party-mode Top fight's rows fill the strip the band frees: ruling C, [fillH]). Out of a fight the list is 64 high, 88 with Grows =
+     * Whenever Party mode is on. In a fight, "Size in fights" (ONE setting, the user's ruling on test 1523: "just consolidate that into
+     * one setting"): Grow - the room the fight frees: the fill with the controller on the top screen ([Mode.FIGHT_TOP]), a Party
+     * fight's 88 with it on the bottom screen ([Mode.FIGHT_ON]); Same size - the rows out of the fight, both screens. Grows = Off: a
+     * fight never makes the list bigger than out of it (Grow keeps its size, as Same size).
+     * The defaults (In fights, Grow) are today's exactly: REST 64, FIGHT_ON 88, FIGHT_TOP the fill, FIGHT_OFF 56
+     */
+    fun sizedH(mode: Mode, on: Boolean, grow: HomeLayout.PartyGrow = HomeLayout.PartyGrow.FIGHTS,
+               size: HomeLayout.PartySize = HomeLayout.PartySize.GROW): Float? {
+        val base = if (on && grow == HomeLayout.PartyGrow.ALWAYS) FIGHT_H else REST_H
+        val grows = grow != HomeLayout.PartyGrow.OFF && size == HomeLayout.PartySize.GROW
+        return when (mode) {
+            Mode.REST -> base
+            Mode.FIGHT_OFF -> TAKEOVER_H
+            Mode.FIGHT_ON -> if (grows) maxOf(base, FIGHT_H) else base
+            Mode.FIGHT_TOP -> if (grows) null else base
+        }
+    }
+    /** [sizedH] for record [l]'s picks */
+    fun sizedH(mode: Mode, on: Boolean, l: HomeLayout): Float? = sizedH(mode, on, l.partyGrow, l.partySize)
+
     /** ruling C: a Party-mode Top fight's row height - [rows] rows sharing the well from [top] to [bottom] (its margins and gaps out), no
      *  shorter than a Party fight's ([FIGHT_H]), no taller than [FILL_MAX_H] (a solo or two-row party leaves the rest to the chat) */
     const val FILL_MAX_H = 192f

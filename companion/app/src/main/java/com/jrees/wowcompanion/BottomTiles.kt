@@ -46,6 +46,10 @@ object BottomTiles {
     /** 1518 build 2 (the room bar is no edit-mode widget any more, so its menu went): the XP track on Home, Show / Hide (this
      *  character's record, [HomeLayout.xpBar]: Home takes its 34 px; every room keeps it) */
     const val XP = "xpbar"
+    /** PARTY SIZING (the user, 2026-11-23; the pick "Settings + Edit Home"): Settings > Bottom screen > Party's one tile, "Party list" -
+     *  its band's lines Grows and Size in fights (one line since test 1523): this character's record (HomeLayout.partyGrow /
+     *  partySize), the same picks as the party list's pencil bubble in Edit Home */
+    const val PARTY = "party"
     const val ZOOM = "zoom"
     const val WORLD = "worldmap"
     const val INPUT = "input"
@@ -53,15 +57,19 @@ object BottomTiles {
     /** what the tiles read besides the settings: Spells' D-pad state (the DS WoW toolbar; null = an older add-on), the character */
     data class Env(val dpad: PadMapModel.Dpad?, val who: String?)
 
-    /** Home's 12 (critic C6: Tap-to-cast moved in, it lives on Home; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar
-     *  before it) and Map & chat's 3 */
-    val HOME_TILES = listOf(LAYOUT, REST, COMBAT, SWING, QUEST, CLOCK, TOOLBAR, TALK, CASTBAR, RANK, XP, HOME_RESET)
+    /** Home's 9 (critic C6; 2026-11-20: Spell rank badges; 1518: Reset Home last, the XP bar before it) and Map & chat's 3. EDIT TABS
+     *  (2026-11-24, the proposal's decision 5 A): In fights, Focused quest and Tap-to-cast bar left Settings - they are each tab's own now,
+     *  Edit Home is their one place (its In combat / Party mode tabs); the Party group's one tile (Party list) went the same way, so the
+     *  group shows no more (a group with no tiles draws no heading) */
+    val HOME_TILES = listOf(LAYOUT, REST, SWING, CLOCK, TOOLBAR, TALK, RANK, XP, HOME_RESET)
     val MAP_TILES = listOf(ZOOM, WORLD, INPUT)
+    val PARTY_TILES = emptyList<String>()
 
     /** the group's fixed tile list. Until the core lands the Bottom screen's two groups (Home, Map & chat) the old four are mapped: Home
      *  draws Home's 8, Map draws Map & chat's 3; Tap-to-cast bar and Chat draw none (their headings are not shown) */
     fun tiles(g: SettingsTabs.Group): List<String> = when (g.name) {
         "HOME" -> HOME_TILES
+        "PARTY_LIST" -> PARTY_TILES
         "MAP", "MAP_CHAT" -> MAP_TILES
         else -> emptyList()
     }
@@ -71,7 +79,9 @@ object BottomTiles {
     fun heading(g: SettingsTabs.Group): String = if (g.tab == SettingsTabs.Tab.BOTTOM && g.name == "MAP") "Map & chat" else g.heading
 
     /** every tile, both groups */
-    val ALL: List<String> get() = HOME_TILES + MAP_TILES
+    val ALL: List<String> get() = HOME_TILES + PARTY_TILES + MAP_TILES
+    /** the tiles that left Settings with the edit tabs (their lines and pictures kept for the Home edit's own words) */
+    val TAB_TILES = listOf(COMBAT, QUEST, CASTBAR, PARTY)
 
     /** [g]'s tiles now: the fixed list, less a tile that does not apply */
     fun slots(g: SettingsTabs.Group, env: Env): List<String> = tiles(g).filter { applies(it, env) }
@@ -85,16 +95,22 @@ object BottomTiles {
     /** a tile's name (display words, Tr.t'd by the drawer) */
     val NAMES: Map<String, String> = mapOf(LAYOUT to "Edit Home", HOME_RESET to "Reset Home", REST to "Rest controller", COMBAT to "In fights", SWING to "Swing timer",
         QUEST to "Focused quest", CLOCK to "Clock band", TOOLBAR to "DS WoW toolbar", TALK to "Hold to talk", CASTBAR to "Tap-to-cast bar",
-        RANK to "Spell rank badges", XP to "XP bar", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
+        RANK to "Spell rank badges", XP to "XP bar", PARTY to "Party list", ZOOM to "Minimap zoom", WORLD to "World map", INPUT to "Message input")
 
     /** the clock band's lines: key, label, its icons.pak icon */
     val CLOCK_LINES = listOf(Triple("hearth", "Hearthstone", ItemCd.HEARTH_ICON), Triple("teleport", "Class teleport", 136010),
-        Triple("gold", "Gold", 133784), Triple("bags", "Free bag slots", 133633), Triple("ammo", "Ammo", 132382))
+        Triple("gold", "Gold", 133784), Triple("bags", "Free bag slots", 133633), Triple("ammo", "Ammo", 132382),
+        // feat/extras-polish: the pet's happiness (its picture is the kit's face, UiKit.petMood; this icon stands in for the tile's line)
+        Triple("pet", "Pet happiness", PET_ICON))
+    /** the pet happiness line's icon (the game's Ability_Hunter_BeastTaming) */
+    const val PET_ICON = 132164
 
     /** one line of a band: a choice ([words], [picked] lit; [modes] = Top's On / Off signs), or a stepper ([stepper]: [words] are its
      *  buttons, [value] its value) */
     class Line(val key: String, val label: String?, val words: List<String>, val picked: Int, val modes: List<UiMode>? = null,
-               val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false)
+               val value: String? = null, val icon: Int? = null, val enabled: Boolean = true, val stepper: Boolean = false,
+               /** the words that do nothing now (dimmed, no cursor stop, a press refused: party sizing's fight words with Grows = Off) */
+               val off: Set<Int> = emptySet())
 
     private val ONOFF = listOf("On", "Off")
     private val SHOW_HIDE = listOf("Show", "Hide")
@@ -104,7 +120,7 @@ object BottomTiles {
 
     fun clockOn(key: String): Boolean = when (key) {
         "hearth" -> HomeSettings.clockHearth; "teleport" -> HomeSettings.clockTeleport; "gold" -> HomeSettings.clockGold
-        "bags" -> HomeSettings.clockBags; else -> HomeSettings.clockAmmo
+        "bags" -> HomeSettings.clockBags; "pet" -> HomeSettings.clockPet; else -> HomeSettings.clockAmmo
     }
 
     /** [id]'s band: its choices, then its lines that can act now */
@@ -113,10 +129,17 @@ object BottomTiles {
         HOME_RESET -> resetLines()
         REST -> listOf(Line(REST, null, listOf("Thin row", "Diamonds"), HomeRest.values().indexOf(HomeSettings.rest)))
         // movable Home phase 3 (SPEC section 11, final_11; the user's D1: Grow the default, Top screen opt-in): the old Combat layout tile
-        COMBAT -> listOf(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)))
+        COMBAT -> listOfNotNull(Line(COMBAT, null, FIGHT_WORDS, HomeLayout.FightBand.values().indexOf(HomeSettings.fightBand)),
+            // the user's ruling 2026-11-23: with Top screen, the cast bar and swing timer on the bottom screen's top or (feat/top-castbar)
+            // our own bar above the HUD on the top screen, together
+            if (HomeSettings.fightBand == HomeLayout.FightBand.TOP)
+                Line(FIGHT_CAST, "Cast bar", FIGHT_CAST_WORDS, HomeLayout.FightCast.values().indexOf(HomeSettings.fightCast)) else null)
         SWING -> listOf(onOff(SWING, HomeSettings.swingTimer))
         RANK -> listOf(onOff(RANK, HomeSettings.rankBadges))
         XP -> listOf(Line(XP, null, SHOW_HIDE, if (HomeSettings.layout.xpBar) 0 else 1, listOf(UiMode.ON, UiMode.OFF)))
+        // party sizing: the two picks, the party list's bubble's own rows (one wording)
+        PARTY -> HomeWidgetMenus.partySizingRows(HomeSettings.layout).zip(listOf(HomeWidgetMenus.PARTY_GROW_TILE, HomeWidgetMenus.PARTY_SIZE_TILE))
+            .map { (r, words) -> Line(r.key, r.label, words, r.picked, off = r.off) }
         QUEST -> listOf(Line(QUEST, null, CARD_WORDS, CARD_DOCKS.indexOf(HomeSettings.layout.card)))
         CLOCK -> CLOCK_LINES.map { (k, label, icon) -> onOff(k, clockOn(k), label, icon) }
         TOOLBAR -> listOf(onOff(TOOLBAR, env.dpad?.want == true, enabled = env.dpad?.colOn != null))
@@ -134,7 +157,6 @@ object BottomTiles {
             // a column's bar: above or below that column (Across and Split stay at the foot)
             cast.column?.let { c -> out += Line(CAST_EDGE, if (c == HomeModule.CHAT) "Chat" else "Map", HomeWidgetMenus.EDGE_WORDS, if (cast.top) 0 else 1) }
             if (HomeSettings.castBarSide != CastStripModel.Side.OFF) {
-                out += Line("castsize", "Size", SIZE_WORDS, HomeLayout.SlotSize.values().indexOf(HomeSettings.layout.castSize))
                 val m = CastStripModel.Combat.values()
                 // cb14 (D5b): the same setting as the Controller room's In combat > "Show tap-to-cast" check box (D4), its mirror here
                 out += Line("castcombat", "Show in combat", m.map { it.label }, m.indexOf(HomeSettings.castBarCombat))
@@ -164,6 +186,7 @@ object BottomTiles {
         SWING -> if (HomeSettings.swingTimer) "On" else "Off"
         RANK -> if (HomeSettings.rankBadges) "On" else "Off"
         XP -> if (HomeSettings.layout.xpBar) "Show" else "Hide"
+        PARTY -> HomeWidgetMenus.PARTY_GROW_TILE[HomeSettings.layout.partyGrow.ordinal]
         QUEST -> CARD_WORDS[CARD_DOCKS.indexOf(HomeSettings.layout.card).coerceAtLeast(0)]
         CLOCK -> CLOCK_LINES.count { clockOn(it.first) }.let { n -> if (n == CLOCK_LINES.size) "On" else if (n == 0) "Off" else "$n / ${CLOCK_LINES.size}" }
         TOOLBAR -> if (env.dpad?.want == true) "On" else "Off"
@@ -218,9 +241,11 @@ object BottomTiles {
      * the tile opens its (empty) band. The tile wears the A glyph while it does.
      */
     @JvmStatic var editHome: (() -> Unit)? = null
-    val SIZE_WORDS = listOf("S", "M", "L")
     /** "In fights" in [HomeLayout.FightBand]'s order */
     val FIGHT_WORDS = listOf("Grow", "Same size", "Top screen")
+    /** the In fights band's second line with Top screen: "Cast bar" in [HomeLayout.FightCast]'s order */
+    const val FIGHT_CAST = "fightcast"
+    val FIGHT_CAST_WORDS = listOf("Bottom screen", "Top screen")
 
     /** the Reset Home band's buttons (1518): this character's Home back to Classic; this character's Home for every character. BOTH
      *  only once a WHOLE character key is known: the store writes no pending name's record (a reset held against the pending view
@@ -233,25 +258,31 @@ object BottomTiles {
     )
 
     /** the band's picture moves (the open band only, up to 30 fps) */
-    fun animated(id: String): Boolean = id == COMBAT || id == SWING || id == TALK || id == CASTBAR
+    fun animated(id: String): Boolean = id == COMBAT || id == SWING || id == TALK || id == CASTBAR || id == PARTY
 
     /** button [k] of line [key] of tile [id]: ONE player-pressed write, the rows' own setters; [onDpad] = the DS WoW toolbar's switch */
     fun press(id: String, key: String, k: Int, env: Env, onDpad: (Boolean) -> Unit) {
         when (key) {
             HOME_CLASSIC -> if (HomeLayoutStore.who != null) HomeSettings.resetHomeToClassic()
             ALL_CHARS -> if (HomeLayoutStore.who != null) HomeLayoutStore.set(HomeSettings.layout, all = true)
-            "castsize" -> HomeLayoutStore.update { it.copy(castSize = HomeLayout.SlotSize.values()[k]) }
             REST -> HomeSettings.rest = HomeRest.values()[k]
             COMBAT -> HomeLayout.FightBand.values().getOrNull(k)?.let { HomeSettings.fightBand = it }
+            FIGHT_CAST -> HomeLayout.FightCast.values().getOrNull(k)?.let { HomeSettings.fightCast = it }
             SWING -> HomeSettings.swingTimer = k == 0
             RANK -> HomeSettings.rankBadges = k == 0
             XP -> HomeLayoutStore.update { it.copy(xpBar = k == 0) }
+            // party sizing (2026-11-23): this character's record
+            HomeEditModel.K_PARTY_GROW -> HomeLayout.PartyGrow.values().getOrNull(k)?.let { v -> HomeLayoutStore.update { it.copy(partyGrow = v) } }
+            // (a word dimmed by Grows = Off writes nothing: HomeWidgetMenus.partySizeOff)
+            HomeEditModel.K_PARTY_SIZE -> HomeLayout.PartySize.values().getOrNull(k)?.takeIf { k !in HomeWidgetMenus.partySizeOff(HomeSettings.layout) }
+                ?.let { v -> HomeLayoutStore.update { it.copy(partySize = v) } }
             QUEST -> CARD_DOCKS.getOrNull(k)?.let { d -> HomeLayoutStore.update { it.copy(card = d) } }
             "hearth" -> HomeSettings.clockHearth = k == 0
             "teleport" -> HomeSettings.clockTeleport = k == 0
             "gold" -> HomeSettings.clockGold = k == 0
             "bags" -> HomeSettings.clockBags = k == 0
             "ammo" -> HomeSettings.clockAmmo = k == 0
+            "pet" -> HomeSettings.clockPet = k == 0
             TOOLBAR -> env.dpad?.let { d -> if (d.colOn != null) { val on = k == 0; if ((d.want == true) != on) onDpad(on) } }
             TALK -> env.who?.let { HomeSettings.setHoldTalk(it, k == 0) }
             "release" -> env.who?.let { HomeSettings.setTalkSendNow(it, k == 1) }
@@ -339,7 +370,11 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         val l = layout(width.toFloat())
         val out = ArrayList<RectF>()
         l.grid.tiles.forEach { out.add(it.rect()) }
-        l.band?.lines?.forEach { line -> line.buttons.forEach { out.add(it.rect()) } }
+        // (a dimmed word is no stop: the cursor steps over it, as Performance's tiles)
+        l.band?.lines?.forEachIndexed { i, line ->
+            val off = l.lines.getOrNull(i)?.off.orEmpty()
+            line.buttons.forEachIndexed { k, b -> if (k !in off) out.add(b.rect()) }
+        }
         return out
     }
 
@@ -392,7 +427,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
                     if (k >= 0) {
                         val ln = l.lines[i]
                         lineFocus = ln.key
-                        if (ln.enabled) BottomTiles.press(selected ?: return true, ln.key, k, env(), onDpad)
+                        if (ln.enabled && k !in ln.off) BottomTiles.press(selected ?: return true, ln.key, k, env(), onDpad)
                         requestLayout(); invalidate()
                         return true
                     }
@@ -582,8 +617,9 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
             }
             for ((k, b) in line.buttons.withIndex()) {
                 val m = ln.modes?.getOrNull(k)
-                if (m != null) modeChoice(c, b.rect(), m, k == ln.picked, ln.enabled)
-                else UiKit.choice(c, b.rect(), Tr.t(ln.words.getOrElse(k) { "" }), k == ln.picked, ln.enabled, textSize = if (ln.stepper) 40f else 27f)
+                val on = ln.enabled && k !in ln.off
+                if (m != null) modeChoice(c, b.rect(), m, k == ln.picked, on)
+                else UiKit.choice(c, b.rect(), Tr.t(ln.words.getOrElse(k) { "" }), k == ln.picked, on, textSize = if (ln.stepper) 40f else 27f)
             }
         }
         BottomTiles.status(id, e)?.let { say ->

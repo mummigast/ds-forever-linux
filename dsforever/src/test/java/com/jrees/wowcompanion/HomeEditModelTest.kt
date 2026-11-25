@@ -154,12 +154,12 @@ class HomeEditModelTest {
     @Test fun aRebaseKeepsDiscardToTheSessionsOwnChanges() {
         val m = model()
         m.press("PADBACK")                                       // the session's own: the swap
-        val outside = m.draft.copy(castSize = HomeLayout.SlotSize.M)
+        val outside = m.draft.copy(xpBar = false)
         m.rebase(outside, HomeLayoutStore.layOn(m.saved, m.draft, outside))
         assertEquals(outside, m.draft)
         assertTrue(m.changed)
         m.discard()
-        assertEquals("the swap undone, the outside change kept", classic.copy(castSize = HomeLayout.SlotSize.M), m.draft)
+        assertEquals("the swap undone, the outside change kept", classic.copy(xpBar = false), m.draft)
         assertFalse(m.changed)
     }
 
@@ -200,10 +200,12 @@ class HomeEditModelTest {
         val r = model(saved = classic.swapped(), start = EditStop.DIVIDER)
         r.press("PADDRIGHT")
         assertEquals(HomeLayout.Share.THIRD, r.draft.chatShare)
-        // 1518: no layouts - LB / RB flip nothing, from any stop
+        // 1518: no layouts - LB / RB flip nothing; EDIT TABS (2026-11-24): they step the tabs (no wrap), changing nothing of the record
         for (s in listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.DIVIDER)) {
             val c = model(start = s)
-            assertTrue(s.name, c.press("PADLSHOULDER", "PADRSHOULDER").isEmpty())
+            assertTrue(s.name, c.press("PADLSHOULDER").isEmpty())
+            assertEquals(listOf<HomeEditModel.Fx>(HomeEditModel.Fx.Tab(HomeTab.COMBAT)), c.press("PADRSHOULDER"))
+            c.press("PADLSHOULDER"); assertEquals(HomeTab.OUT, c.tab)
             assertEquals(classic, c.draft); assertEquals(s, c.cursor)
         }
     }
@@ -340,7 +342,8 @@ class HomeEditModelTest {
         val m = model()
         m.press("PAD4"); assertEquals(HomeLayout.Share.TWO_THIRDS, m.draft.chatShare)
         m.press("PAD4"); assertEquals(HomeLayout.Share.THIRD, m.draft.chatShare)
-        val bar = model(start = EditStop.CAST); bar.press("PAD4"); assertEquals(HomeLayout.SlotSize.S, bar.draft.castSize)
+        // (edit tabs: the sizes are gone - Y on the bar does nothing on the Out of combat tab; a fight tab's Y flips its Slots: HomeEditTabsTest)
+        val bar = model(start = EditStop.CAST); assertEquals(emptyList<HomeEditModel.Fx>(), bar.press("PAD4")); assertFalse(bar.draft.grow)
         val card = model(start = EditStop.QUEST)
         assertEquals("the card's fold is the app-wide setting (the card's own tap)", listOf(HomeEditModel.Fx.Press(HomeEditModel.K_FOLD, -1)), card.press("PAD4"))
     }
@@ -472,11 +475,8 @@ class HomeEditModelTest {
         assertEquals(EditStop.CAST, m.menu)
         repeat(4) { m.press("PADDRIGHT") }                      // Place: Off | Chat | Map | Across | Split
         assertEquals(HomeLayout.CastDock.SPLIT, m.draft.cast)
-        m.press("PADDDOWN"); m.press("PADDLEFT")               // Size: M
-        assertEquals(HomeLayout.SlotSize.M, m.draft.castSize)
+        // (edit tabs: no Size, no In fights / Party mode rows on the Out of combat tab - Place, then Edit slots)
         m.press("PADDDOWN")
-        assertEquals(listOf(HomeEditModel.Fx.Press(HomeEditModel.K_CAST_FIGHT, 0)), m.press("PADDLEFT"))   // In fights: Show
-        m.press("PADDDOWN", "PADDDOWN")
         assertEquals(listOf(HomeEditModel.Fx.EditSlots), m.press("PAD1"))
     }
 
@@ -518,8 +518,9 @@ class HomeEditModelTest {
      *  HomeEditBandTest) - none movable, none removable - and the 1518 stops keep the motion keys they had (their wiggle phases and paces) */
     @Test fun theBandHasNoMovingStopsAndTheKeysStay() {
         assertEquals(listOf("CHAT", "MAP", "QUEST", "DIVIDER", "CAST", "PARTY", "PLUS", "ROOMS", "DONE", "PAD_PEN", "FACE_PEN", "LOOK",
-            "EXTRAS", "FIGHT_PEN", "FIGHT"), EditStop.values().map { it.name })
-        assertEquals("the party list keeps the key it wiggled on in 1518", listOf(2, 3, 4, 5, 6, HomeEditMotion.PARTY, 7, 8, 13, 9, 11, 12, 14, 1, 15),
+            "EXTRAS", "FIGHT_PEN", "FIGHT", "PARTY_PEN"), EditStop.values().map { it.name })
+        // (party sizing, 2026-11-23: the party list's pencil on the one key left free under 16)
+        assertEquals("the party list keeps the key it wiggled on in 1518", listOf(2, 3, 4, 5, 6, HomeEditMotion.PARTY, 7, 8, 13, 9, 11, 12, 14, 1, 15, 0),
             EditStop.values().map { it.key })
         assertEquals(EditStop.values().size, EditStop.values().map { it.key }.toSet().size)
         assertTrue(HomeEditModel.GONE_CHECKED.containsAll(setOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY)))
@@ -561,7 +562,9 @@ class HomeEditModelTest {
             assertNull(m.lifted); assertTrue(m.settled); assertEquals(HomeLayout.PartyDock.UNDER_CHAT, m.draft.party); assertTrue(m.changed)
             assertEquals(EditStop.PARTY, m.cursor)
             // Y: no size; X its menu
-            assertTrue(m.pressP("PAD4").isEmpty()); assertEquals(saved.copy(party = HomeLayout.PartyDock.UNDER_CHAT), m.draft)
+            // (edit tabs: the fight tabs keep the dock they had - their own copies, "Fully separate")
+            assertTrue(m.pressP("PAD4").isEmpty()); assertEquals(saved.copy(party = HomeLayout.PartyDock.UNDER_CHAT), m.draft.copy(combat = null, partyTab = null))
+            assertEquals(saved.party, m.draft.forTab(HomeTab.COMBAT).party); assertEquals(saved.party, m.draft.forTab(HomeTab.PARTY).party)
             m.pressP("PAD3"); assertEquals(EditStop.PARTY, m.menu)
             m.pressP("PAD2"); assertNull(m.menu)
             // Discard: the opening record back
@@ -664,7 +667,7 @@ class HomeEditModelTest {
                 val c = l.classic()
                 assertTrue("$id: Classic's places", c.classicPlace)
                 assertEquals(id, HomeArrangements.of(HomeArrangements.CLASSIC, l).copy(xpBar = true, rooms = RoomBar.DEFAULT), c)
-                assertEquals(HomeRest.DIAMONDS, c.rest); assertEquals(HomeLayout.SlotSize.L, c.castSize)
+                assertEquals(HomeRest.DIAMONDS, c.rest); assertFalse(c.grow)
                 assertTrue(c.fight != HomeLayout.FightBand.TOP); assertTrue(c.xpBar); assertEquals(RoomBar.DEFAULT, c.rooms)
             }
         val fighter = HomeArrangements.of(HomeArrangements.FIGHTER, classic).classic()
@@ -769,5 +772,25 @@ class HomeEditModelTest {
         m = model(start = EditStop.CAST); m.press("PAD1")
         assertTrue(m.cursorCheck(stops(m.draft).filterKeys { it != EditStop.CAST }))
         assertNull(m.lifted); assertNull(m.barLifted)
+    }
+
+    /** fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): the fight pencil's held place lives only while its
+     *  bubble is open - B, a tap off it, another pencil's bubble, a fight parking edit mode: each drops it; a new bubble takes its own */
+    @Test fun theFightPencilsHoldEndsWithItsBubble() {
+        val held = HomeLayoutSolver.Box(15f, 15f, 47f, 47f)
+        val m = model(start = EditStop.FIGHT_PEN)
+        m.toggleFight()
+        for ((way, close) in listOf<Pair<String, (HomeEditModel) -> Unit>>(
+            "B" to { it.press("PAD2") }, "a tap off it" to { it.closeMenu() }, "the same pencil again" to { it.pencilTap(EditStop.FIGHT_PEN) },
+            "another pencil" to { it.pencilTap(EditStop.PAD_PEN) }, "a fight" to { it.park(); it.resume() })) {
+            if (!m.fightPreview) m.toggleFight()
+            m.pencilTap(EditStop.FIGHT_PEN)
+            assertEquals(way, EditStop.FIGHT_PEN, m.menu)
+            m.fightPenHold = held
+            m.press("PADDDOWN")                                                 // a row walked: still held
+            assertEquals("$way: held while open", held, m.fightPenHold)
+            close(m)
+            assertNull("$way: the hold ends with the bubble", m.fightPenHold)
+        }
     }
 }

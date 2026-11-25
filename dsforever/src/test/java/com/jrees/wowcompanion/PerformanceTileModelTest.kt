@@ -118,13 +118,20 @@ class PerformanceTileModelTest {
         // the bit rate's ends; 120 offered; a change waiting; a test running
         val low = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 5_000)))
         assertEquals(setOf(0), M.lines(M.STREAM, low)[3].off)
-        val high = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000, fps = 120), listOf(30, 60, 120), restarts = true,
+        // the top step is 150 Mbps now (the user's pick 2026-11-23); above 50 the Wi-Fi note is in the status line
+        val mid = M.lines(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000))))
+        assertTrue("50 Mbps is no end any more", mid[3].off.isEmpty())
+        assertEquals(emptyList<String>(), M.statusParts(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 50_000)))))
+        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_WIFI),
+            M.statusParts(M.STREAM, s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 60_000)))))
+        val high = s.copy(stream = PerformanceTileModel.Stream(q.copy(bitrateKbps = 150_000, fps = 120), listOf(30, 60, 120), restarts = true,
             test = com.jrees.wowcompanion.StreamTest(emptyList(), running = true)))
         val hl = M.lines(M.STREAM, high)
         assertEquals(setOf(1), hl[3].off)
         assertEquals(listOf("30 fps", "60 fps", "120 fps"), hl[2].words); assertEquals(2, hl[2].chosen)
         assertEquals(setOf(1), hl[5].off)
-        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, M.RESTARTS, M.TESTING), M.statusParts(M.STREAM, high))
+        assertEquals(listOf(com.jrees.wowcompanion.stream.StreamQuality.NOTE_120, com.jrees.wowcompanion.stream.StreamQuality.NOTE_WIFI, M.RESTARTS, M.TESTING),
+            M.statusParts(M.STREAM, high))
         // the test's list: its rows, then the reason and the fix
         val t = com.jrees.wowcompanion.StreamTest(listOf(com.jrees.wowcompanion.StreamTest.Row("PC found", "", com.jrees.wowcompanion.StreamTest.Mark.PASS),
             com.jrees.wowcompanion.StreamTest.Row("Paired", "no", com.jrees.wowcompanion.StreamTest.Mark.FAIL)), "no", "Pair again")
@@ -205,16 +212,17 @@ class PerformanceTileModelTest {
         // picture, so no line needs to sit next to it first
         // the 1.0.34 merge: Map style when zoomed out (Terrain / Painted, Terrain by default) the fourth line
         // #56 G1 (2026-11-19): the Video memory cap the last line, on by default
-        assertEquals(listOf(M.L_LIGHTER, M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM), lines.map { it.key })
-        assertEquals(listOf(0, 1, 0, 0, 0), lines.map { it.chosen })
+        // 2026-11-23: Compress idle memory (PageOut) after it, off unless the Thor's default or the player says so
+        assertEquals(listOf(M.L_LIGHTER, M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM, M.L_PAGEOUT), lines.map { it.key })
+        assertEquals(listOf(0, 1, 0, 0, 0, 1), lines.map { it.chosen })
         assertTrue(lines.filter { it.key != M.L_STYLE }.all { it.label != null && it.words == listOf("On", "Off") })
         assertEquals(listOf("Terrain", "Painted"), lines.first { it.key == M.L_STYLE }.words)
         assertEquals(1, M.lines(M.MEM, s.copy(mapTerrain = false)).first { it.key == M.L_STYLE }.chosen)
-        assertEquals(1, M.lines(M.MEM, s.copy(vramCap = false)).last().chosen)
+        assertEquals(1, M.lines(M.MEM, s.copy(vramCap = false)).first { it.key == M.L_VRAM }.chosen)
         assertEquals("Video memory cap: from the next game start", M.status(M.MEM, s.copy(vramChanged = true)))
         // the 8 / 12 GB Thors: Lighter mode is the model's, its line not drawn; the status line says so
         val fixed = s.copy(lighterFixed = true)
-        assertEquals(listOf(M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM), keys(M.MEM, fixed))
+        assertEquals(listOf(M.L_LOWGFX, M.L_MAP, M.L_STYLE, M.L_VRAM, M.L_PAGEOUT), keys(M.MEM, fixed))
         assertEquals("Lighter mode: always on for this Thor", M.status(M.MEM, fixed))
         assertEquals("Lighter", M.value(M.MEM, fixed))
         assertEquals("Full map", M.value(M.MEM, PerformanceTileModel.State(mapFull = true)))
@@ -308,7 +316,7 @@ class PerformanceTileModelTest {
      *  under the picture on the left), the picture centred on them; the long labels ("Home map: full detail") on one line */
     @Test fun aThreeLineBandStacksBesideThePicture() {
         val mem = M.band(16f, 0f, 1208f, M.lines(M.MEM, PerformanceTileModel.State()))
-        assertEquals(5, mem.lines.size)                 // the 1.0.34 merge: + Map style when zoomed out; #56 G1: + Video memory cap
+        assertEquals(6, mem.lines.size)                 // the 1.0.34 merge: + Map style when zoomed out; #56 G1: + Video memory cap; + Compress idle memory
         val x = mem.lines.map { it.label!!.l }.distinct()
         assertEquals("one column", 1, x.size)
         assertTrue("beside the picture", x.single() > mem.picture.r)

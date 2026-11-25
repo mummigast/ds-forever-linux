@@ -41,14 +41,14 @@ class HomeLayoutRulesTest {
 
     /** the chat's height Classic gives in [s] for [l]'s rest / fight / card / bar dock (side and width move nothing vertical) */
     private fun classicChat(l: HomeLayout, s: HomeLayoutSolver.State): Float {
-        val c = HomeLayout(rest = l.rest, fight = l.fight, card = l.card, castSize = HomeLayout.SlotSize.L,
+        val c = HomeLayout(rest = l.rest, fight = l.fight, card = l.card,
             cast = if (l.cast == HomeLayout.CastDock.SPLIT) HomeLayout.CastDock.UNDER_CHAT else l.cast)
         return S.places(c, s).boxes.getValue(HomePart.CHAT).h
     }
 
     @Test fun everyLayoutIsValidInEveryState() {
         val all = HomeLayoutRules.all()
-        assertEquals("2 x 3 x 3 x 7 x 3 x 2 x 3 x 4", 9072, all.size)
+        assertEquals("2 x 3 x 3 x 7 x 2 (Slots Grow / Same size) x 2 x 3 x 4", 6048, all.size)
         val st = states()
         var n = 0
         val bad = ArrayList<String>()
@@ -58,14 +58,18 @@ class HomeLayoutRulesTest {
             val p = HomeLayoutRules.problems(l, s, r)
             if (p.isNotEmpty() && bad.size < 10) bad += "$l / $s: $p"
             val chat = r.boxes.getValue(HomePart.CHAT).h
+            // (full width in Party mode, 2026-11-23: a list across at the foot never rides over a bar under one column - it keeps its
+            // column there, the user's pick "Stay in its column" - so no chat keeps a gap under a list across)
+            if (r.partyWide && !l.party.top && S.oneColumnFootBar(l) && bad.size < 10) bad += "across over a one-column bar: $l / $s"
             val floor = minOf(HomeLayoutRules.CHAT_MIN, classicChat(l, s))
             if (chat + 0.01f < floor && bad.size < 10) bad += "$l / $s: chat $chat under $floor"
             if ((r.f1 || r.f2) && bad.size < 10) bad += "a fallback fired on the Thor's page: $l / $s"
-            // F3 only with the party list in the map's column (Classic's dock never), and only for a map under its minimum
-            if (r.f3 && l.party.column != HomeModule.MAP && bad.size < 10) bad += "F3 with the party list in the chat's column: $l / $s"
+            // F3 only with the party list in the map's column (Classic's dock never - but in Party mode the list spans the map's column
+            // too), and only for a map under its minimum
+            if (r.f3 && l.party.column != HomeModule.MAP && !r.partyWide && bad.size < 10) bad += "F3 with the party list in the chat's column: $l / $s"
         }
         assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
-        assertTrue(n > 9072 * 100)
+        assertTrue(n > 6048 * 100)
     }
 
     @Test fun columnsTileTheInnerWidthForEveryShareAndSide() {
@@ -104,8 +108,8 @@ class HomeLayoutRulesTest {
     }
 
     @Test fun theBarDockFollowsTheWidgetsAndItsSize() {
-        for (side in HomeLayout.Side.values()) for (dock in HomeLayout.CastDock.values()) for (size in HomeLayout.SlotSize.values()) {
-            val l = HomeLayout(chatSide = side, cast = dock, castSize = size)
+        for (side in HomeLayout.Side.values()) for (dock in HomeLayout.CastDock.values()) for (grow in listOf(false, true)) {
+            val l = HomeLayout(chatSide = side, cast = dock, grow = grow)
             val r = S.places(l, HomeLayoutSolver.State())
             val b = r.boxes
             if (dock == HomeLayout.CastDock.OFF) { assertFalse(HomePart.STRIP in b); continue }
@@ -126,7 +130,8 @@ class HomeLayoutRulesTest {
                 }
                 else -> {}
             }
-            assertTrue("$dock $size: the slot no bigger than its size", strip.h <= size.px + 2 * CastStripModel.PAD + 0.01f)
+            val cap = if (grow) CastStripModel.GROW_MAX else CastStripModel.MAX_SIDE
+            assertTrue("$dock grow $grow: the slot no bigger than its cap", strip.h <= cap + 2 * CastStripModel.PAD + 0.01f)
             // the geometric side the view scrolls by: Right (under the right column) rests at its end
             assertEquals(dock.top, r.castTop)
             val want = when (dock) {
@@ -191,7 +196,11 @@ class HomeLayoutRulesTest {
             assertTrue(r.away)
             assertEquals("$rest: the rest size", S.restBottom(top.copy(rest = rest)) - 8f, bars.h, 0.001f)
             assertEquals(-HomeLayoutSolver.AWAY_PAST, bars.b, 0f)
-            assertEquals(8f, r.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, r.boxes.getValue(HomePart.MAP).t, 0f)
+            // (the default Cast bar in fights = Bottom screen: the fight strip at the top, the columns a gap under it; Top screen: the top gap)
+            val colTop = 8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f
+            assertEquals(colTop, r.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(colTop, r.boxes.getValue(HomePart.MAP).t, 0f)
+            val rt = S.places(top.copy(rest = rest, fightCast = HomeLayout.FightCast.TOP), fight)
+            assertEquals(8f, rt.boxes.getValue(HomePart.CHAT).t, 0f); assertEquals(8f, rt.boxes.getValue(HomePart.MAP).t, 0f)
         }
         // every record x the takeover with Top screen: valid (the band away is not on the page), and its card / party / bar follow
         var n = 0
@@ -203,7 +212,8 @@ class HomeLayoutRulesTest {
             if (p.isNotEmpty() && bad.size < 5) bad += "$l / $s: $p"
             if (!r.away && bad.size < 5) bad += "$l / $s: not away"
             val c = r.boxes.getValue(HomePart.CHAT); val m = r.boxes.getValue(HomePart.MAP)
-            if (minOf(c.t, m.t) > 8f + 0.01f && l.cast.top.not() && !s.card && bad.size < 5) bad += "$l / $s: the columns did not grow up"
+            val gap = if (S.hasFightStrip(l)) 8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f else 8f
+            if (minOf(c.t, m.t) > gap + 0.01f && l.cast.top.not() && !s.card && bad.size < 5) bad += "$l / $s: the columns did not grow up"
         }
         assertTrue("checked $n: ${bad.joinToString("; ")}", bad.isEmpty())
     }
@@ -251,7 +261,8 @@ class HomeLayoutRulesTest {
         val p = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 3, false)
         for (side in HomeLayout.Side.values()) {
             val l = HomeLayout(chatSide = side, card = HomeLayout.CardDock.ABOVE_CHAT, cast = HomeLayout.CastDock.ABOVE_CHAT)
-            val b = S.places(l, HomeLayoutSolver.State(card = true, cardH = CARD_H, party = p, partyOn = true)).boxes
+            // (Party mode on lays the list across both columns, first: [aFullWidthListStacksFirst])
+            val b = S.places(l, HomeLayoutSolver.State(card = true, cardH = CARD_H, party = p, partyOn = false)).boxes
             val strip = b.getValue(HomePart.STRIP); val q = b.getValue(HomePart.QUESTS)
             val party = b.getValue(HomePart.PARTY); val chat = b.getValue(HomePart.CHAT)
             assertEquals("the bar first, under the band", 234f, strip.t, 0.01f)
@@ -262,6 +273,40 @@ class HomeLayoutRulesTest {
             val bare = S.places(l, HomeLayoutSolver.State()).boxes.getValue(HomePart.STRIP)
             assertEquals(strip, bare)
         }
+    }
+
+    /** FULL WIDTH (2026-11-23): with Party mode on the list at the top is FIRST under the band, across both columns - then the bar above
+     *  its column, the card, the chat (the map under the list, or under a bar above it); hidden, the bar goes up behind the band from
+     *  its place without the list (never onto the list) */
+    @Test fun aFullWidthListStacksFirst() {
+        val p = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 3, false)
+        for (side in HomeLayout.Side.values()) for (cast in listOf(HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP))
+            for (dock in listOf(HomeLayout.PartyDock.ABOVE_CHAT, HomeLayout.PartyDock.ABOVE_MAP)) {
+                val l = HomeLayout(chatSide = side, card = HomeLayout.CardDock.ABOVE_CHAT, cast = cast, party = dock)
+                val s = HomeLayoutSolver.State(card = true, cardH = CARD_H, party = p, partyOn = true)
+                val r = S.places(l, s)
+                val b = r.boxes
+                val tag = "$side $cast $dock"
+                assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
+                val party = b.getValue(HomePart.PARTY); val strip = b.getValue(HomePart.STRIP); val q = b.getValue(HomePart.QUESTS)
+                val chat = b.getValue(HomePart.CHAT); val map = b.getValue(HomePart.MAP)
+                assertEquals("$tag: the list first, under the band", 234f, party.t, 0.01f)
+                assertEquals("$tag: then the bar", party.b + 8f, strip.t, 0.01f)
+                if (cast == HomeLayout.CastDock.ABOVE_CHAT) {
+                    assertEquals("$tag: then the card", strip.b + 8f, q.t, 0.01f)
+                    assertEquals("$tag: the map under the list", party.b + 8f, map.t, 0.01f)
+                } else {
+                    assertEquals("$tag: the card under the list", party.b + 8f, q.t, 0.01f)
+                    assertEquals("$tag: the map under the bar", strip.b + 8f, map.t, 0.01f)
+                }
+                assertEquals("$tag: the chat under the card", q.b + 8f, chat.t, 0.01f)
+                // the columns keep the heights a bar under them gives (the bar's twin at the foot)
+                val twin = S.places(l.copy(cast = cast.withTop(false)), s).boxes
+                assertEquals(tag, twin.getValue(HomePart.CHAT).h, chat.h, 0.01f); assertEquals(tag, twin.getValue(HomePart.MAP).h, map.h, 0.01f)
+                // hidden: up behind the band, from its place without the list
+                val hid = S.places(l, s.copy(castHidden = true)).boxes.getValue(HomePart.STRIP)
+                assertTrue("$tag: behind the band ($hid)", hid.b <= 234f - 8f + 0.01f)
+            }
     }
 
     @Test fun aboveMapCarriesTheCardDown() {
@@ -284,7 +329,8 @@ class HomeLayoutRulesTest {
                 // Top screen's fight: the band is above the page; the hidden bar above it too (its foot at the page's top), the column from 8
                 assertTrue(r.away && strip.b <= 0.01f)
                 val col = r.boxes.getValue(if (dock == HomeLayout.CastDock.ABOVE_CHAT) HomePart.CHAT else HomePart.MAP)
-                assertEquals(8f, col.t, 0.01f)
+                // (Cast bar in fights = Bottom screen, the default: the fight strip first, the column a gap under it)
+                assertEquals(if (S.hasFightStrip(l)) (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f) else 8f, col.t, 0.01f)
                 continue
             }
             assertEquals("its foot on the band's foot", bars.b, strip.b, 0.01f)
@@ -325,6 +371,9 @@ class HomeLayoutRulesTest {
             if (!l.cast.top) continue
             val twin = l.copy(cast = l.cast.withTop(false))
             for (s in st) {
+                // (full width in Party mode, 2026-11-23: a list across at the foot rides over the twin's foot bar in BOTH columns - the
+                // gap under it in the bar-free one - so a foot dock's twins differ there by design; a top dock's stay equal)
+                if (S.wideParty(l, s) && !l.party.top) continue
                 val a = S.places(l, s).boxes; val b = S.places(twin, s).boxes
                 for (p in listOf(HomePart.CHAT, HomePart.MAP)) assertEquals("$l $p / $s", b.getValue(p).h, a.getValue(p).h, 0.01f)
                 n++
@@ -353,7 +402,7 @@ class HomeLayoutRulesTest {
         assertEquals(a, b)
         assertTrue(b.mirrored)
         for (t in listOf(HomeLayoutJson.json(b), HomeLayoutJson.json(HomeLayoutStore.layOn(b, b, b.swapped())),
-                HomeLayoutJson.json(HomeLayoutStore.layOn(b.copy(castSize = HomeLayout.SlotSize.M), b, b.copy(xpBar = false))))) {
+                HomeLayoutJson.json(HomeLayoutStore.layOn(b.copy(card = HomeLayout.CardDock.OFF), b, b.copy(xpBar = false))))) {
             assertFalse(t, t.contains("\"pad\"")); assertFalse(t, t.contains("\"clock\""))
         }
         // junk values never throw (and never cost the record its other fields)
@@ -368,7 +417,8 @@ class HomeLayoutRulesTest {
     /** "Why can't I move the party mode or the tap to cast to the top?": the party list at the top or the foot of either column, its
      *  Select tab on that column's outer screen edge, the column's module a gap from it, nothing squashed (its height Classic's) */
     @Test fun thePartyListTakesEachDock() {
-        val s = HomeLayoutSolver.State(party = P3, partyOn = true)
+        // (Party mode off: the list in its column; on, it spans both - [thePartyListSpansBothColumnsInPartyMode])
+        val s = HomeLayoutSolver.State(party = P3, partyOn = false)
         val wellH = PartyLayout.module(P3.mode, P3.n, top = 0f).well.b
         for (side in HomeLayout.Side.values()) for (dock in HomeLayout.PartyDock.values()) for (cast in listOf(HomeLayout.CastDock.OFF,
                 HomeLayout.CastDock.UNDER_CHAT, HomeLayout.CastDock.UNDER_MAP, HomeLayout.CastDock.ABOVE_CHAT, HomeLayout.CastDock.ABOVE_MAP,
@@ -413,6 +463,118 @@ class HomeLayoutRulesTest {
         }
     }
 
+    /**
+     * FULL WIDTH IN PARTY MODE (the user, 2026-11-23: "the party frames should also expand across the opposit right or left side of the
+     * screen if its in the top or bottom possitions"): every side x width x dock x bar dock - the list spans both columns (its tab on its
+     * own column's outer screen edge, its well to the other column's outer edge), its height as in its column, the chat and the map
+     * under it (a top dock: a bar above either column under the list) or over it (a foot dock: over the higher of the columns' feet);
+     * the shared rows' cells each half the well; Party mode off: its column as before. A FOOT dock over a bar under ONE column (Under
+     * chat / Under map: the user's pick 2026-11-23, "Stay in its column") keeps its column, exactly as with Party mode off - no gap
+     * under a list across on the bar-free side
+     */
+    @Test fun thePartyListSpansBothColumnsInPartyMode() {
+        val p5 = HomeLayoutSolver.Party(PartyLayout.Mode.REST, 5, false)
+        val s = HomeLayoutSolver.State(party = p5, partyOn = true)
+        val wellH = PartyLayout.module(p5.mode, p5.n, top = 0f).well.b
+        var n = 0
+        for (side in HomeLayout.Side.values()) for (share in HomeLayout.Share.values()) for (dock in HomeLayout.PartyDock.values())
+            for (cast in HomeLayout.CastDock.values()) {
+                val l = HomeLayout(chatSide = side, chatShare = share, party = dock, cast = cast)
+                val r = S.places(l, s); n++
+                val b = r.boxes
+                val tag = "$side $share $dock $cast"
+                assertTrue("$tag: ${HomeLayoutRules.problems(l, s, r)}", HomeLayoutRules.problems(l, s, r).isEmpty())
+                assertEquals(tag, PartyLayout.REST_H, r.partyRowH, 0.01f)
+                if (!dock.top && (cast == HomeLayout.CastDock.UNDER_CHAT || cast == HomeLayout.CastDock.UNDER_MAP)) {
+                    // its column: the very page Party mode off lays (the rows' height the same: rest), its tab on that column's edge
+                    assertFalse(tag, r.partyWide)
+                    assertEquals(tag, S.places(l, s.copy(partyOn = false)).boxes, b)
+                    val col = b.getValue(if (dock.column == HomeModule.CHAT) HomePart.CHAT else HomePart.MAP)
+                    val party = b.getValue(HomePart.PARTY)
+                    if (r.partyTabRight) { assertEquals(tag, 1240f, party.r, 0.01f); assertEquals(tag, col.l + 1f, party.l, 0.01f) }
+                    else { assertEquals(tag, 0f, party.l, 0.01f); assertEquals(tag, col.r - 1f, party.r, 0.01f) }
+                    // the column's foot: over its own bar, or the page's foot - no gap under it
+                    val foot = (b.filterKeys { it == HomePart.STRIP }.values.filter { it.l <= col.cx && col.cx <= it.r }).minOfOrNull { it.t - 8f } ?: 927f
+                    assertEquals("$tag: at its column's foot", foot, party.b, 0.01f)
+                    continue
+                }
+                assertTrue(tag, r.partyWide)
+                val party = b.getValue(HomePart.PARTY); val chat = b.getValue(HomePart.CHAT); val map = b.getValue(HomePart.MAP)
+                val leftCol = if (chat.l < map.l) chat else map; val rightCol = if (leftCol === chat) map else chat
+                assertEquals("$tag: the tab on its own column's outer edge", S.partyRight(l), r.partyTabRight)
+                if (r.partyTabRight) { assertEquals(tag, 1240f, party.r, 0.01f); assertEquals(tag, leftCol.l + 1f, party.l, 0.01f) }
+                else { assertEquals(tag, 0f, party.l, 0.01f); assertEquals(tag, rightCol.r - 1f, party.r, 0.01f) }
+                assertEquals("$tag: its height as in its column", wellH, party.h, 0.01f)
+                val bare = S.places(l, HomeLayoutSolver.State()).boxes
+                if (dock.top) {
+                    assertEquals("$tag: under the band", 234f, party.t, 0.01f)
+                    for (c in listOf(chat, map)) assertTrue("$tag: the columns under it", c.t >= party.b + PartyLayout.CHAT_GAP - 0.01f)
+                    if (!cast.top) { assertEquals(tag, party.b + PartyLayout.CHAT_GAP, chat.t, 0.01f); assertEquals(tag, party.b + PartyLayout.CHAT_GAP, map.t, 0.01f) }
+                    else assertEquals("$tag: the bar under it", party.b + PartyLayout.CHAT_GAP, b.getValue(HomePart.STRIP).t, 0.01f)
+                    for (pt in listOf(HomePart.CHAT, HomePart.MAP)) assertEquals("$tag: $pt's foot", bare.getValue(pt).b, b.getValue(pt).b, 0.01f)
+                } else {
+                    val foot = minOf(bare.getValue(HomePart.CHAT).b, bare.getValue(HomePart.MAP).b)
+                    assertEquals("$tag: over the higher foot", foot, party.b, 0.01f)
+                    assertEquals("$tag: the chat over it", party.t - PartyLayout.CHAT_GAP, chat.b, 0.01f)
+                    assertEquals("$tag: the map over it", party.t - PartyLayout.CHAT_GAP, map.b, 0.01f)
+                    for (pt in listOf(HomePart.CHAT, HomePart.MAP)) assertEquals("$tag: $pt's top", bare.getValue(pt).t, b.getValue(pt).t, 0.01f)
+                }
+                assertEquals(map, b.getValue(HomePart.AURAS))
+                // the rows across (the module over the box, as PartyModuleView lays it): the shared rows' cells half the well each
+                val m = PartyLayout.module(p5.mode, p5.n, top = party.t, left = party.l, right = party.r, tabRight = r.partyTabRight)
+                val inner = m.well.w - 2f * PartyLayout.IN
+                assertEquals(tag, inner, m.cells[0].w, 0.01f)
+                for (i in 1..4) assertEquals("$tag: cell $i", (inner - PartyLayout.GAP) / 2f, m.cells[i].w, 0.01f)
+                // Party mode off: its column
+                val off = S.places(l, s.copy(partyOn = false))
+                assertFalse(off.partyWide)
+                assertTrue(tag, off.boxes.getValue(HomePart.PARTY).w < 1240f * 0.75f)
+            }
+        assertEquals(2 * 3 * 4 * 7, n)
+        // the takeover's rows (Party mode off in a fight) never span
+        assertFalse(S.places(HomeLayout(), HomeLayoutSolver.State(takeover = true, party = HomeLayoutSolver.Party(PartyLayout.Mode.FIGHT_OFF, 3, false))).partyWide)
+    }
+
+    /**
+     * PARTY SIZING (the user's picks 2026-11-23; one "Size in fights" since test 1523): every pick (Grows x Grow / Same size) x every
+     * record x Party mode's rest and fight (the controller on the bottom screen with Grow / Same size, on the top screen with Top screen) x
+     * a party of 1 / 5 / 6 with the pet x a card: valid, no F1 / F2 on the Thor's page, the rows the picks give ([PartyLayout.sizedH];
+     * Grow on top: the strip's fill), and the defaults lay today's page exactly
+     */
+    @Test fun everySizingPickIsValid() {
+        var n = 0
+        val bad = ArrayList<String>()
+        for (l0 in HomeLayoutRules.all()) {
+            if (l0.grow) continue
+            val def = l0
+            for (g in HomeLayout.PartyGrow.values()) for (z in HomeLayout.PartySize.values()) {
+                val l = l0.copy(partyGrow = g, partySize = z)
+                for (card in listOf(0f, CARD_H)) for ((cnt, pet) in listOf(1 to false, 5 to false, 6 to true)) for (fight in listOf(false, true)) {
+                    val mode = if (!fight) PartyLayout.Mode.REST else if (l.fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
+                    val s = HomeLayoutSolver.State(card = card > 0f, cardH = card, party = HomeLayoutSolver.Party(mode, cnt, pet), partyOn = true, partyFight = fight)
+                    val r = S.places(l, s); n++
+                    fun bad(m: String) { if (bad.size < 10) bad += "$l / $s: $m" }
+                    val p = HomeLayoutRules.problems(l, s, r)
+                    if (p.isNotEmpty()) bad("$p")
+                    if (r.f1 || r.f2) bad("F1 / F2 on the Thor's page")
+                    val want = PartyLayout.sizedH(mode, true, l)
+                    if (want != null && kotlin.math.abs(r.partyRowH - want) > 0.01f) bad("rows ${r.partyRowH}, the picks say $want")
+                    if (want == null && (r.partyRowH < PartyLayout.FIGHT_H - 0.01f || r.partyRowH > PartyLayout.FILL_MAX_H + 0.01f)) bad("fill rows ${r.partyRowH}")
+                    // (across, but a foot dock over a bar under one column: its column, the pick "Stay in its column")
+                    if (r.partyWide != (l.party.top || !S.oneColumnFootBar(l))) bad("across ${r.partyWide}")
+                    // today's picks: today's page
+                    // (review: against the mode's own rows handed in - not the record against itself - so a default that drifts from
+                    // plateH shows; a Top fight's Fill has no fixed rows: its fill is pinned by HomePartyTopTest)
+                    if (g == HomeLayout.PartyGrow.FIGHTS && z == HomeLayout.PartySize.GROW &&
+                        mode != PartyLayout.Mode.FIGHT_TOP &&
+                        S.places(def, s.copy(party = s.party!!.copy(rowH = PartyLayout.plateH(mode)))).boxes != r.boxes) bad("the defaults moved the page")
+                }
+            }
+        }
+        assertTrue("checked $n: ${bad.joinToString("\n")}", bad.isEmpty())
+        assertTrue("$n", n > 200_000)
+    }
+
     /** Classic's dock is today's arithmetic, to the float; the record's text only changes for another dock; Reset Home to Classic puts
      *  it back; a swap carries it with its module */
     @Test fun thePartyDockIsClassicsByDefault() {
@@ -437,11 +599,15 @@ class HomeLayoutRulesTest {
         val plain = """{"v":1,"name":"Classic","chat":"RIGHT","share":"HALF","cast":"UNDER_CHAT"}"""
         for (junk in listOf(""","party":"TOP"}""", ""","party":5}""", ""","party":null}""", ""","party":["UNDER_MAP"]}"""))
             assertEquals(HomeLayoutJson.parse(plain), HomeLayoutJson.parse(plain.dropLast(1) + junk))
-        // Classic's party box exactly as before the docks (the golden's arithmetic): the top of the chat's column
-        val c = S.places(HomeLayout(), HomeLayoutSolver.State(party = P3, partyOn = true)).boxes
+        // Classic's party box exactly as before the docks (the golden's arithmetic): the top of the chat's column (Party mode off; on,
+        // the same rows across both columns: 2026-11-23)
+        val c = S.places(HomeLayout(), HomeLayoutSolver.State(party = P3, partyOn = false)).boxes
         val m = PartyLayout.module(P3.mode, P3.n, top = 234f, left = 0f, right = 615f)
         assertEquals(HomeLayoutSolver.Box(0f, 234f, 615f, m.well.b), c[HomePart.PARTY])
         assertEquals(m.chatTop, c.getValue(HomePart.CHAT).t, 0.01f)
+        val on = S.places(HomeLayout(), HomeLayoutSolver.State(party = P3, partyOn = true)).boxes
+        assertEquals(HomeLayoutSolver.Box(0f, 234f, 1231f, m.well.b), on[HomePart.PARTY])
+        assertEquals(m.chatTop, on.getValue(HomePart.CHAT).t, 0.01f); assertEquals(m.chatTop, on.getValue(HomePart.MAP).t, 0.01f)
         // the swap: the party list above the map follows the map to the left
         val am = S.places(HomeLayout(party = HomeLayout.PartyDock.ABOVE_MAP).swapped(), HomeLayoutSolver.State(party = P3)).boxes
         assertEquals(0f, am.getValue(HomePart.PARTY).l, 0.01f)
@@ -488,6 +654,7 @@ class HomeLayoutRulesTest {
             val map = r.boxes.getValue(HomePart.MAP)
             assertTrue("$l: ${HomeLayoutRules.problems(l, fight, r)}", HomeLayoutRules.problems(l, fight, r).isEmpty())
             if (dock.column == HomeModule.CHAT || !HomeLayoutRules.cutsMap(l)) assertFalse("$l: no F3", r.f3)
+            // (full width, 2026-11-23: Party mode's rows span the map's column from every dock - F3 for the chat's docks too)
             if (r.f3) {
                 fired++
                 assertTrue(r.castHidden)
