@@ -150,6 +150,19 @@ object HoldCast {
     val gate = HoldGate()
     val probe = Probe()
     private var mapNow: Set<Int> = emptySet()
+    /** the add-on's last map as it came (Streaming: used only while the stream's pad road is on) */
+    private var mapRaw: Set<Int> = emptySet()
+    /**
+     * Linux Streaming Edition (2026-11-25, the user: "see if we can build stream support for hold to cast"): THE STREAM'S PAD ROAD.
+     * StreamTop sends the PC its controller state through this same gate ([streamFilter]) while a stream runs, the Guide marker as
+     * Moonlight's special button (Sunshine's virtual pad's Guide); upstream's Streaming never gates (the PC's own helper times nothing).
+     * Off = a PC game's map is never the gate's, as upstream.
+     */
+    @Volatile var streamRoad = false
+        private set
+    /** the probe's session while streaming: one per stream (the PC's game has no launch here) */
+    private var streamSession = 0L
+    private fun mapFor(m: Set<Int>) = if (PlayModes.current == PlayMode.STREAM && !streamRoad) emptySet() else m
     /** the game screen has the pad (the launcher's lifecycle) */
     @Volatile var focused = true
     /** a fight now (the padmap's word) */
@@ -163,6 +176,7 @@ object HoldCast {
     private fun now() = SystemClock.uptimeMillis()
 
     private fun configure() {
+        mapNow = mapFor(mapRaw)
         gate.holdMs = CastSettings.holdTime.ms
         gate.configure(usable && focused, mapNow, now())
         resend?.run()
@@ -203,6 +217,54 @@ object HoldCast {
     /** when the launcher must send again (uptime ms), or Long.MAX_VALUE */
     @JvmStatic fun nextAt(): Long = gate.nextAt()
 
+    // ------------------------------------------------------------------------------------------- Linux Streaming Edition: the stream
+
+    /** StreamTop: a stream runs (main thread); [resendNow] sends the stream's controller state again (the gate's own moments) */
+    fun streamStart(resendNow: Runnable) {
+        streamRoad = true
+        streamSession = now()
+        resend = resendNow
+        focused = true
+        configure()
+    }
+    /** StreamTop: the stream ended (main thread): nothing of ours stays down, the map is the PC's again */
+    fun streamEnd() {
+        if (!streamRoad) return
+        streamRoad = false
+        resend = null
+        gate.reset()
+        configure()
+        onChange?.invoke()
+    }
+
+    /** Moonlight's button flags (StreamPad's) -> the gate's bits (A B X Y LB RB Back Start LS RS = 0..9) */
+    private val MOON = intArrayOf(0x1000, 0x2000, 0x4000, 0x8000, 0x0100, 0x0200, 0x0020, 0x0010, 0x0040, 0x0080)
+    private const val M_UP = 0x0001; private const val M_DOWN = 0x0002; private const val M_LEFT = 0x0004; private const val M_RIGHT = 0x0008
+    /** Moonlight's Guide (SPECIAL_BUTTON_FLAG) */
+    const val M_GUIDE = 0x0400
+
+    /**
+     * THE STREAM'S CALL (StreamTop.sendPad, every controller send): Moonlight's [flags] and triggers ([lt] / [rt] 0..255) through the gate;
+     * returns the flags for the PC (the marker as [M_GUIDE]); the triggers for the PC in [streamLt] / [streamRt]. The gate off = the same.
+     */
+    @JvmStatic fun streamFilter(flags: Int, lt: Int, rt: Int, now: Long): Int {
+        var raw = 0
+        for (i in MOON.indices) if (flags and MOON[i] != 0) raw = raw or (1 shl i)
+        val o = filter(raw, flags and M_UP != 0, flags and M_RIGHT != 0, flags and M_DOWN != 0, flags and M_LEFT != 0, lt / 255f, rt / 255f, now)
+        var out = flags and (MOON.fold(M_UP or M_DOWN or M_LEFT or M_RIGHT) { a, f -> a or f }).inv()
+        for (i in MOON.indices) if (o and (1 shl i) != 0) out = out or MOON[i]
+        if (o and (1 shl HoldGate.UP) != 0) out = out or M_UP
+        if (o and (1 shl HoldGate.RIGHT) != 0) out = out or M_RIGHT
+        if (o and (1 shl HoldGate.DOWN) != 0) out = out or M_DOWN
+        if (o and (1 shl HoldGate.LEFT) != 0) out = out or M_LEFT
+        if (o and (1 shl 15) != 0) out = out or M_GUIDE
+        return out
+    }
+    /** the trigger for the PC: as the pad has it while the gate sends it as it is, else the gate's (a held-back press's own layer) */
+    @JvmStatic fun streamLt(lt: Int): Int = trig(lt, gate.ltOut)
+    @JvmStatic fun streamRt(rt: Int): Int = trig(rt, gate.rtOut)
+    private fun trig(v: Int, out: Float): Int = if (out == v / 255f) v else (out.coerceIn(0f, 1f) * 255f).toInt()
+
     /** the launcher lost / got back the game screen (its pause / resume, the window's focus) */
     @JvmStatic fun focusLost() {
         focused = false
@@ -215,18 +277,22 @@ object HoldCast {
     /** CompanionHost: a CURRENT `holdmap` */
     fun onMap(msg: JSONObject) {
         val m0 = parseMap(msg) ?: return
-        val m = if (PlayModes.current == PlayMode.STREAM) emptySet() else m0     // a PC game's map: never the local gate's
-        main.post { if (m != mapNow) { mapNow = m; configure() } }
+        main.post { if (m0 != mapRaw || mapFor(m0) != mapNow) { mapRaw = m0; configure() } }    // a PC game's map: only with the stream's road
     }
 
     /** CompanionHost: a CURRENT `holdprobe` ("ready" / "done") */
     fun onProbe(msg: JSONObject) {
-        if (PlayModes.current == PlayMode.STREAM) return                       // the PC's game: not probed from here
+        val stream = PlayModes.current == PlayMode.STREAM
+        if (stream && !streamRoad) return                                      // the PC's game without our road: not probed from here
         val st = msg.optString("st")
         main.post {
             val now = now()
+            val bound = msg.optBoolean("bound", false)
+            // Linux Streaming Edition (the rule: as few automated inputs as possible): a marker the last probe SAW is not pulsed again
+            // at every connect (the add-on keeps its holdGuide while nothing is seen); a bound Guide still turns it off, as upstream
+            if (stream && st == "ready" && !bound && usable) { Log.i(TAG, "probe: kept from the last time (seen), not pulsed"); return@post }
             val out = when (st) {
-                "ready" -> probe.onReady(LauncherHooks.gameStartSec, msg.optBoolean("bound", false), w(msg, "bn"), w(msg, "ba"), now)
+                "ready" -> probe.onReady(if (stream) streamSession else LauncherHooks.gameStartSec, bound, w(msg, "bn"), w(msg, "ba"), now)
                 "done" -> probe.onDone(w(msg, "ev"), w(msg, "sn"), w(msg, "rn"), w(msg, "gb"), w(msg, "acted"), now)
                 else -> null
             }
@@ -241,7 +307,8 @@ object HoldCast {
             when (probe.st) {
                 Probe.St.ARMED -> {
                     // the game in THIS launcher (a Streaming session's game is the PC's: our gate is not on its road; never probed there)
-                    val local = InputSink.sink != null && PlayModes.current == PlayMode.LOCAL
+                    val local = (InputSink.sink != null && PlayModes.current == PlayMode.LOCAL) ||
+                        (streamRoad && PlayModes.current == PlayMode.STREAM)           // Linux Streaming Edition: the stream's road
                     if (probe.due(now, fighting, focused) && local && gate.probePulse(now)) {
                         probe.pulsed(now)
                         Log.i(TAG, "probe: the Guide button pulsed alone for ${HoldGate.PROBE_MS} ms")

@@ -5,6 +5,9 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
+- **Hold to cast over the stream (untested in game):** the Thor's presses to the PC go through the same hold gate as upstream's own
+  game (a tap on release, a hold at the hold time with the Guide button as the marker). The one-time Guide check runs once while
+  streaming and is not repeated once it worked. If the Steam overlay opens on it, turn off Steam's "Guide button focuses Steam".
 - **DS Forever 1.0.41 merged (set 462):** upstream's 1.0.40 + 1.0.41: Edit Home tabs (Out of combat / In combat / Party mode, each
   its own layout), 60 fps by default + a performance mode, lighter add-ons in fights, our own cast bar above the HUD in fights, Smart Y
   by a campfire, hold to cast (built for the Thor's own game: likely not working while streaming, untested). The Controller room's

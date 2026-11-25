@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -674,6 +675,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (streamFps >= 100) StreamRate.request(activity, surface.holder.surface, streamFps)
         smoothStart()
         padSent = 0
+        com.jrees.wowcompanion.HoldCast.streamStart(Runnable { main.post(holdTick) })     // hold to cast: the stream's road
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
         DsForeverScreen.current?.attachStream(k)
@@ -882,6 +884,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun teardown() {
         seen = false
+        main.removeCallbacks(holdTick); com.jrees.wowcompanion.HoldCast.streamEnd()
         ThorRumble.stop()                                   // Q10b: a rumble running when the stream ends would buzz on forever
         if (streamFps >= 100) StreamRate.release(activity, surface.holder.surface)
         streamFps = 0
@@ -1523,8 +1526,22 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (!MoonBridge.loaded) { if (padSent == 0) { padSent = -1; Log.w(TAG, "pad: not sent (the stream library is not loaded)") }; return }
         if (padSent >= 0 && padSent++ == 0) Log.i(TAG, "pad: first controller input sent to the PC; " + PadNote.driver(padDriver))
         val s = pad.snapshot()
-        MoonBridge.sendMultiControllerInput(0, 1, s.buttons, s.lt.toByte(), s.rt.toByte(), s.lx.toShort(), s.ly.toShort(), s.rx.toShort(), s.ry.toShort())
+        // Linux Streaming Edition (2026-11-25): HOLD TO CAST over the stream - the state goes through DS Forever's gate (a press of a place
+        // with a hold spell is held back: a tap goes on release, a hold at the hold time with the Guide marker); off = unchanged
+        val now = SystemClock.uptimeMillis()
+        var buttons = s.buttons; var lt = s.lt; var rt = s.rt
+        runCatching {
+            buttons = com.jrees.wowcompanion.HoldCast.streamFilter(s.buttons, s.lt, s.rt, now)
+            lt = com.jrees.wowcompanion.HoldCast.streamLt(s.lt); rt = com.jrees.wowcompanion.HoldCast.streamRt(s.rt)
+        }.onFailure { Log.w(TAG, "hold: the gate failed, the pad goes as it is: $it") }
+        MoonBridge.sendMultiControllerInput(0, 1, buttons, lt.toByte(), rt.toByte(), s.lx.toShort(), s.ly.toShort(), s.rx.toShort(), s.ry.toShort())
+        main.removeCallbacks(holdTick)
+        val next = com.jrees.wowcompanion.HoldCast.nextAt()
+        if (next != Long.MAX_VALUE) main.postAtTime(holdTick, maxOf(next, now + 1))
     }
+
+    /** the gate's next moment (a tap's release, a hold's marker): the controller state sent again */
+    private val holdTick = Runnable { if (screen == Screen.STREAMING) runCatching { sendPad() } }
 
     // ---------------------------------------------------------------- the network
     private fun watchNetwork() {
