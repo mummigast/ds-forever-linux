@@ -485,15 +485,21 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
             }
             val bTop = r.bottom - 141f
             macPreview(c, m, RectF(side.left + 24f, side.top + 24f, side.right - 24f, bTop - 20f))
-            val bw = (side.width() - 48f - 16f) / 2f
+            // Linux Streaming Edition (Spells s19, 2026-11-27, the user: "there is edit and bind, but no delete function"): Delete (Y)
+            // beside them - the editor's own Cancel / Delete ask opens at once; nothing is deleted without its A
+            val bw = (side.width() - 48f - 32f) / 3f
             val eb = RectF(side.left + 24f, bTop, side.left + 24f + bw, r.bottom - 30f)
-            val xb = RectF(eb.right + 16f, bTop, side.right - 24f, r.bottom - 30f)
+            val xb = RectF(eb.right + 16f, bTop, eb.right + 16f + bw, r.bottom - 30f)
+            val db = RectF(xb.right + 16f, bTop, side.right - 24f, r.bottom - 30f)
             val canEdit = !m.locked
             val canBind = !s.combat && !m.locked
+            val canDel = !s.combat && !m.locked
             UiKit.button(c, eb, "Edit", UiKit.okGlyph(), if (canEdit) UiKit.Button.UP else UiKit.Button.DISABLED)
             UiKit.button(c, xb, "Bind", UiKit.xGlyph(), if (canBind) UiKit.Button.UP else UiKit.Button.DISABLED)
+            UiKit.button(c, db, "Delete", yGlyph(), if (canDel) UiKit.Button.UP else UiKit.Button.DISABLED)
             if (canEdit) hit(eb, MacrosModel.cell(s, "a"))
             if (canBind) hit(xb, MacrosModel.cell(s, "x"))
+            if (canDel) hit(db, MacrosModel.cell(s, "y"))
         }
 
         /** the "+" tile's plus: the kit's list plus (the game's common-button-list-plus) at 0.6 of the slot; drawn only without the kit */

@@ -27,6 +27,20 @@ class TapKeysFarTest {
         assertNull(TapKeys.script(p, listOf("bag0" to 1), 0L, "41"))     // no live handshake token: clicks
     }
 
+    // TapPad pad39 (2026-11-27): THE SECOND FAR BANK, "DOWN DOWN DOWN <selector>" (the Spellbook row); its 36-39 by keys only with sfx
+    @Test fun secondFarBankGoesAsKeys() {
+        val p = pad(mapOf("spells" to "DOWN DOWN DOWN A", "bad" to "DOWN DOWN UP A", "nav" to "DOWN DOWN DOWN HOME"))
+        TapKeys.forgetSticky()
+        assertEquals("wckeys CTRL-SHIFT DOWN DOWN DOWN A H", TapKeys.script(p, listOf("spells" to 7), 0L, "42"))
+        assertEquals("wckeys CTRL-SHIFT DOWN DOWN DOWN A V DOWN DOWN DOWN A C",
+            TapKeys.script(p, listOf("spells" to 21, "spells" to 2), 0L, "42"))     // the two-tap spell pick: each with its prefix
+        assertNull(TapKeys.script(p, listOf("spells" to 37), 0L, "42"))           // 36-39 without sfx: clicks
+        assertNull(TapKeys.script(p, listOf("bad" to 1), 0L, "42"))
+        assertNull(TapKeys.script(p, listOf("nav" to 1), 0L, "42"))               // a navigation key is never a selector
+        p.getJSONObject("keys").put("sfx", JSONObject().put("spells", true))
+        assertEquals("wckeys CTRL-SHIFT DOWN DOWN DOWN A HOME", TapKeys.script(p, listOf("spells" to 37), 0L, "42"))
+    }
+
     // TapPad pad34: a typing row stays picked; the row keys go once, then one key per letter
     private fun padSticky() = pad(mapOf("chr" to "DOWN DOWN Y", "chs" to "DOWN DOWN Z", "qact" to "INSERT")).also {
         it.getJSONObject("keys").put("sticky", JSONObject().put("chr", true).put("chs", true))

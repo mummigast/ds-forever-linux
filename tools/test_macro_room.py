@@ -339,7 +339,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("spells", "book", "padmap"):
     e = comp(SRC[k], k)
     check(e is None, "a. Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local SV = "s18"' in SRC["spells"] and 'local BV = "b85"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local SV = "s19"' in SRC["spells"] and 'local BV = "b85"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "a. the versions: Spells s14, Book b65, PadMap m166")
 check('s14 THE MACRO BUILDER v2 (the user, 2026-11-16: the Macros room\'s recipes "make no sense"' in SRC["spells"],
       "a. Spells s14's header note quotes the user")
@@ -2094,6 +2094,25 @@ function iconize() for _, t in ipairs({ GENM, CHARM }) do for _, m in ipairs(t) 
     open(os.path.join(DUMP, "looks_padmap.json"), "w", encoding="utf-8").write(json.dumps({"type": "padmap", "v": "m165", "m": padmap(L7)}))
     open(os.path.join(DUMP, "looks_facecd.json"), "w", encoding="utf-8").write(json.dumps(docs(L7, n7, 'facecd')[-1]))
     print("dumped to", DUMP)
+
+# s19 (fork, 2026-11-27, the user: "there is edit and bind, but no delete function"): Y on the LIST = the editor's own Delete ask at once;
+# B goes back to the list (nothing deleted), the ask's A deletes ONE macro (as More > Delete); the + tile: nothing
+LD = opened([("Alpha", "/say a"), ("Bravo", "/say b"), ("Charlie", "/say c")])
+LD.execute('MLOG = {}')
+press(LD, "PADDRIGHT")                                                     # the cursor on Bravo
+press(LD, "PAD4")
+d = mdoc(LD)
+check(d.get('del') is True and d.get('mode') == 'edit' and mlog(LD) == [], "s19a. Y on the list ASKS (the editor's Delete ask, nothing deleted)",
+      (d.get('del'), d.get('mode'), mlog(LD)))
+press(LD, "PAD2")
+d = mdoc(LD)
+check(not d.get('del') and d.get('mode') == 'grid' and mlog(LD) == [], "s19b. B: back to the list, nothing deleted", (d.get('mode'), mlog(LD)))
+press(LD, "PAD4")
+LD.execute('ALLOW = true'); press(LD, "PAD1"); LD.execute('ALLOW = false')
+d = mdoc(LD)
+check(mlog(LD) == ['delete 2'] and LD.eval('mnames(GENM)') == 'Alpha|Charlie' and d.get('mode') == 'grid',
+      "s19c. the ask's A: ONE DeleteMacro, back on the list", (mlog(LD), LD.eval('mnames(GENM)'), d.get('mode')))
+check(not clean(LD), "s19d. no breach, no error", clean(LD))
 
 print("\n%s (%d pass, %d fail)" % ("ALL PASS" if fails == 0 else "FAILURES", passes, fails))
 sys.exit(1 if fails else 0)

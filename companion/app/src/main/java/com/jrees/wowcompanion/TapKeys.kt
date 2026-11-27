@@ -62,6 +62,16 @@ object TapKeys {
         val rks = rk.split(' ')
         // Linux Streaming Edition 2026-11-20 (TapPad pad27, THE FAR ROWS: vendor Buy, the bags, keytest): "DOWN DOWN <selector>", the row
         // key twice then a column key naming the far row. Columns 36-39 of a far row stay clicks (the add-on cannot rebind those keys)
+        // Linux Streaming Edition 2026-11-27 (TapPad pad39, THE SECOND FAR BANK: the Spellbook row): "DOWN DOWN DOWN <selector>", the
+        // row key three times then the selector; the same rules as a far row below
+        if (rks.size == 4) {
+            val sel = rks[3]
+            if (rks[0] != rks[1] || rks[1] != rks[2] || rks[0] !in ROW_KEYS || systemChord(MODS, rks[0])) return null
+            if (sel !in COL_KEYS || sel in COLX || systemChord(MODS, sel)) return null
+            val sfx = keys.optJSONObject("sfx")?.optBoolean(op, false) == true
+            if (ck !in COL_KEYS || (ck in COLX && !sfx) || systemChord(MODS, ck)) return null
+            return rk to ck
+        }
         if (rks.size == 3) {
             val sel = rks[2]
             if (rks[0] != rks[1] || rks[0] !in ROW_KEYS || systemChord(MODS, rks[0])) return null

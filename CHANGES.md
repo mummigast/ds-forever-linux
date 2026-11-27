@@ -3,6 +3,22 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## 2026-11-27 (afternoon): linux-v1.0.41.2, add-on set 466 (tested)
+
+On top of linux-v1.0.41.1. Tested on the Thor 2026-11-27: the Spellbook and Macros rooms by keys, creating and deleting macros,
+binding from the Spellbook (also to Party mode).
+
+- **The Spellbook room by keys:** its spell picks, switches and buttons now go to the game as keys instead of screen clicks that
+  could miss on the stream (Settings > Help > Keyboard link no longer lists "spells").
+- **The Macros room by keys:** creating and editing macros no longer loses taps on the stream.
+- **Delete a macro from the list:** the Macros room's list has **Delete** (Y) beside Edit and Bind; it asks Cancel / Delete first.
+
+### Known issues in this release
+
+- The very first tap that opens the Spellbook room can still go as a click while another room holds its row.
+- Party mode binds A, X and Y only (plain, with ZL or with ZR); B is the Bind box's cancel and ZL + ZR is not a Party mode layer.
+- The rest as in linux-v1.0.41.1 below.
+
 ## 2026-11-27: linux-v1.0.41.1, DS Forever 1.0.41, add-on set 464 (tested)
 
 On top of linux-v1.0.39.2. Tested on the Thor 2026-11-27: hold to cast over the stream, our cast bar above the HUD, pinned buffs
