@@ -23,11 +23,10 @@
 - **Smoother fights.** Less work per frame inside the game, so fewer hitches when a fight starts.
 - **Streaming only.** The game runs on the PC, never on the Thor, so the app is smaller and installs next to the official one.
 
-## Latest: 1.0.41.1
+## Latest: 1.0.41.2
 
-DS Forever 1.0.41 (Edit Home tabs, our own cast bar above the HUD, performance mode), plus hold to cast while streaming, buffs
-pinned for fights, controller rumble, and fixes from a full test round on the Thor (switches by keys, no background work while
-you stream).
+The Spellbook and Macros rooms now go as keys (no lost taps on the stream), and macros can be deleted from the list. On top of
+1.0.41.1: DS Forever 1.0.41, hold to cast while streaming, buffs pinned for fights, controller rumble.
 [All changes](CHANGES.md)
 
 ## What you need
