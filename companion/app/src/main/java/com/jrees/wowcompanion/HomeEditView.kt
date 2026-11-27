@@ -193,7 +193,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
 
     /** the bar laid at the top of a column (Above chat / Above map): its box, else null */
     private fun topCastBox(p: Map<HomePart, RectF>): RectF? =
-        if (host.model?.draft?.cast?.top == true) castNow(p).firstOrNull()?.let { RectF(it) } else null
+        if (host.model?.page?.cast?.top == true) castNow(p).firstOrNull()?.let { RectF(it) } else null
 
     /** the divider's handle: centred in the 8 px between the columns, halfway down them */
     fun dividerBox(p: Map<HomePart, RectF> = host.parts()): RectF? = dividerNow(p)?.let { RectF(it) }
@@ -223,25 +223,51 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (host.model?.plusShown == true) out[EditStop.PLUS] = HomeLayoutSolver.Box(rib.plus.left, y0 + rib.plus.top, rib.plus.right, y0 + rib.plus.bottom)
         // Done (B and Start are Done anywhere; the stop is the relayed feed's way to Discard, which sees no held B): Right only
         out[EditStop.DONE] = HomeLayoutSolver.Box(rib.done.left, y0 + rib.done.top, rib.done.right, y0 + rib.done.bottom)
+        // EDIT TABS (the proposal's decision 7 A): the pieces every tab shares - the room bar, the D-pad / ABXY pencils, the Look chip - sit
+        // still on the In combat and Party mode tabs (edited on Out of combat): no stops there
+        val shared = host.model?.tab?.fight != true
         // phase 4: the room bar's rooms' row, under the ribbon (Down from the columns; Left / Right there walk its rooms)
-        if (host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
-        // P4: the ribbon's Fight toggle (between "+" and Done: Right from "+", Left from Done, Up from the room bar)
-        out[EditStop.FIGHT] = HomeLayoutSolver.Box(rib.fight.left, y0 + rib.fight.top, rib.fight.right, y0 + rib.fight.bottom)
+        if (shared && host.bar() != null) out[EditStop.ROOMS] = HomeLayoutSolver.Box(8f, y0 + Strip.TRACKS, (width.toFloat().takeIf { it > 0f } ?: 1240f) - 8f, y0 + Strip.BAR)
+        // P4: the ribbon's Fight toggle (between "+" and Done: Right from "+", Left from Done, Up from the room bar) - EDIT TABS: the Party
+        // mode tab's alone (In combat always shows the fight, Out of combat never)
+        if (fightToggle()) out[EditStop.FIGHT] = HomeLayoutSolver.Box(rib.fight.left, y0 + rib.fight.top, rib.fight.right, y0 + rib.fight.bottom)
         // THE TOP BAR'S PIECES (P1 - P4): the two pencils, the Look chip or the fight pencil, the extras' row (one stop: its own cursor)
         host.band()?.let { g ->
             // (Top screen's preview: the band slid up off the page - its pieces with it are no stops; the fight pencil stands on the page)
             fun put(s: EditStop, r: RectF) { if (r.bottom > 0f) out[s] = HomeLayoutSolver.Box(r.left, r.top, r.right, r.bottom) }
-            put(EditStop.PAD_PEN, g.padPen); put(EditStop.FACE_PEN, g.facePen)
-            g.look?.let { put(EditStop.LOOK, it) }
+            if (shared) { put(EditStop.PAD_PEN, g.padPen); put(EditStop.FACE_PEN, g.facePen) }
+            if (shared) g.look?.let { put(EditStop.LOOK, it) }
             g.fightPen?.let { put(EditStop.FIGHT_PEN, it) }
             val cells = extrasUnion(g)
             if (cells != null) put(EditStop.EXTRAS, cells)
         }
-        // P4 (decision D4): while the fight preview shows, only the band, the ribbon and the room bar are edited (the columns are laid
-        // under the grown band: nothing of theirs is reached)
-        if (host.model?.fightPreview == true) for (s in PREVIEW_GONE) out.remove(s)
+        // (EDIT TABS: D4's "no columns in the fight preview" went - each tab's widgets move in its own look)
+        // party sizing (2026-11-23): the party list's pencil - the Party mode tab's ([partyPenBox])
+        partyPenBox()?.let { out[EditStop.PARTY_PEN] = HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }
         return out
     }
+
+    /**
+     * PARTY SIZING (the user's pick 2026-11-23): the party list's pencil in Home's px - [BandEdit.PEN] square on the list's far top
+     * corner from its Select tab (the tab on the screen's left edge: the box starts at x 0 - the pencil at its right), [PARTY_PEN_IN] in
+     * from its edges, over the corner plate like a badge; null = no party list on Home. (Review: the corner as DRAWN - the list's pose,
+     * edit mode's REST_SCALE 0.94 springs, its lift - so the pencil rides the drawn list and never hangs off its edge; the pencil
+     * itself never turns. Its taps read this same box)
+     */
+    fun partyPenBox(p: Map<HomePart, RectF> = host.parts()): RectF? {
+        // EDIT TABS: the party list's sizing is Party mode's - its pencil on the Party mode tab only
+        if (host.model?.tab != HomeTab.PARTY) return null
+        val b = p[HomePart.PARTY] ?: return null
+        if (b.width() < BandEdit.PEN * 2f || b.height() < BandEdit.PEN) return null
+        val tabLeft = b.left <= 0.5f
+        penPt[0] = if (tabLeft) b.right else b.left; penPt[1] = b.top
+        if (host.pose(HomePart.PARTY, penMtx)) penMtx.mapPoints(penPt)
+        val l = if (tabLeft) penPt[0] - PARTY_PEN_IN - BandEdit.PEN else penPt[0] + PARTY_PEN_IN
+        val t = penPt[1] + PARTY_PEN_IN
+        return RectF(l, t, l + BandEdit.PEN, t + BandEdit.PEN)
+    }
+    private val penPt = FloatArray(2)
+    private val penMtx = android.graphics.Matrix()
     /** the extras' cells and their "+" spot as one box (null = no extras row shown) */
     private fun extrasUnion(g: BandGeo): RectF? {
         if (g.extras.isEmpty() && g.plus == null) return null
@@ -256,10 +282,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** [s]'s box on the band now (a pencil, the Look chip, the extra under the cursor: its picture - the readability pass: the cursor
      *  hugs the 28 px picture, not the taller cell under it), null = none */
     fun bandBox(s: EditStop): RectF? {
+        if (s == EditStop.PARTY_PEN) return partyPenBox()
         val g = host.band() ?: return null
         val m = host.model
         return when (s) {
             EditStop.PAD_PEN -> g.padPen; EditStop.FACE_PEN -> g.facePen; EditStop.LOOK -> g.look; EditStop.FIGHT_PEN -> g.fightPen
+            EditStop.PARTY_PEN -> partyPenBox()
             EditStop.EXTRAS -> m?.let { extraBox(g, it) } ?: extrasUnion(g)
             else -> null
         }?.let { RectF(it) }
@@ -274,13 +302,14 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), (255 * a).toInt()) else -1
         drawWidgets(c, m)
         drawBandPieces(c, m)
+        drawPartyPen(c, m)
         // the menu pops out of its widget's side (0.92 -> 1 with a little overshoot), the Add tray rises; a pencil's bubble out of its tail
         m.menu?.let { s ->
             val k = host.popK(HomeEditMotion.MENU)
             val sv = c.save()
             if (abs(k - 1f) > 0.001f) {
                 val box = menuBox(s)
-                if (s.pencil) popIn(c, k, box, bubbleTailX(s, box), box.top, MENU_FROM)
+                if (s.pencil) popIn(c, k, box, bubbleTailX(s, box), if (partyBubbleUp) box.bottom else box.top, MENU_FROM)
                 else {
                     val wb = boxesNow(host.parts())[s] ?: RectF(box.centerX(), height.toFloat(), box.centerX(), height.toFloat())
                     popIn(c, k, box, wb.centerX().coerceIn(box.left, box.right), wb.centerY().coerceIn(box.top, box.bottom), MENU_FROM)
@@ -370,7 +399,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val sel = m.cursor
         val lifted = m.lifted
         val card = wb[EditStop.QUEST]
-        val cardOnMap = m.draft.card == HomeLayout.CardDock.ON_MAP
+        val cardOnMap = m.page.card == HomeLayout.CardDock.ON_MAP
         val lk = host.liftK()
         // the lifted widget lies over everything (its depth): the chrome of the others is never drawn on it - only round it
         liftOut.clear()
@@ -397,8 +426,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         // 2. the dashed ink frames and the tags (where they hide nothing: the map's bottom left, the card's top right, the bar's on its top
         // edge); a rider moves with its lifted host
         tagN = 0
-        // P4 (D4): with the fight preview the page's widgets are not edited: dimmed only, no frame, no tag, no handle
-        if (!m.fightPreview) for ((s, r) in wb) {
+        // (edit tabs: D4 went - each tab's widgets are edited in its own look, the fight's too: framed and tagged as ever)
+        for ((s, r) in wb) {
             val rider = s == EditStop.QUEST && cardOnMap
             val sv = posed(c, s)                                            // a rider rides its host's pose (HomeView resolves it)
             if (s != sel) { if (s == EditStop.CAST) for (i in cast.indices) frame(c, cast[i], light = rider) else frame(c, r, light = rider) }
@@ -406,7 +435,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             addTag(s, if (s == EditStop.CAST && cast.isNotEmpty()) cast[0] else if (s == EditStop.PARTY) partyRows(r) else r, s == sel)
         }
         // the divider's handle
-        if (!m.fightPreview) dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
+        dividerNow(p)?.let { d -> handle(c, d, sel == EditStop.DIVIDER || m.drag?.stop == EditStop.DIVIDER) }
         // 3. a finger's drop well: the dock under it (gold; red = refused, it would break a size rule)
         m.drag?.let { d -> d.cand?.let { cand -> wellFor(d.stop, cand)?.forEach { well(c, it, d.bad) } } }
         c.restoreToCount(under)
@@ -436,12 +465,12 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         if (lifted != null && m.drag == null && selN > 0) (if (sel == EditStop.CAST) cast[0] else one!!).let { b ->
             val sv = posed(c, lifted)
-            val canL = m.nextDock(lifted, m.draft, -1, true) != null
-            val canR = m.nextDock(lifted, m.draft, 1, true) != null
+            val canL = m.nextDock(lifted, m.page, -1, true) != null
+            val canR = m.nextDock(lifted, m.page, 1, true) != null
             if (canL || canR) UiKit.moveArrows(c, RectF(b.left, b.centerY() - 40f, b.right, b.centerY() + 40f), canL, canR, words = false)
             // the card's and the bar's main moves are Up / Down (On map <-> Above chat; Under chat -> ... -> Split): their arrows too
-            val canU = m.nextDock(lifted, m.draft, -1, false) != null
-            val canD = m.nextDock(lifted, m.draft, 1, false) != null
+            val canU = m.nextDock(lifted, m.page, -1, false) != null
+            val canD = m.nextDock(lifted, m.page, 1, false) != null
             if (canU || canD) UiKit.moveArrowsUpDown(c, b, canU, canD, around = true)
             c.restoreToCount(sv)
         }
@@ -541,7 +570,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      *  edge in a narrow one (a third: the card's title and the chat's lines reach that corner there; the tag must hide nothing) */
     fun cornerOf(s: EditStop, r: RectF): Corner {
         // a bar at the top of its column: its tag on its FOOT edge (the top edge is the band's foot 8 px over it)
-        if (s == EditStop.CAST && host.model?.draft?.cast?.top == true) return Corner.FOOT_LEFT
+        if (s == EditStop.CAST && host.model?.page?.cast?.top == true) return Corner.FOOT_LEFT
         // the party list's inside its rows' top right at any width (its top edge may be the band's foot, 8 px over it)
         if (s == EditStop.PARTY) return Corner.TOP_RIGHT
         val at = CORNERS[s] ?: Corner.TOP_LEFT
@@ -659,7 +688,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     /** a menu laid out: its box, each row's rect, which segmented rows wrap (label above, buttons below), the buttons' text size */
     private class MenuLay(val box: RectF, val rows: List<RectF>, val wrap: List<Boolean>, val segText: List<Float>,
                           /** a pencil's bubble hangs right under the band (its tail up to its part); false = a bar pushed it down */
-                          val tail: Boolean = false)
+                          val tail: Boolean = false,
+                          /** the party list's bubble stands ABOVE the list (a list at the foot): its tail on its foot, pointing down */
+                          val tailDown: Boolean = false)
 
     /** a segmented row's button widths at text size [ts] */
     private fun segWidths(r: MenuRow, ts: Float): List<Float> {
@@ -691,28 +722,53 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val bars = p[HomePart.BARS]
         // (Top screen's preview: the band laid above the page - the page's own top)
         val top = max(bars?.bottom ?: 226f, 0f) + g
-        val cardHost = if (host.model?.draft?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
+        val cardHost = if (host.model?.page?.card == HomeLayout.CardDock.ABOVE_CHAT) map else chat
         val column = s == EditStop.CHAT || s == EditStop.MAP || s == EditStop.QUEST || s == EditStop.PARTY
-        val bubbleOf = if (s.pencil) bandBox(s) else null
+        val bubbleOf = if (s.pencil && s != EditStop.PARTY_PEN) bandBox(s) else null
         // the party list's over the column it is not in
-        val partyHost = if (host.model?.draft?.party?.column == HomeModule.MAP) chat else map
+        val partyHost = if (host.model?.page?.party?.column == HomeModule.MAP) chat else map
         val hostCol = when (s) { EditStop.CHAT -> map; EditStop.MAP -> chat; EditStop.QUEST -> cardHost; EditStop.PARTY -> partyHost; else -> null }
         val topBar = topCastBox(p)
         // the horizontal extent and the room it has vertically
         var box: RectF
         var tail = false
+        var tailDown = false
         when {
+            // PARTY SIZING: the party list's bubble beside the list, never on it (the preview shows the list's size) - under it, or over
+            // it when there is more room there (a list at the foot); [PARTY_BUBBLE_W] wide (its long words on one line), centred on the
+            // pencil, 16 px clear of the screen's edges; its tail points at the list
+            s == EditStop.PARTY_PEN -> {
+                val pb = p[HomePart.PARTY] ?: RectF(g, top, w - g, top)
+                val pen = partyPenBox(p) ?: RectF(pb.centerX(), pb.top, pb.centerX(), pb.top)
+                val bw = min(PARTY_BUBBLE_W, w - 2f * BUBBLE_EDGE)
+                val cx = pen.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
+                // (over the list it may cover the band: a list at the foot leaves too little room under the band for its three rows)
+                val below = (h - g) - (pb.bottom + 4f + BUBBLE_TAIL)
+                val above = (pb.top - 4f - BUBBLE_TAIL) - g
+                tailDown = above > below
+                box = if (tailDown) RectF(cx - bw / 2f, g, cx + bw / 2f, pb.top - 4f - BUBBLE_TAIL)
+                    else RectF(cx - bw / 2f, pb.bottom + 4f + BUBBLE_TAIL, cx + bw / 2f, h - g)
+                tail = true
+            }
             column -> {
                 box = hostCol?.let { RectF(it.left, top, it.right, it.bottom) } ?: RectF(g, top, w / 2f, h - g)
                 if (box.width() < MENU_MIN_W) {
                     if (box.centerX() < w / 2f) box.right = min(w - g, box.left + MENU_MIN_W) else box.left = max(g, box.right - MENU_MIN_W)
+                }
+                // (full width in Party mode, 2026-11-23: the party list spans the other column too - its menu under it at the top, over
+                // it at the foot, never on it)
+                if (s == EditStop.PARTY) p[HomePart.PARTY]?.let { pb ->
+                    if (pb.left < box.right && box.left < pb.right) {
+                        if (pb.centerY() < h / 2f) box.top = max(box.top, pb.bottom + g) else box.bottom = min(box.bottom, pb.top - g)
+                    }
                 }
                 clearBars(box, p, top, g)
             }
             // P1 / P4: a pencil's speech bubble hangs under the band from its part (its tail up to the pencil), 16 px clear of the screen's
             // edges, never on a tap-to-cast bar it crosses
             bubbleOf != null -> {
-                val bw = min(BUBBLE_W, w - 2f * BUBBLE_EDGE)
+                // (edit tabs: the fight pencil's Combat bars row - three two-word choices - keeps one line: a wider bubble)
+                val bw = min(if (s == EditStop.FIGHT_PEN) FIGHT_BUBBLE_W else BUBBLE_W, w - 2f * BUBBLE_EDGE)
                 val cx = bubbleOf.centerX().coerceIn(BUBBLE_EDGE + bw / 2f, w - BUBBLE_EDGE - bw / 2f)
                 // (under the band - or under its pencil when that stands lower: Top screen's preview, the band above the page)
                 box = RectF(cx - bw / 2f, max(top, bubbleOf.bottom + 4f) + BUBBLE_TAIL, cx + bw / 2f, h - g)
@@ -760,21 +816,25 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 }
             }
         }
-        val unit = wrap.map { if (it) MENU_ROW * WRAP_K else MENU_ROW }
+        val unit = wrap.mapIndexed { i, wr -> (if (wr) MENU_ROW * WRAP_K else MENU_ROW) + (if (rows[i].note != null) NOTE_H else 0f) }
         val sum = unit.sum()
         // short of room: the rows tighten (to MENU_K_MIN); past that the menu runs on below its column (the words stay readable)
         val k = if (MENU_HEAD + sum + 24f <= avail || sum <= 0f) 1f else ((avail - MENU_HEAD - 24f) / sum).coerceIn(MENU_K_MIN, 1f)
         val boxH = MENU_HEAD + sum * k + 24f
-        box = when (s) {
-            EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
+        box = when {
+            s == EditStop.CAST -> if (topBar != null) RectF(box.left, box.top, box.right, box.top + boxH)
                 else RectF(box.left, max(top, box.bottom - boxH), box.right, box.bottom)
+            tailDown -> RectF(box.left, max(g, box.bottom - boxH), box.right, box.bottom)
             else -> RectF(box.left, box.top, box.right, box.top + boxH)
         }
         val out = ArrayList<RectF>()
         var y = box.top + MENU_HEAD
         for (u in unit) { out += RectF(box.left + 16f, y, box.right - 16f, y + u * k - 10f); y += u * k }
-        return MenuLay(box, out, wrap, segText, tail)
+        partyBubbleUp = tailDown
+        return MenuLay(box, out, wrap, segText, tail, tailDown)
     }
+    /** the last laid party bubble stood over its list (the pop grows from its foot) */
+    private var partyBubbleUp = false
     /**
      * fix round 2: a menu box never lies on a tap-to-cast bar its FINAL width crosses (a column menu widened to MENU_MIN_W reaches into
      * the other column; the band's and the clock's are centred): a bar at a column's top ([top] = the columns' top) - the menu starts
@@ -797,6 +857,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val lay = menuLay(s, host.menuRows(s))
         if (!lay.tail) return null
         val ax = bubbleTailX(s, lay.box)
+        if (lay.tailDown) return RectF(ax - 16f, lay.box.bottom - 2f, ax + 16f, lay.box.bottom + BUBBLE_TAIL - 2f)
         return RectF(ax - 16f, lay.box.top - BUBBLE_TAIL + 2f, ax + 16f, lay.box.top + 2f)
     }
 
@@ -804,8 +865,16 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private fun bubbleTailX(s: EditStop, box: RectF): Float =
         (bandBox(s)?.centerX() ?: box.centerX()).coerceIn(box.left + UiKit.MODULE_R + 16f, box.right - UiKit.MODULE_R - 16f)
 
-    /** the speech bubble's tail: from the bubble's top edge up towards its pencil ([BUBBLE_TAIL] tall), the bubble's own ink and edge */
-    private fun bubbleTail(c: Canvas, box: RectF, ax: Float) {
+    /** the speech bubble's tail: from the bubble's top edge up towards its pencil ([BUBBLE_TAIL] tall), the bubble's own ink and edge;
+     *  [down] = from its foot down towards the party list under it */
+    private fun bubbleTail(c: Canvas, box: RectF, ax: Float, down: Boolean = false) {
+        if (down) {
+            val sv = c.save()
+            c.scale(1f, -1f, 0f, (box.top + box.bottom) / 2f)
+            bubbleTail(c, box, ax)
+            c.restoreToCount(sv)
+            return
+        }
         path.reset()
         path.moveTo(ax - 16f, box.top + 2f); path.lineTo(ax, box.top - BUBBLE_TAIL + 2f); path.lineTo(ax + 16f, box.top + 2f); path.close()
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
@@ -824,14 +893,21 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 245
         c.drawRoundRect(box, UiKit.MODULE_R, UiKit.MODULE_R, pFill)
         UiKit.module(c, box)
-        if (s.pencil && lay.tail) bubbleTail(c, box, bubbleTailX(s, box))
+        if (s.pencil && lay.tail) bubbleTail(c, box, bubbleTailX(s, box), lay.tailDown)
         val tp = titleP(40f, Theme.gold)
         c.drawText(Tr.t(HomeWidgetMenus.title(s)), box.left + 28f, box.top + 56f, tp)
         UiKit.paneRule(c, box.left + 20f, box.top + MENU_HEAD - 12f, box.right - 20f)
         for ((i, r) in rows.withIndex()) {
-            val rr = lay.rows[i]
+            val full = lay.rows[i]
             pFill.color = Theme.raised; pFill.alpha = 220
-            c.drawRoundRect(rr, 8f, 8f, pFill)
+            c.drawRoundRect(full, 8f, 8f, pFill)
+            // (edit tabs: a row's note - the fight bubble's Cast bar line - along its foot, the row's label and buttons above it)
+            val rr = r.note?.let { n ->
+                val nh = min(NOTE_H, full.height() * 0.4f)
+                val body = RectF(full.left, full.top, full.right, full.bottom - nh)
+                drawNote(c, Tr.t(n), RectF(full.left + 18f, body.bottom - 6f, full.right - 18f, full.bottom - 4f))
+                body
+            } ?: full
             val lp = bodyP(28f, if (r.enabled) Theme.text else Theme.dim)
             val btns = ArrayList<RectF>()
             // a wrapped row: the label on its upper line, the buttons along its foot
@@ -870,12 +946,25 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                     }
                 }
             }
-            if (i == m.menuRow) UiKit.focus(c, rr)
+            if (i == m.menuRow) UiKit.focus(c, full)
             menuBoxes += btns
-            menuRowBoxes += rr
+            menuRowBoxes += full
         }
         lastMenuBox.set(box)
     }
+    /** a row's note in [r]: dim, one line - its text a little smaller until it fits (to [NOTE_TEXT_MIN]), else cut with an ellipsis */
+    private fun drawNote(c: Canvas, text: String, r: RectF) {
+        var size = NOTE_TEXT
+        var p = bodyP(size, Theme.dim)
+        while (size > NOTE_TEXT_MIN && p.measureText(text) > r.width()) { size -= 1f; p = bodyP(size, Theme.dim) }
+        val shown = if (p.measureText(text) > r.width()) android.text.TextUtils.ellipsize(text, p, r.width(),
+            android.text.TextUtils.TruncateAt.END).toString() else text
+        c.drawText(shown, r.left, r.centerY() - (p.ascent() + p.descent()) / 2f, p)
+        noteFits = shown == text
+    }
+    /** the last note drawn showed whole (the tests) */
+    var noteFits = true
+        private set
     /** the last drawn menu's buttons per row (touch) */
     private val menuBoxes = ArrayList<List<RectF>>()
     private val menuRowBoxes = ArrayList<RectF>()
@@ -985,11 +1074,15 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (m.parked) return
         val g = host.band() ?: return
         val free = m.menu == null && m.sheet == null && m.lifted == null
-        pencil(c, g.padPen, m.menu == EditStop.PAD_PEN)
-        pencil(c, g.facePen, m.menu == EditStop.FACE_PEN)
+        // EDIT TABS (decision 7 A): the shared pencils and the Look chip only on Out of combat (they sit still on the fight tabs)
+        if (!m.tab.fight) {
+            pencil(c, g.padPen, m.menu == EditStop.PAD_PEN)
+            pencil(c, g.facePen, m.menu == EditStop.FACE_PEN)
+        }
         g.fightPen?.let { pencil(c, it, m.menu == EditStop.FIGHT_PEN, fight = true) }
-        g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.DIAMONDS else HomeRest.ROW) }
+        if (!m.tab.fight) g.look?.let { lookChip(c, it, if (g.diamonds) HomeRest.DIAMONDS else HomeRest.ROW) }
         for ((k, r) in g.extras) {
+            if (k == m.extraLifted) continue                              // feat/extras-polish: a lifted extra shows no badge (a room's way)
             val sv = c.save()
             if (host.extraPose(k, mtx)) c.concat(mtx)
             // the gold line's badge at its left end (its top left is the battery's line), a cell's on its top left
@@ -1005,15 +1098,37 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             c.restoreToCount(sv)
         }
         val cur = m.cursor
-        if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS)) bandBox(cur)?.let { b ->
-            val box = scratch2; box.set(b); box.inset(-6f, -6f)
+        // feat/extras-polish: a lifted extra keeps the cursor, riding its pose (the lift, the finger's carry)
+        val liftedExtra = cur == EditStop.EXTRAS && m.lifted == EditStop.EXTRAS
+        if (cur.band && (free || m.menu == cur || m.sheet == HomeEditModel.Sheet.EXTRAS || liftedExtra)) bandBox(cur)?.let { b ->
+            val sv = c.save()
+            if (liftedExtra) m.extraLifted?.let { if (host.extraPose(it, mtx)) c.concat(mtx) }
+            val box = scratch2; box.set(b); box.inset(-BandEdit.CURSOR_OUT, -BandEdit.CURSOR_OUT)
             UiKit.focus(c, box)
+            c.restoreToCount(sv)
         }
         host.flash?.let { (s, at) ->
             val t = SystemClock.uptimeMillis() - at
             if (s.band && t in 0 until HomeEditModel.FLASH_MS) bandBox(s)?.let {
                 edgeColour(c, it, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
             }
+        }
+    }
+
+    /** PARTY SIZING: the party list's pencil (the band's pencils' look: [pencil]), the golden cursor on it, a refusal's red pulse */
+    private fun drawPartyPen(c: Canvas, m: HomeEditModel) {
+        if (m.parked) return
+        val r = partyPenBox() ?: return
+        pencil(c, r, m.menu == EditStop.PARTY_PEN)
+        val free = m.menu == null && m.sheet == null && m.lifted == null
+        if (m.cursor == EditStop.PARTY_PEN && (free || m.menu == EditStop.PARTY_PEN)) {
+            val box = scratch2; box.set(r); box.inset(-6f, -6f)
+            UiKit.focus(c, box)
+        }
+        host.flash?.let { (s, at) ->
+            val t = SystemClock.uptimeMillis() - at
+            if (s == EditStop.PARTY_PEN && t in 0 until HomeEditModel.FLASH_MS)
+                edgeColour(c, r, Color.rgb(220, 40, 30), (255 * (1f - t.toFloat() / HomeEditModel.FLASH_MS)).toInt())
         }
     }
 
@@ -1145,7 +1260,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val line = BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }
             val pic = b.height() - 20f
             val ib = scratch2; ib.set(b.left + 12f, b.centerY() - pic / 2f, b.left + 12f + pic, b.centerY() + pic / 2f)
-            val icon = line?.let { Icons.get(it.third) }
+            val icon = UiKit.clockLinePicture(k)                         // feat/extras-polish: the pet's own face
             if (icon != null) c.drawBitmap(icon, null, ib, null)
             else { pFill.color = Theme.bronze; pFill.alpha = 140; c.drawRoundRect(ib, 4f, 4f, pFill) }
             val tp = bodyP(28f, Theme.text)
@@ -1236,8 +1351,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         drawDone(c, r.done, h, doneGlyph(m))
         if (m.cursor == EditStop.DONE && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.done)
-        drawFight(c, r.fight, h, m.fightPreview)
-        if (m.cursor == EditStop.FIGHT && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.fight)
+        if (fightToggle()) {
+            drawFight(c, r.fight, h, m.fightPreview)
+            if (m.cursor == EditStop.FIGHT && m.menu == null && m.sheet == null && m.lifted == null) UiKit.focus(c, r.fight)
+        }
         // the hints, one word each, right of the disc and left of Done (the review: never under the disc - the least needed go first, B's last)
         hints(c, g1 + HINT_GAP, r.done.left - 18f, h / 2f, hintsFor(m, m.menu?.let { host.menuRows(it).getOrNull(m.menuRow)?.kind }))
         c.restoreToCount(save)
@@ -1290,7 +1407,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             // fix round 3: a stepper row (the Map's Zoom out / in) changes with Left / Right only: the D-pad's glyph, never A's
             m.menu != null && row == MenuRow.Kind.STEP -> listOf(DPAD to "Change", b to "Back")
             m.menu != null -> listOf(a to "Change", b to "Back")
-            m.lifted == EditStop.ROOMS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
+            // feat/extras-polish: a lifted extra moves along its row as a room does along the bar
+            m.lifted == EditStop.ROOMS || m.lifted == EditStop.EXTRAS -> listOf(DPAD to "Move", a to "Drop", b to "Put back")
             // a room is an app: A carries it, X hides it (Settings stays); the "+" spot: A its tray
             m.cursor == EditStop.ROOMS && m.barOnPlus -> listOf(a to "Add")
             m.cursor == EditStop.ROOMS && m.barRoom?.let { RoomBar.canHide(it) } == true -> listOf(a to "Move", x to "Hide")
@@ -1303,6 +1421,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor.pencil -> listOf(a to "Options")
             m.cursor == EditStop.LOOK || m.cursor == EditStop.FIGHT -> listOf(a to "Switch")
             m.cursor == EditStop.EXTRAS && m.extraOnPlus -> listOf(a to "Add")
+            // feat/extras-polish: an extra of the row is an app as a room is (A carries it); the gold line only hides (it is the chip's)
+            m.cursor == EditStop.EXTRAS && m.extra in m.extraRow -> listOf(a to "Move", x to "Hide")
             m.cursor == EditStop.EXTRAS -> listOf(x to "Hide")
             // at the top level B is Done: the Done button wears its glyph (no "Done" hint beside it)
             m.cursor == EditStop.PLUS -> listOf(a to "Add")
@@ -1311,6 +1431,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             m.cursor == EditStop.DIVIDER -> listOf(DPAD to "Width")
             // the party list has no size (its rows are Party mode's)
             m.cursor == EditStop.PARTY -> listOf(a to "Move", x to "Options")
+            // edit tabs: the bar has no sizes - Y flips a fight tab's Slots (Grow / Same size), nothing on Out of combat
+            m.cursor == EditStop.CAST && !m.tab.fight -> listOf(a to "Move", x to "Options")
+            m.cursor == EditStop.CAST -> listOf(a to "Move", x to "Options", y to "Slots")
             else -> listOf(a to "Move", x to "Options", y to "Size")
         }
     }
@@ -1429,7 +1552,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         if (!up && (y < 0f || y > Strip.TRACKS + Strip.RIBBON_SLOP)) return false
         val onDone = r.doneHit.contains(x, y)
         val onPlus = m.plusShown && r.plusHit.contains(x, y)
-        val onFight = r.fightHit.contains(x, y)
+        val onFight = fightToggle() && r.fightHit.contains(x, y)
         if (!up) {
             if (onDone) { doneDown = true; host.holdDone(true); invalidate(); return true }
             // an open tray closes first (its UP is the ribbon's too); just off the ribbon only "+", Fight and Done are its
@@ -1462,7 +1585,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val bar = host.bar() ?: return
         val a = host.chromeAlpha
         if (a <= 0.01f || m.parked) return
-        if (m.cursor != EditStop.ROOMS) return
+        if (m.cursor != EditStop.ROOMS || m.tab.fight) return
         val save = if (a < 0.99f) c.saveLayerAlpha(0f, 0f, bar.width.toFloat(), bar.height.toFloat(), (255 * a).toInt()) else -1
         val sel = m.menu == null && m.sheet == null
         val name = m.barRoom
@@ -1498,7 +1621,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         override fun badge(c: Canvas, r: Room, cx: Float, cy: Float, icon: Float) {
             val m = host.model ?: return
             val a = host.chromeAlpha
-            if (a <= 0.01f || m.parked || m.barLifted == r.name) return
+            // (edit tabs: the room bar sits still on the fight tabs - no badges there)
+            if (a <= 0.01f || m.parked || m.tab.fight || m.barLifted == r.name) return
             val bx = cx - icon / 2f + Strip.BADGE_IN; val by = cy - icon / 2f + Strip.BADGE_IN
             val al = (255 * a).toInt().coerceIn(0, 255)
             pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = al
@@ -1511,7 +1635,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         }
         override fun plus(c: Canvas, cx: Float, cy: Float, icon: Float) {
             val a = host.chromeAlpha
-            if (a <= 0.01f) return
+            // (edit tabs: on the fight tabs the spot keeps its room - the rooms never jump at a tab switch - but shows nothing to press)
+            if (a <= 0.01f || host.model?.tab?.fight == true) return
             val al = (255 * a).toInt().coerceIn(0, 255)
             val sv = c.save()
             if (host.plusPose(plusBuf)) { c.translate(plusBuf[2], plusBuf[3]); c.rotate(plusBuf[1], cx, cy); c.scale(plusBuf[0], plusBuf[0], cx, cy) }
@@ -1543,7 +1668,7 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         val m = host.liveModel ?: return false
         host.poke()
         val bar = host.bar() ?: return false
-        if (m.parked) return false
+        if (m.parked || m.tab.fight) return false                           // (edit tabs: the room bar is Out of combat's to edit)
         val x = e.x; val y = e.y
         val now = SystemClock.uptimeMillis()
         when (e.actionMasked) {
@@ -1585,6 +1710,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     private var downX = 0f
     private var downY = 0f
     private var downStop: EditStop? = null
+    /** feat/extras-polish: the row's extra under the finger's down (null: none, its badge, "+", the gold line) */
+    private var downExtra: String? = null
     private var dragging = false
     /** a gesture that came in already lifted (the entry hold): it drags at once */
     private var carried = false
@@ -1609,10 +1736,19 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x; downY = y; dragging = false; carried = false
                 downStop = if (m.menu == null && m.sheet == null) stopAt(x, y) else null
+                downExtra = if (downStop == EditStop.EXTRAS) host.band()?.let { g -> bandAt(g, x, y)?.second }?.takeIf { it in m.extraRow } else null
             }
             MotionEvent.ACTION_POINTER_DOWN -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
             MotionEvent.ACTION_MOVE -> {
                 val s = downStop
+                // feat/extras-polish: an extra dragged along its row (past the slop sideways, as a room on the bar) - the others make way
+                val ek = downExtra
+                if (!dragging && s == EditStop.EXTRAS && ek != null && abs(x - downX) > HomeEditModel.DRAG_SLOP) {
+                    host.band()?.extras?.firstOrNull { it.first == ek }?.second?.let { b ->
+                        dragging = true
+                        host.run(m.extraDragStart(m.extraRow.indexOf(ek), downX, downY, HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom)))
+                    }
+                }
                 if (!dragging && s != null && (s.movable || s == EditStop.DIVIDER) &&
                     (abs(x - downX) > HomeEditModel.DRAG_SLOP || abs(y - downY) > HomeEditModel.DRAG_SLOP)) {
                     val b = if (s == EditStop.DIVIDER) dividerBox() else widgetBoxes()[s]
@@ -1626,9 +1762,9 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             MotionEvent.ACTION_UP -> {
                 if (dragging) { host.run(m.dragEnd(x, y, now, host.geo)); dragging = false }
                 else if (abs(x - downX) <= TAP_SLOP && abs(y - downY) <= TAP_SLOP) tapAt(m, x, y)
-                downStop = null
+                downStop = null; downExtra = null
             }
-            MotionEvent.ACTION_CANCEL -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null }
+            MotionEvent.ACTION_CANCEL -> { if (dragging) host.run(m.dragCancel()); dragging = false; downStop = null; downExtra = null }
         }
         invalidate()
         return true
@@ -1638,7 +1774,6 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
      *  fight preview none of the page's: decision D4) */
     fun stopAt(x: Float, y: Float): EditStop? {
         host.band()?.let { g -> bandAt(g, x, y)?.let { return it.first } }
-        if (host.model?.fightPreview == true) return null
         dividerBox()?.let { if (RectF(it).apply { inset(-18f, -10f) }.contains(x, y)) return EditStop.DIVIDER }
         val wb = widgetBoxes()
         for (s in TOUCH_ORDER) {
@@ -1659,12 +1794,13 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             val dx = max(0f, (TOUCH_MIN - r.width()) / 2f); val dy = max(0f, (TOUCH_MIN - r.height()) / 2f)
             return x >= r.left - dx && x <= r.right + dx && y >= r.top - dy && y <= r.bottom + dy
         }
-        if (hit(g.padPen)) return EditStop.PAD_PEN to null
-        if (hit(g.facePen)) return EditStop.FACE_PEN to null
-        if (hit(g.look)) return EditStop.LOOK to null
-        if (hit(g.fightPen)) return EditStop.FIGHT_PEN to null
         val m = host.model
-        if (m?.fightPreview != true) {
+        val shared = m?.tab?.fight != true                                  // (edit tabs: the shared pieces sit still on the fight tabs)
+        if (shared && hit(g.padPen)) return EditStop.PAD_PEN to null
+        if (shared && hit(g.facePen)) return EditStop.FACE_PEN to null
+        if (shared && hit(g.look)) return EditStop.LOOK to null
+        if (hit(g.fightPen)) return EditStop.FIGHT_PEN to null
+        run {
             // fix round 3 (the review: the first extra's badge reach covered the D-pad's Right button's lower part): on one of the D-pad's
             // or the ABXY's buttons ([BandGeo.keys]) an extra takes the finger only on its own cell or its drawn badge
             val onKey = g.keys.any { it.contains(x, y) }
@@ -1673,9 +1809,67 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             for ((k, r) in g.extras) if (hit(r, grow = !onKey)) return EditStop.EXTRAS to k
             if (hit(g.plus, grow = !onKey)) return EditStop.EXTRAS to "plus"
         }
-        if (hit(g.pad, grow = false)) return EditStop.PAD_PEN to null
-        if (hit(g.face, grow = false)) return EditStop.FACE_PEN to null
+        if (shared && hit(g.pad, grow = false)) return EditStop.PAD_PEN to null
+        if (shared && hit(g.face, grow = false)) return EditStop.FACE_PEN to null
         return null
+    }
+
+    /** EDIT TABS: the ribbon's Fight toggle is offered (the Party mode tab's alone) */
+    private fun fightToggle(): Boolean = host.model?.tab == HomeTab.PARTY
+
+    // ---------------------------------------------------------------- EDIT TABS: the tab row (the user, 2026-11-24)
+
+    /**
+     * THE TAB ROW (the user, 2026-11-24: "I want to add tabs to the top of edit mode for out of combat, in combat and party mode"): the
+     * Controller room's tabs exactly - UiKit.tab, each situation's picture beside its word, the gaps easing round the chosen one, L and R
+     * on the outsides - over the top [TAB_ROW] px of Home's frame; the live page is drawn zoomed out under it (HomeView.pageMatrix). A
+     * finger picks a tab ([tabTouch]), LB / RB step (HomeEditModel.tabStep). Party mode's only while Party mode is allowed
+     */
+    private val tabGaps = UiKit.TabGaps(vertical = false, gap = 50f, rest = 14f)
+    /** the tabs' boxes in Home's frame (screen px: the row is never zoomed) for a frame [w] wide */
+    fun tabRects(w: Float): List<RectF> {
+        val m = host.model ?: return emptyList()
+        return tabGaps.row(m.tabs.size, 0f, w, TAB_TOP, TAB_H, TAB_MAX_W, m.tabs.indexOf(m.tab).coerceAtLeast(0), this)
+    }
+    /** the row over the frame's top (alpha [a]: the chrome's fade, the page's zoom with it) */
+    fun drawTabs(c: Canvas, w: Float, a: Float) {
+        val m = host.model ?: return
+        if (a <= 0.01f) return
+        val save = c.saveLayerAlpha(0f, 0f, w, TAB_ROW, (255 * a).toInt())
+        pFill.style = Paint.Style.FILL; pFill.color = Theme.ink; pFill.alpha = 255
+        c.drawRect(0f, 0f, w, TAB_ROW, pFill)
+        val rects = tabRects(w)
+        val cur = m.tabs.indexOf(m.tab)
+        for ((i, r) in rects.withIndex()) {
+            val t = m.tabs[i]
+            UiKit.tab(c, r, "", i == cur)
+            val word = Tr.t(t.word)
+            val room = r.width() - TAB_ICON - 10f - 26f
+            val colour = if (i == cur) Color.WHITE else Theme.gold
+            // (the paints are kept: [textP] - one per size, so the row's word shrinks to fit without a paint per frame)
+            var size = TAB_TEXT
+            var p = bodyP(size, colour)
+            while (size > TAB_TEXT_MIN && p.measureText(word) > room) { size -= 1f; p = bodyP(size, colour) }
+            val shown = if (p.measureText(word) > room) android.text.TextUtils.ellipsize(word, p, room,
+                android.text.TextUtils.TruncateAt.END).toString() else word
+            val tw = p.measureText(shown)
+            val x0 = r.centerX() - (TAB_ICON + 10f + tw) / 2f
+            val cy = r.centerY() + 5f
+            Icons2.draw(c, SituationPage.iconOf(t.view), x0 + TAB_ICON / 2f, cy, TAB_ICON, lit = i == cur)
+            c.drawText(shown, x0 + TAB_ICON + 10f, cy - (p.ascent() + p.descent()) / 2f, p)
+        }
+        tabGaps.badges(c)
+        c.restoreToCount(save)
+    }
+    /** a finger on the tab row (screen px): its UP on a tab picks it; true = the row's */
+    fun tabTouch(x: Float, y: Float, up: Boolean): Boolean {
+        val m = host.liveModel ?: return false
+        if (y > TAB_ROW) return false
+        if (!up || m.parked) return true
+        val i = tabRects(width.toFloat().takeIf { it > 0f } ?: 1240f).indexOfFirst { RectF(it).apply { inset(-6f, -6f) }.contains(x, y) }
+        m.tabs.getOrNull(i)?.let { host.run(m.tabTo(it)) }
+        invalidate()
+        return true
     }
 
     /**
@@ -1709,12 +1903,18 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
             else host.run(m.addBack(m.removed.getOrNull(i)))
             return
         }
+        // PARTY SIZING: the party list's pencil opens (or closes) its bubble
+        if ((m.menu == null || m.menu!!.pencil) && partyPenBox()?.let { r ->
+                val dx = max(0f, (TOUCH_MIN - r.width()) / 2f); val dy = max(0f, (TOUCH_MIN - r.height()) / 2f)
+                x >= r.left - dx && x <= r.right + dx && y >= r.top - dy && y <= r.bottom + dy } == true) {
+            host.run(m.pencilTap(EditStop.PARTY_PEN)); return
+        }
         // THE TOP BAR (P1 - P4): a pencil or its buttons open the bubble, the Look chip flips, a "-" hides, an extra is selected, "+" its tray
         if (m.menu == null || m.menu!!.pencil) host.band()?.let { g -> bandAt(g, x, y) }?.let { (s, what) ->
             when {
                 s.pencil -> host.run(m.pencilTap(s))
-                s == EditStop.LOOK -> { m.closeMenu(); host.run(m.lookFlip()) }
-                what == "plus" -> { m.closeMenu(); host.run(m.openExtraTray()) }
+                s == EditStop.LOOK -> host.run(m.closeMenu() + m.lookFlip())
+                what == "plus" -> host.run(m.closeMenu() + m.openExtraTray())
                 what != null && what.startsWith("badge:") -> host.run(m.hideExtra(what.removePrefix("badge:")))
                 what != null -> m.extrasOn.indexOf(what).takeIf { it >= 0 }?.let { host.run(m.extraTap(it)) }
             }
@@ -1729,7 +1929,8 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
                 menuRowBoxes.indexOfFirst { it.contains(x, y) }.takeIf { it >= 0 }?.let { m.menuRow = it }
                 return
             }
-            m.closeMenu()
+            // (through the host: a party bubble closing lays the page again - its Party look, its Fight preview off on close)
+            host.run(m.closeMenu())
             return
         }
         // the red X chip, then its pill
@@ -1747,10 +1948,21 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
     companion object {
         /** the stops a finger finds, first first (the riders over the modules; the band's pieces before them all: [bandAt]) */
         private val TOUCH_ORDER = listOf(EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.CHAT, EditStop.MAP)
-        /** P4 (decision D4): the stops the fight preview takes away (the page's widgets, laid under the grown band) */
-        private val PREVIEW_GONE = listOf(EditStop.CHAT, EditStop.MAP, EditStop.QUEST, EditStop.CAST, EditStop.PARTY, EditStop.DIVIDER)
+        /** EDIT TABS: the tab row's height over Home's frame (the page zoomed out under it), its tabs' place and size */
+        const val TAB_ROW = 76f
+        const val TAB_TOP = 6f
+        const val TAB_H = 64f
+        const val TAB_MAX_W = 330f
+        const val TAB_ICON = 38f
+        const val TAB_TEXT = 30f
+        const val TAB_TEXT_MIN = 20f
         /** a pencil's speech bubble: its width, its least clearance from the screen's edges, its tail's height */
         const val BUBBLE_W = 640f
+        /** edit tabs: the fight pencil's bubble (Combat bars: Top screen | Bottom screen | No grow on one line) */
+        const val FIGHT_BUBBLE_W = 780f
+        /** the party list's bubble (2026-11-23): wider (its rows' long words on one line), its pencil this far in from the list's corner */
+        const val PARTY_BUBBLE_W = 960f
+        const val PARTY_PEN_IN = 6f
         const val BUBBLE_EDGE = 16f
         const val BUBBLE_TAIL = 18f
         /** the ribbon's Fight toggle: its least width, its dot's radius */
@@ -1776,6 +1988,10 @@ class HomeEditView(context: Context, private val host: Host) : View(context) {
         const val CHIP_R = 26f
         const val MENU_HEAD = 92f
         const val MENU_ROW = 84f
+        /** a row's note line (edit tabs: the fight bubble's Cast bar line) and its text size */
+        const val NOTE_H = 34f
+        const val NOTE_TEXT = 23f
+        const val NOTE_TEXT_MIN = 18f
         /** a column menu's least width (narrower columns: it overhangs its own widget towards the middle) */
         const val MENU_MIN_W = 600f
         /** a wrapped row (label above its buttons) is this many rows tall */

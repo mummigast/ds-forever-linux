@@ -293,6 +293,19 @@ class DialogView(context: Context) : View(context) {
     /** false while the document is one replayed from the backlog (MainActivity's `current`): it may draw, never tap */
     private var docCurrent = true
 
+    /** Q10: the pop-ups whose arrival taps the motor once (Dialogs d36 / d38's which names, plus the plain party invite) */
+    private val CUE = setOf("PARTY_INVITE", "LFG_INVITE", "PVP_READY", "LFG_READY", "READY_CHECK", "LFG_READYCHECK", "LFD_ROLECHECK",
+        "PVP_ROLECHECK", "LFGLIST_INVITE", "RESURRECT", "RESURRECT_NO_SICKNESS", "RESURRECT_NO_TIMER", "CONFIRM_SUMMON", "DUEL_REQUESTED")
+    private var cuedWhich: Set<String> = emptySet()
+    private fun cue() {
+        runCatching {
+            val v = if (android.os.Build.VERSION.SDK_INT >= 31)
+                context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            else @Suppress("DEPRECATION") context.getSystemService(android.os.Vibrator::class.java)
+            if (v?.hasVibrator() == true) v.vibrate(android.os.VibrationEffect.createOneShot(60L, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+    }
+
     fun update(msg: JSONObject, current: Boolean = true) {
         docCurrent = current
         doc = msg
@@ -325,6 +338,13 @@ class DialogView(context: Context) : View(context) {
                         d.optLong("money", -1L), d.optBoolean("focus"), str(d, "top"), d.optBoolean("hid"),
                         str(d, "fkey"), d.optInt("safe", 0), d.optInt("never", 0),
                         if (str(d, "which") == "CONFIRM_LOOT_ROLL") d.optInt("roll", -1) else -1))
+        }
+        // Q10 (2026-11-24, the research: haptic cues for ready checks, PvP pops): one short tap when such a pop-up NEWLY shows (current
+        // documents only: a replayed one is old news)
+        if (current) {
+            val now = out.map { it.which }.filter { it in CUE }.toSet()
+            if ((now - cuedWhich).isNotEmpty()) cue()
+            cuedWhich = now
         }
         list = out
         if (current) padRefused() else padPress = null

@@ -110,10 +110,11 @@ object HomeTouch {
      * ([HomeGrow.minimize], then the takeover off: no taps, nothing secure; the guest hold and PadOwnerSync's ENTER follow from the
      * layout as after B), without B's grace or trigger checks (those guard a FIGHT BUTTON; a finger on the bottom screen never is).
      * A module the takeover was covering shows again. True = something changed.
-     * [keepGrow] (In fights = Top screen live in a fight: [TopCombatBar.bShrinks] false, the review of 11-22): the grow is NOT minimized -
-     * nothing grew on the bottom screen and the add-on's Wings stay on the top screen to the fight's end, so the module only covers the
+     * [keepGrow] (In fights = Top screen live: [TopCombatBar.touchKeepsGrow], the review of 11-22 kept by the 11-23 B rule): the grow is
+     * NOT minimized - a finger never reaches the add-on's give-back, so its Wings stay on the top screen and the module only covers the
      * page; closed, the takeover comes straight back ([takeover]: the opened-in-fight mark lapses with the module) and the band slides
-     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings.
+     * back above the page instead of sitting at its rest box (with a red reminder) under the Wings. (B does minimize: the add-on's own
+     * secure B gives the Wings back at the same press.)
      */
     fun open(flow: HomeFlow, grow: HomeGrow, m: HomeModule, now: Long, keepGrow: Boolean = false): Boolean {
         var changed = false
@@ -208,6 +209,7 @@ class HomeGrow(staleMs: Long = 20_000L) {
     private var attackWas = false                   // the last word of each, to see a START (false -> true)
     private var fightWas = false
     private var minimized = false
+    private var armed = false                       // Top screen live: the router's own switch (the padmap's `fight`, the Wings' word)
 
     /** a document said the auto-attack is [on] at [now] */
     fun noteAttack(on: Boolean, current: Boolean, now: Long) {
@@ -225,12 +227,38 @@ class HomeGrow(staleMs: Long = 20_000L) {
         fight.note(on, current, now)
     }
 
-    private fun on(now: Long) = attack.shown(now) || fight.shown(now)
+    private fun on(now: Long) = attack.shown(now) || fight.shown(now) || armed
+
+    /**
+     * THE WINGS' OWN START (In fights = Top screen, ActionBar nbar17; the user, 2026-11-23, testing 1523: "It also looks like the top
+     * slides out faster than the bottom slides up"): the Wings rise on the router's switch (the padmap's `fight`: a harmful press on a
+     * hostile target, PadMap's fightSw), the band only on an auto-attack / auto-repeat / combat word - for a caster that is the cast
+     * landing, 1.5-3 s after the Wings were up. With Top screen live (and not Party mode: its fights only) the switch is a THIRD start:
+     * on (0 -> 1) the grow shows as at a new start; off (1 -> 0) it no longer holds it (B / the give-back; the fight's own word still
+     * does). [on] = live && the switch. -> true when it changed
+     */
+    fun noteArmed(on: Boolean): Boolean {
+        if (on == armed) return false
+        if (on) minimized = false                   // a new start (as the router's re-arm)
+        armed = on
+        return true
+    }
 
     /** B while the big controller shows: shrink it until the next start. False when there was nothing to shrink. */
     fun minimize(now: Long): Boolean {
         if (minimized || !on(now)) return false
         minimized = true
+        return true
+    }
+
+    /**
+     * THE ADD-ON RE-ARMED (In fights = Top screen, the user's 11-23 B rule): after B shrank it mid-fight, the game's router armed its
+     * buttons again on a harmful press that started no auto-attack (a caster's next spell: no `aa` start the app could see) - the
+     * padmap's `fight` 0 -> 1. The grow shows again as at a new start; false when nothing was minimized
+     */
+    fun rearm(): Boolean {
+        if (!minimized) return false
+        minimized = false
         return true
     }
 
@@ -294,6 +322,8 @@ sealed class AuraTap {
 /** what an `auraack` asks of Home: tap the (now armed) cancel cell, show a refusal, or nothing */
 sealed class AuraAck {
     object Cancel : AuraAck()
+    /** a9 (pinned buffs): the pick was for a pin: tap `aurapick` [HomeAuras.pinCell] now */
+    object Pin : AuraAck()
     data class Note(val text: String) : AuraAck()
     object Idle : AuraAck()
 }
@@ -315,6 +345,13 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
     var fightHidden = false; private set
     /** the pad (rows `aurapick` / `auracancel`) as the auras doc publishes it */
     var pad: JSONObject? = null; private set
+    /** a9 (the user, 2026-11-24: "pin buffs for fight"): the buffs pinned for fights, each cancelled by the `castbar` cell [col] (by
+     *  keys, in fights too); [pinCell] / [unpinCells] = `aurapick`'s pin / unpin cells (out of combat) */
+    data class Pin(val name: String, val col: Int, val i: Int)
+    var pins: List<Pin> = emptyList(); private set
+    var pinCell: Int? = null; private set
+    var unpinCells: List<Int> = emptyList(); private set
+    private var pendingPin = false
     private var openBuffs: List<HomeAura> = emptyList()      // the last lists seen while NOT locked
     private var openDebuffs: List<HomeAura> = emptyList()
     private var openAt = -1L
@@ -339,6 +376,11 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
         val lock = msg.optBoolean("lock", false)
         val fight = msg.optBoolean("hide", false) || msg.optBoolean("combat", false)
         msg.optJSONObject("pad")?.let { pad = it }
+        msg.optJSONArray("pins")?.let { a -> pins = (0 until a.length()).mapNotNull { k -> a.optJSONObject(k)?.let { o ->
+            val n = o.optString("n", ""); val c = o.optInt("col", -1)
+            if (n.isEmpty() || c < 0) null else Pin(n, c, o.optInt("i", k + 1)) } } }
+        if (msg.has("pinCell")) pinCell = msg.optInt("pinCell", -1).takeIf { it >= 0 }
+        msg.optJSONArray("unpinCells")?.let { a -> unpinCells = (0 until a.length()).map { a.optInt(it, -1) } }
         heardAt = now
         if (!lock && !fight) { openBuffs = b; openDebuffs = d; openAt = now }
         // a buff being removed that is gone now: done (a fight's empty lists say nothing about it)
@@ -353,6 +395,19 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
      * weapon enchant), with a published pad and a slot. On Send the caller taps `aurapick` [AuraTap.Send.slot] (no action: it ARMS
      * the cancel cell for 5 s); the cancel tap follows only on the pick's ok ([ack] -> [AuraAck.Cancel]), character's protocol.
      */
+    /** a9: pin buff [id] for fights: the same pick as [remove] (it names the buff), then the pin cell instead of the cancel */
+    fun pin(id: Int, live: Boolean, now: Long): AuraTap {
+        if (pinCell == null) return AuraTap.Refused("Update the add-ons to pin buffs")
+        if (pins.size >= 2) return AuraTap.Refused("Two buffs are pinned already: unpin one")
+        val t = remove(id, live, now)
+        if (t is AuraTap.Send) pendingPin = true
+        return t
+    }
+    /** a9: the pin with this buff's name, or null */
+    fun pinOf(name: String?): Pin? = name?.let { n -> pins.firstOrNull { it.name == n } }
+    /** a9: the unpin cell for pin [p] (aurapick), or null */
+    fun unpinCell(p: Pin): Int? = unpinCells.getOrNull(p.i - 1)?.takeIf { it >= 0 }
+
     fun remove(id: Int, live: Boolean, now: Long): AuraTap {
         if (!live || heardAt < 0) return AuraTap.Refused("The game is not connected")
         if (locked || fightHidden) return AuraTap.Refused("Out of combat only")
@@ -362,7 +417,7 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
         val slot = a.slot ?: return AuraTap.Refused("The game has not published its tap pad")
         val rows = pad?.optJSONObject("rows")
         if (rows == null || !rows.has("aurapick") || !rows.has("auracancel")) return AuraTap.Refused("The game has not published its tap pad")
-        pendingId = id; pendingAt = now; picked = false
+        pendingId = id; pendingAt = now; picked = false; pendingPin = false
         return AuraTap.Send(slot)
     }
 
@@ -370,7 +425,7 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
     fun pending(now: Long): Int? = pendingId?.takeIf { now - pendingAt < pendingMs }
 
     /** the send failed on this side (the tap could not be made) */
-    fun sendFailed() { pendingId = null; picked = false }
+    fun sendFailed() { pendingId = null; picked = false; pendingPin = false }
 
     /** true once when a removal waited too long (the caller says so) */
     fun expire(now: Long): Boolean {
@@ -386,6 +441,12 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
      */
     fun ack(msg: JSONObject, now: Long): AuraAck {
         if (msg.optString("type") != "auraack") return AuraAck.Idle
+        // a9: the pin / unpin answers stand alone (an unpin has no pick before it)
+        when (msg.optString("op")) {
+            "pin" -> { pendingId = null; picked = false; pendingPin = false
+                return if (msg.optBoolean("ok", false)) AuraAck.Note("Pinned for fights: " + msg.optString("n", "")) else AuraAck.Note(msg.optString("why", "").ifEmpty { "The game refused" }) }
+            "unpin" -> return if (msg.optBoolean("ok", false)) AuraAck.Note("Unpinned: " + msg.optString("n", "")) else AuraAck.Note(msg.optString("why", "").ifEmpty { "The game refused" })
+        }
         val pend = pendingId ?: return AuraAck.Idle
         if (msg.has("id") && msg.optInt("id", -1) != pend) return AuraAck.Idle
         val ok = msg.optBoolean("ok", false)
@@ -394,7 +455,7 @@ class HomeAuras(private val staleMs: Long = 40_000L, private val pendingMs: Long
             "pick" -> when {
                 !ok -> { pendingId = null; picked = false; AuraAck.Note(why) }
                 picked -> AuraAck.Idle                           // a repeated pick answer: the cancel is already on its way
-                else -> { picked = true; pendingAt = now; AuraAck.Cancel }
+                else -> { picked = true; pendingAt = now; if (pendingPin) AuraAck.Pin else AuraAck.Cancel }
             }
             "cancel" -> { pendingId = null; picked = false; if (ok) AuraAck.Idle else AuraAck.Note(why) }
             else -> AuraAck.Idle

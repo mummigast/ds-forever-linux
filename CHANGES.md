@@ -3,6 +3,66 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## 2026-11-27: linux-v1.0.41.1, DS Forever 1.0.41, add-on set 464 (tested)
+
+On top of linux-v1.0.39.2. Tested on the Thor 2026-11-27: hold to cast over the stream, our cast bar above the HUD, pinned buffs
+cancelled in a fight, Edit Home tabs, the Controller room and its switches, indoor maps, Keyboard link, bank deposit and withdraw,
+Smart Y by a campfire. Built and tested off-device only: the Group Finder by keys, the rumble, the bank's ZL / ZR.
+
+### New from DS Forever 1.0.40 and 1.0.41 (upstream)
+
+- **Edit Home tabs:** Out of combat, In combat and Party mode each keep their own Home layout, edited on their own tab.
+- **Our own cast bar in fights,** right above the HUD on the top screen (or across the bottom screen if you pick that), with the
+  swing timer.
+- **Performance mode:** Home's animations ease off while you move or fight (the bottom screen redraws at ~30 Hz), automatically.
+- **Lighter add-ons in fights:** fewer flushes and no full 15 s snapshot mid-fight.
+- **Smart Y sits you down by a campfire.**
+- **The Controller room** shows just Press and Hold per button (Move / Bind hold / Bind).
+
+### New in this edition
+
+- **Hold to cast while streaming:** two spells on one button - tap for one, hold for the other (hold time in Settings: 0.3 / 0.4 /
+  0.55 s). Upstream built it for the Thor's own game only; here the presses to the PC go through the same timing, with the
+  controller's Guide button as the "this was a hold" signal. A one-time check presses Guide once to see that the game gets it; once
+  it works it is not repeated. If the check fails, hold to cast simply stays off.
+- **Pin buffs for fights:** in Home's buff list, **Pin for fights** (up to two per character). In a fight the pause wheel (Start,
+  page 3) shows **Cancel <buff>** for each: one press cancels it (for an accidental Divine Shield or Ice Block). **Unpin** in the
+  same list.
+- **Settings > Help > Keyboard link:** whether your presses reach the game as keys (green), which rooms still use clicks (amber),
+  or that the link is not up yet (red).
+- **Rumble:** the game's controller rumble reaches the Thor, and a short buzz when a queue pops, a ready check or an invite comes.
+- **The Group Finder by keys** instead of clicks.
+- **Settings tabs are easier to hit** (a full 48 dp touch area; the look is the same).
+- **The map says "Your position is hidden by the game in here"** in dungeons and battlegrounds instead of going blank.
+- **Problem reports go to this project:** Send opens a pre-filled issue on this repository.
+- PC helper: `dsf-bridge doctor` also checks the PC clock, Sunshine's encoder (hardware or software) and other streaming programs;
+  the Thor warns when the two clocks differ by more than 3 s.
+
+### Fixed
+
+- A game rumble running when the stream ended kept buzzing; it now stops.
+- With a long buff list the pin buttons could end up without a cell; they now get theirs first.
+- The Controller room's open by keys and upstream's new fight cast bar used the same internal code; ours moved (they would have
+  triggered each other).
+- **The Controller room's switches** (DS WoW toolbar, Combat controls, Start attack on cast) went to the game as screen clicks
+  that often missed while streaming, so the toolbar seemed not to switch. They now go as keys, set straight to on or off.
+- **The In combat diamond** in the Controller room left a button blank when it had no In combat spell, while the right page
+  showed what it does in a fight. It now shows that normal action, dimmed.
+- **Background art (indoor minimaps, icons) no longer builds while you stream:** it ran for up to 20 minutes during a stream
+  (fan noise). It waits for the stream to end, as the indoor maps already did.
+- **Smart Y's Sit by the fire** now works at WoW Forever's campfire (its "Violet Flames" buff), not only the classic Cozy Fire.
+- **Bank:** ZL / ZR now jump between the bank and your bags (L / R still work too).
+- The add-on's own **DSF Soft On / DSF Soft Off** account macros (a "?" picture, nothing to cast) are deleted and no longer made.
+
+### Known issues in this release
+
+- **Hold to cast:** holds belong to a tab: one set on Out of combat does nothing in a fight (set it on In combat too). If the Steam
+  overlay opens when the Guide check runs, turn off Steam > Settings > Controller > "Guide button focuses Steam".
+- A few actions still go as clicks: picking or casting a spell from the Spellbook room, the spell radials, party frames.
+- Cancelling a pinned buff takes the pause wheel (Start, page 3); a quicker way is planned.
+- Chat commands typed in the app's chat (`/reload`, ...) aren't sent: use the game's own chat for those.
+- No dungeon map inside the Stockades. In a battleground, X on flags / corpses and Leave Battle are not played yet.
+
 ## 2026-11-24 (afternoon): linux-v1.0.39.2, add-on set 458 (bugfix)
 
 On top of linux-v1.0.39.1. Tested on the Thor 2026-11-24: Professions from the first viewing, entering Bags. The bank changes are built and tested off-device, not played yet.

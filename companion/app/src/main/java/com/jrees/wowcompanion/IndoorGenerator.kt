@@ -22,6 +22,60 @@ internal interface IndoorGenerator : AutoCloseable {
     class Stopped : RuntimeException("interiors bake stopped")
     /** 2026-11-08: a long pause (the game busy, the player moving): the run lets the game files go and waits outside them */
     class Released : RuntimeException("interiors bake paused long: the game files are let go")
+    /**
+     * 2026-11-24 (Build now in game, the user's "Only while I'm idle": "pauses the moment you move"): the building under way is given up
+     * because the player moved or a fight started beside the game. Not that building's failure (nothing counted, nothing deferred): it is
+     * built again once the player is idle. Thrown from [Yield.point] like [Stopped]; the producer lets it propagate
+     */
+    class Cancelled(why: String) : RuntimeException("interiors building cancelled: $why")
+    /**
+     * THE BUILDER'S OWN RULE TURNED THIS BUILDING DOWN (the user's D1 pick, 2026-11-23: "Done when all mappable built"): too big for the
+     * city rule, no floors found, a budget exceeded... Deterministic for the same inputs and the same builder, so it is SETTLED: it counts
+     * toward "finished" and is tried again only when the game build or the builder ([identity]) changes. Anything else that fails
+     * (out of memory, an unreadable file, a kill) is transient and tried again on the next run.
+     */
+    class Rejected(reason: String) : RuntimeException(reason)
+
+    /**
+     * Everything that decides the builder's output besides the inputs: its [algorithm] and, for the native one, the library's version
+     * and bytes. A rule-rejection and the finished stamp hold for this identity only (a new builder re-arms them).
+     */
+    val identity: String get() = "a$algorithm"
+
+    companion object {
+        /**
+         * a native geometry / contract failure ([IndoorGeneratorNative.generate]'s IllegalStateException) that is the builder's own rule,
+         * not the device's state: everything but an input that did not read, an allocation or memory failure, or an unexpected error
+         */
+        fun isRule(message: String?): Boolean {
+            val m = message?.trim().orEmpty()
+            if (m.isEmpty()) return false
+            return TRANSIENT.none { m.contains(it, ignoreCase = true) } && !m.startsWith("interiors generator: ")
+        }
+        private val TRANSIENT = listOf("unavailable", "out of memory", "allocation limit", "low memory", "could not be read", "unreadable")
+
+        /**
+         * a deferral recorded before D1 (1.0.22 - 1.0.39: its reason only, any Throwable's message - a Java out-of-memory "Failed to
+         * allocate ...", a full disk "ENOSPC", a building missing from a stale catalogue) is settled only when its reason is one of the
+         * builder's known rules (the PC full-catalogue run's 221: E:/wc-int-out/d/fc-d7ed255f.log, 2026-10-13; review of 2026-11-23).
+         * Anything else is tried once more and then classified by its kind ([Rejected]): at worst one extra try, never a building that
+         * could be built left out while the row says finished.
+         */
+        fun isKnownRule(reason: String?): Boolean {
+            val m = reason?.trim().orEmpty()
+            return m.isNotEmpty() && KNOWN_RULES.any { m.startsWith(it) }
+        }
+        private val KNOWN_RULES = listOf(
+            "room exceeds the bounded layout policy",
+            "architectural section preview has no storeys",
+            "empty_walk_requires_investigation",
+            "height grid contains surfaces assigned to no storey or stair",
+            "merged Recast span budget exceeded",
+            "no section storey has a supporting kept walk surface",
+            "room has no measured walk at an actual boundary portal",
+            "walk-section face budget exceeded or empty walk",
+        )
+    }
 
     /** Bump when unchanged inputs would now give different output; it becomes [IndoorBakeStore.Work.algorithm]. */
     val algorithm: Int
@@ -32,6 +86,31 @@ internal interface IndoorGenerator : AutoCloseable {
      * the scheduler caches the result per build, so it runs once per game update.
      */
     fun catalogue(yield: Yield): List<IndoorBakeStore.Work>
+
+    /**
+     * [catalogue] with the listing's memory across game updates (1525, [IndoorCatalogueMemo]: a file whose content key did not change is
+     * not read or parsed again); the same list. A generator without a use for it lists as [catalogue] does
+     */
+    fun catalogue(yield: Yield, memo: IndoorCatalogueMemo?): List<IndoorBakeStore.Work> = catalogue(yield)
+
+    /**
+     * 1525: the memory a listing of the generator's own may use (the native one lists inside [produce] when the scheduler's catalogue
+     * came from its cache and the units are not known yet); the scheduler hands its own over before it lists or builds. Default: none
+     */
+    fun memory(memo: IndoorCatalogueMemo?) {}
+
+    /**
+     * 2026-11-24: asked (from any thread, cheap) by work that does not pass a [Yield] point for a while - the missing input files fetched
+     * together before a building (GameFiles.prefetch) - whether the run must let go now (Play, the game, a stop): true = start nothing
+     * more; the next [Yield.point] ends it. The scheduler hands it over before it lists or builds. Default: never asked
+     */
+    fun letGo(check: () -> Boolean) {}
+
+    /**
+     * The map ids of this game build's dungeons and raids (the user's pick, 2026-11-23: "Build last, leave out of count"): a building
+     * placed only on these maps is built after every other one and left out of "finished". Null = not known (everything counts).
+     */
+    fun instanceMaps(): Set<Int>? = null
 
     /** Writes [work]'s validated outputs into [out] (an empty staging folder). Throws on any failure: the building is deferred. */
     fun produce(work: IndoorBakeStore.Work, out: File, yield: Yield)

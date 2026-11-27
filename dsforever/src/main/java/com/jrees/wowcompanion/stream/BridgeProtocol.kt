@@ -105,7 +105,9 @@ sealed class BridgeMsg {
                        val sunWait: String = "",
                        /** Desktop 0.2.42: what it does beyond v1 ("pad_click": Desktop clicks the pad; "polestar_sync": Polestar's files
                         *  follow); empty from an older Desktop (the stream's touch path stays) */
-                       val caps: List<String> = emptyList()) : BridgeMsg()
+                       val caps: List<String> = emptyList(),
+                       /** Linux Streaming Edition (Q1, 2026-11-24): the PC's wall clock when it sent the welcome (ms); -1 = an older helper */
+                       val pcMs: Long = -1L) : BridgeMsg()
     /** Desktop starting WoW on the PC (S3): "starting" | "running" | "stopped" | "start_failed"; [pc] = all of it (0.2.1) */
     data class Wow(val state: String, val why: String, val pc: PcWow? = null) : BridgeMsg()
     /** Linux Streaming Edition: which window has the PC's focus (the helper's "pcfocus") */
@@ -263,7 +265,7 @@ object BridgeProtocol {
                 PcWow.of(o.optJSONObject("wow")),
                 strings(o.optJSONArray("lan")), strings(o.optJSONArray("tailscale")), o.optString("pad_driver"),
                 sun?.has("http_port") != true, sun?.optString("problem").orEmpty(), sun?.optString("why").orEmpty(),
-                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty(), strings(o.optJSONArray("caps")))
+                o.optLong("gt_now", -1L), sun?.optString("wait").orEmpty(), strings(o.optJSONArray("caps")), o.optLong("pc_ms", -1L))
             "wow" -> BridgeMsg.Wow(o.optString("state"), o.optString("why"), PcWow.of(o))
             "pcfocus" -> BridgeMsg.PcFocus(o.optBoolean("wow", true), o.optString("what"))
             "error" -> BridgeMsg.Error(o.err(), o.optString("detail"))

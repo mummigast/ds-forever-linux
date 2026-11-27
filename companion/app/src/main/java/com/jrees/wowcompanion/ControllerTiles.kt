@@ -28,7 +28,8 @@ import kotlin.math.max
  * ([SmartYPage]: the list moved as it is). No sub-captions (the terse rule): the picture says what it does. Wheels are app-wide;
  * the pet's B, Smart Y and the GameUi helpers are per character (their stores, unchanged). Combat helpers keep Top's game-state badges
  * (ON / OFF / SENT / REFUSED / WAITING); the app-local tiles carry none. A slot that does not apply is not drawn (B: pet follow on a
- * class without a pet, Smart Res on a class without a res, Auto Shot on a class that can never hold a bow, gun or wand - design 0.4).
+ * class without a pet, Smart Res on a class without a res, Auto Shot on a class that can never hold a bow, gun or wand, a class wheel on
+ * a class without that wheel - design 0.4).
  *
  * The tile engine of the shared core (TileSource / TileDraw) had not landed when this was built (core and the areas ran side by side):
  * this view keeps the TileSource shape ([slots] / [name] / [value] / [lines] / [badge] / [dimmed] / [press] / the sub-page) so the
@@ -49,9 +50,12 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     /** the tiles this group shows now, in order (fixed per character: the add-on's word never reflows them) */
     fun slots(): List<Slot> = when (group) {
         SettingsTabs.Group.BUTTONS -> listOfNotNull(Slot(ControllerPictures.ABXY), Slot(ControllerPictures.GLYPHS),
-            Slot(ControllerPictures.PET_B).takeIf { PetRecall.shown(hub.petB()) }, Slot(ControllerPictures.SMART_Y, wide = true))
+            Slot(ControllerPictures.PET_B).takeIf { PetRecall.shown(hub.petB()) }, Slot(ControllerPictures.SMART_Y, wide = true),
+            Slot(ControllerPictures.HOLD_TIME))                                  // m190: hold to cast's hold time (app-wide), last: Smart Y keeps its place
         // one tile per wheel block (SettingsTabs.Block: a later radial adds a tile, not a redesign)
-        SettingsTabs.Group.WHEELS -> SettingsTabs.blocks(SettingsTabs.Group.WHEELS).mapNotNull { WHEELS[it] }.map { Slot(it) }
+        // fix/lbrb-wheels: a class wheel's tile only for a class that has that wheel ([wheelClass]; design 0.4)
+        SettingsTabs.Group.WHEELS -> SettingsTabs.blocks(SettingsTabs.Group.WHEELS).mapNotNull { WHEELS[it] }
+            .filter { wheelClass(it, GameUi.playerClass) }.map { Slot(it) }
         SettingsTabs.Group.COMBAT -> listOfNotNull(Slot(GameUi.PMODE_ID),
             Slot(GameUi.SRES_ID).takeIf { GameUi.sresClass(GameUi.playerClass) != false },
             Slot(GameUi.ATK_ID), Slot(ControllerPictures.ATTACK_CAST),
@@ -66,6 +70,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     fun value(id: String): String = when (id) {
         ControllerPictures.ABXY -> CastSettings.abxyLocation.label
         ControllerPictures.GLYPHS -> CastSettings.buttonLayout.label
+        ControllerPictures.HOLD_TIME -> CastSettings.holdTime.label
         ControllerPictures.PET_B -> onOff(HomeSettings.petRecall(GameUi.character))
         ControllerPictures.SMART_Y -> hub.smartDoc()?.let { onOff(it.on) } ?: WAIT
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { onOff(it.on) } ?: WAIT
@@ -78,6 +83,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     fun lines(id: String): List<Line> = when (id) {
         ControllerPictures.ABXY -> listOf(Line(id, null, LOCATIONS.map { it.label }, LOCATIONS.indexOf(CastSettings.abxyLocation)))
         ControllerPictures.GLYPHS -> listOf(Line(id, null, LAYOUTS.map { it.label }, LAYOUTS.indexOf(CastSettings.buttonLayout)))
+        ControllerPictures.HOLD_TIME -> listOf(Line(id, null, HOLDS.map { it.label }, HOLDS.indexOf(CastSettings.holdTime)))
         ControllerPictures.PET_B -> listOf(onOffLine(id, HomeSettings.petRecall(GameUi.character), GameUi.character != null))
         ControllerPictures.SMART_Y -> hub.smartDoc().let { d -> listOf(onOffLine(id, d?.on == true, d != null), Line(LIST, null, listOf("List"), -1)) }
         ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state.let { s -> listOf(onOffLine(id, s?.on == true, s != null && !s.paused).let {
@@ -144,6 +150,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
                 ControllerPictures.ABXY -> LOCATIONS.getOrNull(k)?.let { if (CastSettings.abxyLocation != it) { glideFrom = CastSettings.faceSwap
                     glideAt = SystemClock.uptimeMillis(); CastSettings.abxyLocation = it } }
                 ControllerPictures.GLYPHS -> LAYOUTS.getOrNull(k)?.let { if (CastSettings.buttonLayout != it) CastSettings.buttonLayout = it }
+                ControllerPictures.HOLD_TIME -> HOLDS.getOrNull(k)?.let { if (CastSettings.holdTime != it) { CastSettings.holdTime = it; HoldCast.holdTimeChanged() } }
                 ControllerPictures.PET_B -> HomeSettings.setPetRecall(GameUi.character, k == 0)
                 ControllerPictures.SMART_Y -> hub.smartDoc()?.let { d -> val on = k == 0; if (d.on != on) smartSend(SmartYModel.toggleTaps(d, on)) }
                 ControllerPictures.ATTACK_CAST -> HomeAttackSwitch.state?.let { s -> if (!s.paused) HomeAttackSwitch.turn(context, k == 0) }
@@ -546,8 +553,23 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
         /** Auto Shot's tile applies to [cls] (unknown yet = shown, as before the game says) */
         fun shotClass(cls: String?): Boolean = cls.isNullOrBlank() || cls.uppercase() !in NO_SHOT
 
+        /** fix/lbrb-wheels (a tester: the class wheels "never appear", their tiles shown all the same): the class wheels each class has -
+         *  ActionBar.lua's classActions (hud.ca): its CLASS_FLYOUT Druid / Paladin on the left (LB + LT), Warrior on the right (RB + RT);
+         *  Hunter / Warlock both (the pet's commands left, its spells right); every other class none */
+        val CLASS_WHEEL_L = setOf("DRUID", "PALADIN", "HUNTER", "WARLOCK")
+        val CLASS_WHEEL_R = setOf("WARRIOR", "HUNTER", "WARLOCK")
+
+        /** the Wheels tile [id] applies to [cls]: a class wheel's only for a class with that wheel (unknown yet = shown, as before the
+         *  game says); the other wheels always */
+        fun wheelClass(id: String, cls: String?): Boolean = when (id) {
+            ControllerPictures.CLASS_L -> cls.isNullOrBlank() || cls.uppercase() in CLASS_WHEEL_L
+            ControllerPictures.CLASS_R -> cls.isNullOrBlank() || cls.uppercase() in CLASS_WHEEL_R
+            else -> true
+        }
+
         private val LOCATIONS = CastSettings.AbxyLocation.values().toList()
         private val LAYOUTS = CastSettings.ButtonLayout.values().toList()
+        private val HOLDS = CastSettings.HoldTime.values().toList()            // m190: Short / Normal / Long
 
         /** the wheel each Wheels block draws (SettingsTabs' blocks, so a later radial adds a tile) */
         val WHEELS: Map<SettingsTabs.Block, String> = mapOf(
@@ -562,6 +584,7 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
 
         val NAMES: Map<String, String> = mapOf(
             ControllerPictures.ABXY to "ABXY location", ControllerPictures.GLYPHS to "Button glyphs", ControllerPictures.PET_B to PetRecall.ROW_ID,
+            ControllerPictures.HOLD_TIME to "Hold time",
             ControllerPictures.SMART_Y to "Smart Y", ControllerPictures.PAUSE to "Pause menu", ControllerPictures.ITEM to "Item wheel",
             ControllerPictures.SPELL to "Spell wheel", ControllerPictures.CLASS_L to "Left class wheel", ControllerPictures.CLASS_R to "Right class wheel",
             GameUi.PMODE_ID to "Party mode", GameUi.SRES_ID to "Smart Res", GameUi.ATK_ID to "Start attack on hostile target",

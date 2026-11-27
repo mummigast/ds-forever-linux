@@ -109,8 +109,8 @@ class ArtStopAtPlayTest {
             stop.indexOf("PlayGate.artMustPause(") in 0 until stop.indexOf("throw YieldToRequired()"))
         assertFalse("no background-only pause any more", stop.contains("artMustPause(bgPhase"))
         // the park: a required step due no longer pulls the worker back in while the game runs
-        assertTrue(harvest.contains("while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)"))
-        assertTrue(harvest.contains("if (!PlayGate.artMayOpen(gameActive = PlayGate.gameActiveNow()))"))
+        assertTrue(harvest.contains("while (PlayGate.artGameBusyNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)"))
+        assertTrue(harvest.contains("if (!PlayGate.artMayOpen(gameActive = PlayGate.artGameBusyNow()))"))
     }
 
     @Test fun playHoldsTheArtAndWaitsForItToLetGoBeforeTheContainer() {

@@ -178,7 +178,9 @@ class SettingsRoomTest {
         val r = room()
         // beautify/bottom: Bottom screen > Home is ONE tile part (Home's 8 tiles; the attack row is Controller's Combat helpers tile now)
         val home = box(r, SettingsTabs.Group.HOME).parts.single() as BottomTilesView
-        assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.QUEST, BottomTiles.CASTBAR)))
+        // (edit tabs, 2026-11-24: Focused quest and the Tap-to-cast bar are each Edit Home tab's own now - no tiles of theirs)
+        assertTrue(home.tileIds().containsAll(listOf(BottomTiles.REST, BottomTiles.CLOCK, BottomTiles.XP)))
+        assertTrue(home.tileIds().none { it in BottomTiles.TAB_TILES })
         // the beautify pass: the Controller tab's groups are ONE tile part each (Combat helpers' tiles take Home's attack row and the
         // two GameUi parts); Smart Y's own group has none (its tile is in Buttons, its list a sub-page)
         val combat = box(r, SettingsTabs.Group.COMBAT).parts
@@ -217,7 +219,7 @@ class SettingsRoomTest {
         val before = part.focusTargets()
         // the user, 2026-11-14 ("build it"): + Windows ID's Per install / Original (no game here: no restart row)
         // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): + its Off / On under Windows ID
-        assertEquals("the login button, then Ask each time / Remembered, then Per install / Original, then Browser login Off / On", 7, before.size)
+        assertEquals("the login button, then Ask each time / Remembered, then Per install / Original, then Battle.net sign-in Saved login / Blizzard's page", 7, before.size)
         val loginBox = before.first()
         assertTrue(r.pad.targetBoxes().any { it.top >= headBox(r, SettingsTabs.Group.ACCOUNT).bottom && it.height() == loginBox.height() })
         val host = SettingsRoom::class.java.getDeclaredField("view").apply { isAccessible = true }.get(r) as SettingsView

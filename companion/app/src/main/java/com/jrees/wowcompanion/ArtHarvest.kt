@@ -41,6 +41,11 @@ object ArtHarvest {
          */
         val detached: Boolean get() = false
         fun begin(ctx: Context) { error("$id is not a detached step") }
+        /**
+         * the step's own inputs beyond the game build (2026-11-23: the interiors step's builder, the wmominimap step's interiors roots):
+         * a stamp whose "inputs" differ is stale, and the fingerprint shortcut never re-stamps it. null = the build and version only
+         */
+        fun inputs(ctx: Context, build: String): String? = null
         /** a detached step's thread asked to end at its next yield point (the game folder moved to another build: [restart]) */
         fun stopDetached() {}
         fun run(job: Job)
@@ -114,7 +119,21 @@ object ArtHarvest {
         // while the game runs (PlayGate, every Thor since 1.0.25), the maps waited for all ~30,000 icons (31 packs) in the few
         // game-closed minutes, and every report showed "allicons running, worldmap / minimap never stamped" hours after the install.
         // The maps go first now ([mapsFirst]); an icon not packed yet is still asked for on its own (IconRequirements)
-        mapsFirst(listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep) { it.id }
+        // 1525: the indoor maps' carry-over after a game update right after the maps ([carryAfterMaps])
+        carryAfterMaps(mapsFirst(listOf<Step>(KitSteps.Kit, KitSteps.Cast, KitSteps.Icons, AllIconsStep) + MapHarvestSteps.STEPS + IndoorSchedulerStep) { it.id },
+            IndoorCarryStep) { it.id }
+    }
+
+    /**
+     * 1525 (the user's pick, 2026-11-24, "Reuse what didn't change"): [carry] (the indoor maps' carry-over, IndoorCarryStep) right after
+     * the maps ([MAPS_FIRST]): a game update hides every indoor map until it has run, and it only lists and publishes (no building), so
+     * it goes before the icon packs and the rest. Pure, for the tests: after the last of the maps present, else before the all-icons
+     * step, else last.
+     */
+    internal fun <T> carryAfterMaps(steps: List<T>, carry: T, id: (T) -> String): List<T> {
+        val rest = steps.filter { id(it) != id(carry) }
+        val at = rest.indexOfLast { id(it) in MAPS_FIRST }.let { if (it >= 0) it + 1 else rest.indexOfFirst { s -> id(s) == "allicons" } }
+        return if (at < 0) rest + carry else rest.subList(0, at) + carry + rest.subList(at, rest.size)
     }
 
     /** the background steps the player SEES missing, in this order: the Map room's world map, then Home's map (nearest zone first) */
@@ -253,12 +272,23 @@ object ArtHarvest {
         val st = stamp(ctx)
         val now = System.currentTimeMillis()
         return STEPS.filter { s ->
+            // a background step is never in the before-Play queue, whatever its stamp ([queued]): not even its inputs are read
+            if (beforePlay == true && !s.beforePlay) return@filter false
             val o = st.optJSONObject(s.id)
             val stale = o?.let { it.optString("build") != build || it.optInt("v") != s.version ||
-                (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) } != false
+                (s.id == "icons" && it.optString("inputs") != IconRequirements.inputKey(ctx, build)) ||
+                inputsDiffer(ctx, s, build, it) } != false
             queued(s.beforePlay, beforePlay, stale, !stale && KitSteps.retryDue(o?.optString("inputs"), o?.optLong("at") ?: 0L, now))
         }
     }
+
+    /** the step's own [Step.inputs] are not the stamp's (2026-11-23); a step without its own inputs never differs */
+    private fun inputsDiffer(ctx: Context, s: Step, build: String, stamped: JSONObject): Boolean =
+        inputsStale(stamped.optString("inputs").takeIf { stamped.has("inputs") && !stamped.isNull("inputs") },
+            runCatching { s.inputs(ctx, build) }.getOrNull())
+
+    /** pure (the tests): a stamp made with [stamped] inputs is stale for a step that now wants [want] (null = no inputs of its own) */
+    internal fun inputsStale(stamped: String?, want: String?): Boolean = want != null && stamped != want
 
     /**
      * Is a step in the [query] queue (true = before Play, false = the background, null = any)? [stale]: not built for this build and
@@ -307,6 +337,8 @@ object ArtHarvest {
         val st = stamp(ctx).optJSONObject(s.id) ?: return false
         if (st.optInt("v") != s.version || st.optString("build") == g.buildKey) return false
         if (s.id == "icons" && st.optString("inputs") != IconRequirements.inputKey(ctx, g.buildKey)) return false
+        // 2026-11-23 (fix 5): a step's own inputs changed (the wmominimap step's interiors roots grew): built again, never re-stamped
+        if (inputsDiffer(ctx, s, g.buildKey, st)) return false
         // issues #35/#36/#38 (2026-11-11): a step stamped degraded (pictures that did not read) is built again for a new build, never re-stamped
         if (st.optString("inputs").startsWith(KitSteps.DEGRADED)) return false
         val rec = fpFile(ctx, s).takeIf { it.isFile }?.let { ArtFingerprint.fromJson(it.readText()) } ?: return false
@@ -324,10 +356,10 @@ object ArtHarvest {
         tmp.writeText(st.toString()); if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
     }
 
-    /** a [Step.detached] step has finished everything for [build]: stamp it like any other */
-    fun markDetachedDone(ctx: Context, s: Step, build: String) {
+    /** a [Step.detached] step has finished everything for [build] ([inputs]: its own, [Step.inputs]): stamp it like any other */
+    fun markDetachedDone(ctx: Context, s: Step, build: String, inputs: String? = null) {
         require(s.detached && s in STEPS)
-        markDone(ctx, s, build, null)
+        markDone(ctx, s, build, inputs)
         Log.i(TAG, "harvest step ${s.id} v${s.version} done (detached)")
     }
 
@@ -359,7 +391,7 @@ object ArtHarvest {
         if (stopping) throw StoppedForUpdate()
         // the user's pick, 2026-11-16 ([besidePass]): the world map building beside the game on the Thor Max neither pauses for the game
         // nor gives way to a required step it could not run anyway (the game is up); once the game closes both stops are back
-        val active = PlayGate.gameActiveNow()
+        val active = PlayGate.artGameBusyNow()
         val beside = besideNow(active)
         // test build 1489 (#361, the user's approval 2026-11-18: "stop ALL art work hard at Play"): EVERY step, before Play too, and
         // the pause before the required step's yield, so a step stopped with the game up always gets the pause's relief
@@ -377,7 +409,7 @@ object ArtHarvest {
     /** memory relief 2: [checkStop] on the run's own thread only (Job.checkpoint: a step's pool threads never throw it) */
     private fun checkpoint() { if (Thread.currentThread() === worker) checkStop() }
     /** memory relief 2: the run is asked to let go of the game files now (any thread; Job.letGoAsked) */
-    private fun letGoAsked(): Boolean = PlayGate.gameActiveNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
+    private fun letGoAsked(): Boolean = PlayGate.artGameBusyNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
     /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up, launching or held by
      *  Play (every step, test build 1489); [beside] = the world map building beside the game ([besideNow]): neither of the last two.
      *  Pure (the tests) */
@@ -540,10 +572,10 @@ object ArtHarvest {
                             "${PlayGate.BESIDE_CALM_MS / 1000} s after its last load")
                         try {
                             // test build 1489 (#361): a required step asked for in game (a new icon) waits for the close too
-                            while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)
+                            while (PlayGate.artGameBusyNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)
                         } finally { parkedForGame = false }
-                        if (!stopping && !yieldBg && PlayGate.gameActiveNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
-                        Log.i(TAG, "harvest: the game is closed, the background art goes on")
+                        if (!stopping && !yieldBg && PlayGate.artGameBusyNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
+                        Log.i(TAG, "harvest: the game is closed (or the stream ended), the background art goes on")
                         if (stopping) { stopping = false; set(State.Idle); break }
                         yieldBg = false
                         continue
@@ -627,7 +659,7 @@ object ArtHarvest {
         // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
         // test build 1489 (#361): the launch window and Play's hold too, with before-Play steps due or not (Play ends any old window
         // before its own wait, so that wait is never held)
-        if (!PlayGate.artMayOpen(gameActive = PlayGate.gameActiveNow())) {
+        if (!PlayGate.artMayOpen(gameActive = PlayGate.artGameBusyNow())) {
             // the user's pick, 2026-11-16: on the Thor Max the world map alone builds beside the game ([besidePass]); the rest waits
             val beside = later.firstOrNull { it.id == PlayGate.BESIDE_STEP }
             if (beside != null && besideDue(true)) throw PausedForGame(if (besidePass(ctx, beside)) "${beside.id} (built beside the game)" else null)

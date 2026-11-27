@@ -58,7 +58,8 @@ class SettingsTabsTest {
         // 2026-11-19: Reset (folds on its own) above Support the Project (a headless group, the page's last row)
         assertEquals(listOf("Look", "Account", "Help", "Reset", "Support"), SettingsTabs.groups(T.GENERAL).map { it.heading })
         // GitHub #43 cb3 (the user: "the tap to cast bar should get its own bottom screen section")
-        assertEquals(listOf("Home", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
+        // party sizing (the user's pick 2026-11-23: "Settings + Edit Home"): Party, the party list's tile, under Home
+        assertEquals(listOf("Home", "Party list", "Tap-to-cast bar", "Map", "Chat"), SettingsTabs.groups(T.BOTTOM).map { it.heading })
         // the layout editor (the user, 2026-11-16: "we need to make a way to basically edit the UI locations on the top screen from our UI
         // menu"; the design's pick): a first group "Layout" on Top screen
         assertEquals(listOf("Layout", "Your HUD", "Target", "Party", "Navigation", "Game windows"), SettingsTabs.groups(T.TOP).map { it.heading })
@@ -77,14 +78,18 @@ class SettingsTabsTest {
         val want: Map<G, List<String>> = mapOf(
             G.LOOK to listOf("Theme", "Language", "Voice typing", "Swap screens", "Restart DS Forever"),     // 11-16: Voice typing     // #232: Swap screens (only with a second screen)
             // the user, 2026-11-14 ("build it"): Windows ID under Game account
-            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Browser login"),
+            G.ACCOUNT to listOf("Battle.net login", "Game account", "Windows ID", "Battle.net sign-in"),
+            // the user's pick 2026-11-23 ("Both (Recommended)"): the opt-in test graphics driver, its own group under Account
+            G.GRAPHICS to listOf("Graphics driver"),
             G.HELP to listOf("Problem report", "Reload game UI", "Status"),
             // 2026-11-19: Reset to defaults, four buttons; Support the Project last, under them
             G.RESET to listOf("Reset settings", "Reset layouts", "Reset skills", "Reset everything"),
             G.SUPPORT to listOf("Support the Project"),
             // the clock extras (the user's picks 2026-11-13, feat/item-cooldowns): one row each, before the toolbar
             G.HOME to listOf("Controller on Home", "Combat layout", "Swing timer", "Focused quest", "Hearthstone", "Class teleport", "Gold",
-                "Free bag slots", "Ammo", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges
+                "Free bag slots", "Ammo", "Pet happiness", "DS WoW toolbar", "Spell rank badges", "Hold to talk", "On release"),   // feat/clock-extras-v2: Ammo; 11-16: hold to talk; 11-20: rank badges; feat/extras-polish: Pet happiness
+            // party sizing (the user, 2026-11-23): the party list's tile's two picks (one "Size in fights" since test 1523)
+            G.PARTY_LIST to listOf("Grows", "Size in fights"),
             G.CAST_BAR to listOf("Tap-to-cast bar", "Show in combat"),     // cb14 (D5b): the row renamed
             G.MAP to listOf("Minimap zoom outdoors", "Minimap zoom indoors", "World map"),
             G.CHAT to listOf("Message input"),
@@ -98,7 +103,7 @@ class SettingsTabsTest {
                 "Player frame", "Target frame", "Controller UI", "Buffs", "XP bar",
                 // hub61: the damage meter, the Cooldown Manager and its four parts
                 "Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars"),
-            G.BUTTONS to listOf("ABXY location", "Button glyphs", "B: pet recall"),       // 2026-11-18: B: pet recall (was Smart pet / B: pet follow), a pet class only
+            G.BUTTONS to listOf("ABXY location", "Button glyphs", "Hold time", "B: pet recall"),   // 2026-11-24: hold to cast's hold time       // 2026-11-18: B: pet recall (was Smart pet / B: pet follow), a pet class only
             G.WHEELS to listOf("Pause menu: open", "Pause menu: pick", "Start over game windows", "Item wheel: open", "Item wheel: pick", "Spell wheel: open",
                 "Spell wheel: pick", "Left class radial: open", "Left class radial: pick", "Right class radial: open", "Right class radial: pick"),
             G.SMART_Y to listOf("Smart Y"),
@@ -115,7 +120,7 @@ class SettingsTabsTest {
                 "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
         // and each group's tab
-        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.CAST_BAR, G.MAP, G.CHAT),
+        val tabOf = mapOf(T.GENERAL to listOf(G.LOOK, G.ACCOUNT, G.GRAPHICS, G.HELP, G.RESET, G.SUPPORT), T.BOTTOM to listOf(G.HOME, G.PARTY_LIST, G.CAST_BAR, G.MAP, G.CHAT),
             T.TOP to listOf(G.LAYOUT, G.HUD, G.TARGET, G.PARTY, G.NAVIGATION, G.WINDOWS), T.CONTROLLER to listOf(G.BUTTONS, G.WHEELS, G.SMART_Y, G.COMBAT),
             T.ADDONS to listOf(G.IMPORT, G.CARDS, G.VOICE, G.IMPORTED), T.PERFORMANCE to listOf(G.FRAMES))
         for ((t, gs) in tabOf) assertEquals(t.label, gs, G.values().filter { it.tab == t })
@@ -173,6 +178,8 @@ class SettingsTabsTest {
             // the user, 2026-11-16 ("a pet class specific option where pressing B in the out of combat home menu basically stops the pet
             // attacking"): Controller > Buttons
             listOf("B: pet recall") +                   // 2026-11-18: B: pet recall (was Smart pet, its attack half gone)
+            // the user's pick 2026-11-24 (hold to cast, "At the hold time, Settings: 0.3/0.4/0.55 s"): Controller > Buttons
+            listOf("Hold time") +
             // the user's pick 2026-11-16 (voice to text): General > Look > Voice typing
             listOf("Voice typing") +
             // the user, 2026-11-16 ("we could make the per languege downloads part of the addons folder"): Add-ons > Voice
@@ -184,7 +191,7 @@ class SettingsTabsTest {
             // hub61 (the user, 2026-11-17: "DPS meters and also the cooldown manager"): Top screen > Game windows
             listOf("Damage meter", "Cooldown Manager", "Essential", "Utility", "Buff icons", "Buff bars") +
             // the user, 2026-11-18 (upstream v2.4.5's Browser login, opt-in): General > Account, under Windows ID
-            listOf("Browser login") +
+            listOf("Battle.net sign-in") +              // 2026-11-24: Browser login's words, the start screen Menu's too
             // the user, 2026-11-19 ("a simple button at the bottom that says 'Support the Project'"): General > Help, last
             listOf("Support the Project") +
             // the user, 2026-11-19 ("reset to defaults buttons, split into four"): General > Reset
@@ -192,7 +199,15 @@ class SettingsTabsTest {
             // Linux Edition 2026-11-19 ("This box should be a switch also"): Top screen > Game windows, the Tooltips band
             listOf("Ranged tooltips") +
             // the user, 2026-11-20 ("put that as a toggle in the settings, off by default"): Bottom screen > Home, after the toolbar
-            listOf("Spell rank badges")
+            listOf("Spell rank badges") +
+            // the user's pick 2026-11-23 ("Both (Recommended)"): General > Graphics > Graphics driver (Recommended / the test drivers)
+            listOf("Graphics driver") +
+            // feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"):
+            // Bottom screen > Home, the clock extras' new row after Ammo
+            listOf("Pet happiness") +
+            // party sizing (the user, 2026-11-23): Bottom screen > Party, the party list's picks (test 1523's two fight rows one row:
+            // "just consolidate that into one setting")
+            listOf("Grows", "Size in fights")
         val now = B.values().flatMap { it.rows }
         // split-hud (the user, 2026-11-17: "we need to split out the Buffs controller UI and XP bar"): one row is three
         val split = before - "Controller bars, buffs and XP" + listOf("Controller UI", "Buffs", "XP bar")

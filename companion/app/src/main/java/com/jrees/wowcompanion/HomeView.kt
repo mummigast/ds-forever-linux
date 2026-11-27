@@ -55,6 +55,12 @@ class HomeView(
     private val openRoom: (Room) -> Unit = {},
 ) : ViewGroup(context) {
 
+    // 1529 PERFORMANCE MODE (FramePace): this view's animation frames, paced to ~30 Hz while the player moves or fights on Home. The
+    // field is nullable on purpose: View's constructor runs before it is set
+    private val pace: FramePace.Gate? = FramePace.gate(this) { vsyncFrame() }
+    private fun vsyncFrame() = super.postInvalidateOnAnimation()
+    override fun postInvalidateOnAnimation() { pace?.frame() ?: super.postInvalidateOnAnimation() }
+
     val flow = HomeFlow()
     private val grow = HomeGrow()
     private val auras = HomeAuras()
@@ -72,7 +78,7 @@ class HomeView(
     /** the controller layout has come at least once: until then the Cast view says "Waiting" where the clock would stand */
     private var barsSeen = false
 
-    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2 }
+    private enum class Part { BARS, QUESTS, CHAT, PARTY, MAP, AURAS, STRIP, CHAT_FULL, CAST2, FIGHT_CAST }
 
     private val questPane = QuestPane(context)
     private val chatPane = ChatPane(context)
@@ -103,10 +109,14 @@ class HomeView(
      *  castbar cells 1-8: no new cell, nothing new in the add-on */
     private val castStrip2 = CastStripView(context) { i -> castStripTap(i) }.apply { splitHalf = 2 }
     private val strips get() = listOf(castStrip, castStrip2)
+    /** THE CAST BAR IN A TOP-SCREEN FIGHT (the user's ruling 2026-11-23; HomeLayoutSolver.hasFightStrip): the band's own cast bar and
+     *  swing timer drawn across the top of Home while the band is away ([FightCastStripView], the Cast view's painter) */
+    private val fightStrip = FightCastStripView(context, castView)
     // CLOSE is added last, so it is drawn above the module it closes
     private val views: Map<Part, View> = linkedMapOf(
         Part.BARS to barsSlot, Part.QUESTS to questPane, Part.CHAT to chatPane, Part.PARTY to partyView, Part.MAP to mapSlot,
         Part.AURAS to auraPane, Part.STRIP to castStrip, Part.CAST2 to castStrip2, Part.CHAT_FULL to chatSlot,
+        Part.FIGHT_CAST to fightStrip,
     )
 
     /** where each part is now, in px of the frame; animated towards the state's places */
@@ -121,23 +131,33 @@ class HomeView(
         HomeSettings.init(context)
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
-        HomeSettings.onChange { post { castStripRelay(); castStripFight() } }  // GitHub #43: the tap-to-cast bar's own choices
+        // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
+        HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m190: a held press's gold arc / the hold's flash (the gate)
+        HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
-        HomeLayoutStore.onOwner { editUi.post { editOwnerCheck("the character changed") } }
+        HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
-        HomeSettings.onChange { post {
-            if (flow.setRest(restWanted())) changed()
-            // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
-            // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
-            else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
-            // the focused quest moved (Settings > Home): the parts go to their new places
-            else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
-            // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
-            else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
-                castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
-            else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
-            invalidate()                                                     // r20: a clock extra switched on / off
-        } }
+        HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } })
+        homeInitRest()
+    }
+
+    /** a HomeSettings change (its static listener holds this Home weakly: [weakly]) */
+    private fun homeSettingsChanged() {
+        if (flow.setRest(restWanted())) changed()
+        // MOVABLE HOME: a new layout record (a reset, a facade setter, another character): the page glides there on the one
+        // motion (240 / 200 ms, Motion.curve); the D-pad's word follows in the add-on ([HomeLayoutStore], ToolbarMirror)
+        else if (laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true) shown?.let { apply(it, animate = isShown) }
+        // the focused quest moved (Settings > Home): the parts go to their new places
+        else if (laidOverMap != cardOverMap()) shown?.let { apply(it, animate = isShown) }
+        // r-combat-anim-off: Grow / Same size changed during a fight: the band goes to its new size
+        else if (lent(castView) && castView.swingOn != HomeSettings.swingTimer)
+            castView.swingOn = HomeSettings.swingTimer                                     // p-swing-timer: switched in a fight
+        else if (laidGrow != HomeSettings.combatGrow) { laidGrow = HomeSettings.combatGrow; shown?.let { if (it.takeover) apply(it, animate = isShown) } }
+        invalidate()                                                     // r20: a clock extra switched on / off
+    }
+
+    /** the rest of the constructor's init (after the static listeners), in the same order as before */
+    private fun homeInitRest() {
         ThemeLive.bg(this, Tok.INK)
         setWillNotDraw(false)
         for ((_, v) in views) { addView(v); v.visibility = View.GONE }
@@ -233,6 +253,7 @@ class HomeView(
         val i = loans.indexOfLast { it.view === v }
         if (i < 0) return
         val l = loans.removeAt(i)
+        if (v === castView) castView.platesAlpha = 1f                    // the room that takes the band back draws its plates
         (v.parent as? ViewGroup)?.removeView(v)
         l.parent.addView(v, min(l.index, l.parent.childCount), l.lp)
         v.visibility = l.vis
@@ -260,6 +281,7 @@ class HomeView(
         castView.onClassStick = { if (classOpen) classLayer.invalidate() }      // b-class-radial-stick: the pointed slice follows
         castView.onTriggers = { lt, rt -> trigHold(lt || rt) }                  // feat/clock-extras-v2: the clock band fades under a trigger
         castView.onInfoShrink = { infoCheck() }                                 // feat/home-info-block: a cast / L+R makes the block small
+        castView.onLine = { fightStrip.invalidate() }                           // the fight strip redraws on every cast / swing change
         infoCheck(instant = true)
         // ARRIVING MID-FIGHT (the user, 2026-10-01: "going back home by what ever means, engages the combat transition at that time"):
         // the takeover was already on while Home was hidden, so Home lands at its rest and the combat transition PLAYS from there
@@ -289,6 +311,7 @@ class HomeView(
         }
         if (lent(castView)) {
             castView.away = false                                        // (Top screen's fight: the Cast room draws it again)
+            castView.lineAway = false; fightStrip.on = false; castView.onLine = null   // (the fight strip's line: back on the band)
             castView.layout = CastView.Layout.FULL; castView.bottomLine = false; castView.onPadButtons = null
             castView.onClassRadial = null; castView.onClassStick = null; classLayerShow(false)   // the Cast room draws its own radial
             castView.onTriggers = null; trigHold(false)
@@ -492,19 +515,34 @@ class HomeView(
         val col = ArrayList<Pair<View, RectF>>()
         val half = if (left) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
         for ((p, v) in views) {
-            if (p == Part.BARS) continue
+            if (bandPart(p)) continue
             val r = now[p] ?: continue
             if (halfOf(p, r, w) == half) col += v to r
         }
-        val area = ClassSlot.column(col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) },
-            (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f), h, g, left, w)
-        val slot = ClassSlot.inColumn(area)
+        val parts = col.filter { it.first.visibility == View.VISIBLE }.map { (_, r) -> ClassSlot.Area(r.left, r.top, r.right, r.bottom) }
+        val bb = barsBottom()                                                   // (feat/fight-castbar: under a Top-screen fight's strip)
+        // feat/radial-castbar: Across's bar (no column's) drops below the page when the wheel is smaller with it there - the wheel then
+        // takes its column's own square, down to where the column ended (as with no bar); a wheel that fits above it leaves it be
+        val across = acrossBox(now)
+        // (full width in Party mode, 2026-11-23: the list across both columns stays - the wheel in its column's part under a top list,
+        // over a foot one; the 1523 merge: both of the radial's squares, kept and full, are cut the same way)
+        val pw = now[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }
+        // (fix/party-drop-wheels, the user's pick "List drops with the bar": a foot list right over Across's bar goes down with it into
+        // its place with the bar Off - the full square is cut over it THERE, the size the wheel has with no bar)
+        val pd = partyDrop(now)
+        val clip = { a: ClassSlot.Area, dy: Float -> if (pw == null) a else if (pw.centerY() < h / 2f) a.copy(top = maxOf(a.top, pw.bottom + g))
+            else a.copy(bottom = minOf(a.bottom, pw.top + dy - g)) }
+        val kept = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w), 0f))
+        val full = ClassSlot.inColumn(clip(ClassSlot.column(parts, bb, h, g, left, w, reach = across?.bottom ?: 0f), pd))
+        if (open) classDrop = HomeSlide.makesRoom(across?.top, kept.side, full.side, kept.top + kept.side, g)
+        val slot = if (classDrop) full else kept
         classRect.set(slot.left.toInt(), slot.top.toInt(), (slot.left + slot.side).toInt(), (slot.top + slot.side).toInt())
         // the wheel lies UNDER its column (raised while it shows) and is uncovered as the column slides away; on release the column
-        // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered
-        for ((p, v) in views) if (p != Part.BARS) {
+        // slides back OVER it (the frozen picture rides it out, CastView), and the wheel goes when it is covered (a dropped bar the same)
+        for ((p, v) in views) if (!bandPart(p)) {
             val r = now[p]
-            v.translationZ = if (r != null && halfOf(p, r, w) == half && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
+            val mine = r != null && (halfOf(p, r, w) == half || classDrop && (barDrop(p, r) > 0f || p == Part.PARTY && pd > 0f))
+            v.translationZ = if (mine && (open || classLayer.visibility == View.VISIBLE)) CLASS_COVER_Z else restZ(p)
         }
         if (open) {
             classLayer.visibility = View.VISIBLE
@@ -516,18 +554,42 @@ class HomeView(
         }
         // the column: off its own edge (open) / back (close); the other column never moves
         var last: android.view.ViewPropertyAnimator? = null
+        // feat/radial-castbar: on the release every bar comes back to no offset (unless the middle wheel holds it): a dropped one up, and
+        // one the page laid elsewhere under the wheel (a fight's start: a column's bar slid away with its column, then laid below the
+        // page by Hide in combat, is no column's any more and was left off the screen's edge after the fight)
+        val barsBack = !open && !wheelOpen
         for ((v, r) in col) {
             // a part not shown does not slide; on a close it is put back at once (a card hidden mid-slide kept its offset)
-            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (barsBack && v is CastStripView) v.translationY = 0f }; continue }
             val to = if (open) ClassSlot.away(left, r.left, r.right, w, g) else 0f
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
+            if (barsBack && v is CastStripView) a.translationY(0f)
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
             a.setListener(null)
             last = a
         }
+        // feat/radial-castbar: the dropped bar on the column's motion (down on the open, back up on the release); the middle wheel's own
+        // drop (wheelPart) is left as it is
+        val riding = col.map { it.first }
+        // (fix/party-drop-wheels: the foot list over Across's bar with it, the same motion and distance)
+        val drops = if (!open || !classDrop) emptyList()
+            else views.mapNotNull { (p, v) -> barDrop(p, now[p]).takeIf { it > 0f && v.visibility == View.VISIBLE && v !in riding }?.let { v to it } } +
+                listOfNotNull(pd.takeIf { it > 0f }?.let { partyView as View to it })
+        if (!open && barsBack) partyRiding = false
+        val back = if (!barsBack) emptyList()
+            else strips.filter { it !in riding && (it.translationY != 0f || it.translationX != 0f) }.map { it as View to 0f } +
+                listOfNotNull((partyView as View).takeIf { it.translationY != 0f && pauseT <= 0f }?.let { it to 0f })
+        for ((v, to) in if (open) drops else back) {
+            v.animate().cancel()
+            val a = v.animate().translationY(to)
+            if (!open) a.translationX(0f)
+            a.setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
+                .setInterpolator(Motion.curve()).withLayer().setUpdateListener(null).setListener(null).start()
+        }
+        barAwaySync()
         val done = {
             if (!classOpen) {
                 classLayer.visibility = View.GONE
@@ -547,7 +609,15 @@ class HomeView(
     /** fix/castbar-slides: the half a laid part belongs to for a side slide: the cast bar by its side (Both = neither), any other part by
      *  its centre ([HomeSlide.half]) */
     private fun halfOf(p: Part, r: RectF, w: Float): HomeSlide.Half =
-        HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w, split = laidSplit)
+        // FULL WIDTH (Party mode, 2026-11-23): a party list across both columns is neither column's, as Both's bar (it stays: the class
+        // wheel takes its own column's area under / over it, the middle wheel sits under / over it - wheelFit; fix/party-drop-wheels: a
+        // foot one right over Across's bar goes DOWN with that bar when it drops for a radial - partyDrop)
+        if (p == Part.PARTY && laidPartyWide) HomeSlide.Half.NONE
+        // (fix/party-drop-wheels, the user's pick "Split bar too": Split's halves under a full-width foot list are one bar of no column)
+        else HomeSlide.half(p == Part.STRIP || p == Part.CAST2, laidSide, laidHidden, r.centerX(), w,
+            split = laidSplit && !laidSplitUnderList)
+    /** the party list was laid across both columns ([HomeLayoutSolver.wideParty]) */
+    private var laidPartyWide = false
 
     /**
      * f-radial-middle (1.0.9, the user: "The Dpad up radial, and spell radial should slideup between the middle of the modules like the
@@ -563,20 +633,74 @@ class HomeView(
         wheelOpen = open
         if (open) wheelFit(now)
         wheelPart(now, open)
+        barAwaySync()
         return if (open) RectF(wheelRect) else null
+    }
+    /** feat/radial-castbar: how far part [p] laid at [r] slides down for an open radial (a tap-to-cast bar of no column: HomeSlide.barDrop).
+     *  A bar slid away for a fight (Hide in combat) never: it is no column's (HomeSlide.half) but already off the page - Across's below
+     *  it, a top bar (Above the chat / the map) UP behind the grown band, which a drop swept down across the page over the radial */
+    private fun barDrop(p: Part, r: RectF?): Float =
+        if (r == null || laidHidden || (p != Part.STRIP && p != Part.CAST2)) 0f
+        else HomeSlide.barDrop(true, halfOf(p, r, width.toFloat()), r.top, frameH)
+    /** feat/radial-castbar: the box of the bar of no column (Across) laid on the page as [places] has it - the one a radial may ask to
+     *  drop ([barDrop]); null = none there (Off, a column's bar, Split's halves - but those under Party mode's full-width foot list,
+     *  [laidSplitUnderList] - slid away for a fight) */
+    private fun acrossBox(places: Map<Part, RectF>): RectF? {
+        var out: RectF? = null
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val r = places[p] ?: continue
+            if (views[p]?.visibility != View.VISIBLE || barDrop(p, r) <= 0f) continue
+            out = out?.apply { union(r) } ?: RectF(r)
+        }
+        return out
+    }
+    /** fix/party-drop-wheels: how far Party mode's full-width list at the foot, right over Across's bar, slides down with that bar for a
+     *  radial that asked for the room, on the page laid as [places] (HomeSlide.partyDrop: the wheels' by the bar's own distance, [below]
+     *  the LB picture's and the full slides' off the page); 0 = it stays (a top list, no Across bar under it, not shown) */
+    private fun partyDrop(places: Map<Part, RectF>, below: Boolean = false): Float {
+        if (!laidPartyWide || views[Part.PARTY]?.visibility != View.VISIBLE) return 0f
+        val pw = places[Part.PARTY] ?: return 0f
+        return HomeSlide.partyDrop(true, pw.top, pw.bottom, acrossBox(places)?.top, frameH, below)
+    }
+    /** feat/radial-castbar: what each open radial asked of Across's bar (it drops only when the radial needs the room) */
+    private var wheelDrop = false
+    private var classDrop = false
+    private var lbDrop = false
+    /** feat/radial-castbar: the bar dropped out of a radial's way is away: no tap reaches its slots until it is back (CastStripView.away,
+     *  its trip back up too); its cooldowns keep running. A bar that stays, or goes with its column, is as it was */
+    private fun barAwaySync(places: Map<Part, RectF> = now) {
+        // (the pause wheel's / the target radial's full slide: Across's bar always drops, pauseSlide)
+        val drop = wheelOpen && wheelDrop || classOpen && classDrop || pauseT > 0f && (pauseSide > 0f && lbDrop || pauseSide <= 0f)
+        for ((p, v) in views) if (v is CastStripView) v.away = drop && barDrop(p, places[p]) > 0f
     }
     /**
      * the middle wheel's square for the page laid as [places]: as tall as the space under the bars allows (the user on test18: "I want
      * the dpad up radial to be about the same size as the pause menu radial"; the pause wheel fills the same height); no longer held to
-     * the chat column's width (it rises from below, behind the parting columns). fix/castbar-slides: Both's bar stays where it is (it is
-     * neither column's), so the wheel sits above it
+     * the chat column's width (it rises from below, behind the parting columns). feat/radial-castbar (the user, 2026-11-23: "it should
+     * still move out of the way to make space for the full sized radials"): Across's bar no longer holds it up - when the wheel is
+     * smaller above it, it slides down out of the way ([wheelPart], HomeSlide.barDrop) and the wheel reaches the page's foot
+     * (fix/castbar-slides sat it above that bar); Split's halves part with their columns (they held it up too) - under Party mode's
+     * full-width foot list they are one bar that drops with the list, as Across's (fix/party-drop-wheels, "Split bar too")
      */
     private fun wheelFit(places: Map<Part, RectF>) {
         val w = width.toFloat(); val h = frameH
         val g = UiKit.MODULE_GAP
         val line = columnsLine(w)
-        val s = ClassSlot.middle(w, h, (places[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f), g, w * WHEEL_SLOT_MAX,
-            bottom = HomeSlide.middleBottom(laidSide, laidHidden, places[Part.STRIP]?.top, h, g), mid = (line.first + line.second) / 2f)
+        val mid = (line.first + line.second) / 2f
+        val across = acrossBox(places)
+        // (party sizing: a full-width party list stays where it is: the wheel under it at the top, over it at the foot; the 1523 merge:
+        // both of the wheel's squares, kept over Across's bar and full with it dropped, are cut the same way)
+        val pw = places[Part.PARTY]?.takeIf { laidPartyWide }
+        val bb = maxOf(barsFoot(places), pw?.takeIf { it.centerY() < h / 2f }?.bottom ?: 0f)   // (feat/fight-castbar: under a fight's strip)
+        val pwFoot = pw?.takeIf { it.centerY() >= h / 2f }?.let { it.top - g }
+        // (fix/party-drop-wheels, the user's pick "List drops with the bar": a foot list right over Across's bar goes down with it,
+        // into its place with the bar Off - the full square ends over it there, the size the wheel has with no bar)
+        val fullFoot = if (pwFoot == null) h - g else minOf(h - g, pwFoot + partyDrop(places))
+        val keptFoot = HomeSlide.stayFoot(across?.top, h, g).let { if (pwFoot == null) it else minOf(it, pwFoot) }
+        val full = ClassSlot.middle(w, h, bb, g, w * WHEEL_SLOT_MAX, bottom = fullFoot, mid = mid)
+        val kept = ClassSlot.middle(w, h, bb, g, w * WHEEL_SLOT_MAX, bottom = keptFoot, mid = mid)
+        wheelDrop = HomeSlide.makesRoom(across?.top, kept.side, full.side, kept.top + kept.side, g)
+        val s = if (wheelDrop) full else kept
         wheelRect.set(s.left, s.top, s.left + s.side, s.top + s.side)
         wheelPush = s.push; wheelPushR = s.pushRight
     }
@@ -591,28 +715,120 @@ class HomeView(
         if (!wheelOpen || width == 0) return
         val was = RectF(wheelRect)
         wheelFit(places)
-        wheelPart(places, true)
+        wheelPart(places, true, refit = true)
+        barAwaySync()
         if (was != wheelRect) onWheelSlot?.invoke(RectF(wheelRect))
+    }
+    /**
+     * feat/radial-castbar: the page laid again under an open class wheel (a fight beginning or ending, as [wheelRefit] for the middle
+     * wheel): a tap-to-cast bar coming back onto the page from below it (Hide in combat's, the fight over) never rises over the wheel -
+     * Across's stays below the page (dropped, as at an open with it there), a bar of the wheel's own column goes off its edge with that
+     * column. The held wheel keeps its square - unless (the 1523 audit) Party mode's full-width list, which stays where it is (no column's),
+     * is laid again larger into it (a fight's Grow at the foot, a Top-screen fight's Fill at the top): the square is cut as at the open,
+     * over a foot list / under a top one. [places] = the page as it will be; [now] is still the page as it is
+     */
+    private fun classRefit(places: Map<Part, RectF>) {
+        if (!classOpen || width == 0) return
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val half = if (classLeft) HomeSlide.Half.LEFT else HomeSlide.Half.RIGHT
+        // fix/party-drop-wheels: Party mode's foot list dropped with Across's bar stays down by the drop the page as it will be gives it
+        // (0 once the bar is laid below the page for a fight: the list lies on the page's foot then), riding the page's own motion
+        // ([partyRide]); one the page would lay back up into the held wheel (a fight's end: the bar coming back under it) stays down
+        // with the bar the same way. The square is cut over the list as drawn
+        var listDown = false
+        places[Part.PARTY]?.takeIf { laidPartyWide && views[Part.PARTY]?.visibility == View.VISIBLE }?.let { pw ->
+            var dy = 0f
+            if (pw.centerY() >= frameH / 2f) {
+                val pd = partyDrop(places)
+                // (only with the bar coming back from below the page under it - a bar on the page now would have the list ride down onto
+                // it: that list cuts the square instead, the 1523 audit's way)
+                val returning = strips.any { v -> val r = places[if (v === castStrip) Part.STRIP else Part.CAST2]; val cur = now[if (v === castStrip) Part.STRIP else Part.CAST2]
+                    v.visibility == View.VISIBLE && r != null && cur != null && cur.top + v.translationY >= frameH - 0.5f && r.top < frameH - 0.5f }
+                if (!classDrop && returning && pd > 0f && pw.top < classRect.bottom + g - 0.5f && pw.left < classRect.right && pw.right > classRect.left) classDrop = true
+                dy = if (classDrop) pd else 0f
+                listDown = dy > 0f
+                if (dy != partyView.translationY || partyRiding) { partyView.animate().cancel(); partyRide(dy) }
+                if (listDown) partyView.translationZ = CLASS_COVER_Z
+            }
+            val a = ClassSlot.Area(classRect.left.toFloat(), classRect.top.toFloat(), classRect.right.toFloat(), classRect.bottom.toFloat())
+            val cut = if (pw.centerY() < frameH / 2f) a.copy(top = maxOf(a.top, pw.bottom + g)) else a.copy(bottom = minOf(a.bottom, pw.top + dy - g))
+            if (cut == a || cut.bottom - cut.top < 1f) return@let
+            val s = ClassSlot.inColumn(cut)
+            classRect.set(s.left.toInt(), s.top.toInt(), (s.left + s.side).toInt(), (s.top + s.side).toInt())
+            classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+            classLayer.invalidate()
+        }
+        val sq = RectF(classRect)
+        for ((p, v) in views) {
+            if (v !is CastStripView || v.visibility != View.VISIBLE) continue
+            val r = places[p] ?: continue
+            val cur = now[p] ?: continue
+            // only a bar below the page now (as drawn) that the page lays back on it
+            if (cur.top + v.translationY < frameH - 0.5f || r.top >= frameH - 0.5f) continue
+            val dy = barDrop(p, r)
+            // (fix/party-drop-wheels: under a party list held down, the bar stays down too - it would come up into the list)
+            if (dy > 0f && (RectF.intersects(sq, r) || listDown)) { v.animate().cancel(); v.translationY = dy; classDrop = true }
+            else if (dy <= 0f && halfOf(p, r, w) == half) { v.animate().cancel(); v.translationX = ClassSlot.away(classLeft, r.left, r.right, w, g) }
+            else continue
+            v.translationZ = CLASS_COVER_Z
+        }
+        barAwaySync()
     }
     /** fix/radials-clip-castbar: the open wheel's square changed ([wheelRefit]), in Home's coordinates */
     var onWheelSlot: ((RectF) -> Unit)? = null
     /** the columns part for the middle wheel ([open]) by [places], or come back */
-    private fun wheelPart(places: Map<Part, RectF>, open: Boolean) {
+    private fun wheelPart(places: Map<Part, RectF>, open: Boolean, refit: Boolean = false) {
         val w = width.toFloat()
         for ((p, v) in views) {
-            if (p == Part.BARS) continue
-            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f }; continue }
+            if (bandPart(p)) continue
+            if (v.visibility != View.VISIBLE) { if (!open) { v.animate().cancel(); v.translationX = 0f; if (v is CastStripView || p == Part.PARTY) v.translationY = 0f }; continue }
             val r = places[p] ?: continue
             val to = if (!open) 0f else HomeSlide.dx(halfOf(p, r, w), wheelPush, wheelPushR)
             v.animate().cancel()
             val a = v.animate().translationX(to).setDuration(if (open) Motion.MODULE_OPEN else Motion.MODULE_CLOSE)
                 .setInterpolator(Motion.curve()).withLayer()
+            // feat/radial-castbar: Across's bar (no column's) slides down out of the way on the same motion, back up on the close
+            if (p == Part.STRIP || p == Part.CAST2) {
+                val dy = if (open && wheelDrop) barDrop(p, r) else 0f
+                val below = (now[p]?.top ?: v.top.toFloat()) + v.translationY >= frameH - 0.5f
+                // a bar coming back up from below the page (a fight's end: wheelRefit) under the open wheel stays below it
+                if (dy > 0f && below) v.translationY = dy
+                // a dropped bar the page now lays below it (a fight's start, Hide in combat) stays down: its own way down (the fight's
+                // curve, a Top screen slide's) never lifts it into sight on the way
+                if (!(open && dy == 0f && below && r.top >= frameH - 0.5f)) a.translationY(dy)
+            }
+            // fix/party-drop-wheels (the user's pick "List drops with the bar"): Party mode's full-width list at the foot, right over
+            // Across's bar, goes down with it on the same motion, by the same distance (into its place with the bar Off); back up on
+            // the close. Laid again under the open wheel (a fight's start / end: [wheelRefit]) it rides the page's own motion instead
+            if (p == Part.PARTY) {
+                val dy = if (open && wheelDrop) partyDrop(places) else 0f
+                if (refit) partyRide(dy) else { partyRiding = false; a.translationY(dy) }
+            }
             // the map's well edge and zone band are Home's own paint (dispatchDraw): a redraw per frame of ITS slide (no layout)
             if (v === mapSlot) a.setUpdateListener { invalidate() } else a.setUpdateListener(null)
             a.setListener(null)
             a.start()
         }
     }
+    /**
+     * fix/party-drop-wheels: the dropped party list's offset when the page is laid again under a held wheel (a fight's start / end: its
+     * box grows, or moves to the page's foot with the bar slid away, or back up over it): from where it is drawn now to [to], on the
+     * page's OWN motion - each frame of [apply]'s animator eases it by the same fraction as the list's box ([partyRideFrame]), so the
+     * list as drawn goes straight from where it was to where it lands, never past it (a view animator of its own, on another time or
+     * curve, lifted it over the held wheel for a few frames). Laid at once (no motion): there at once ([partyRideEnd])
+     */
+    private fun partyRide(to: Float) {
+        val v = partyView
+        partyRideFrom = v.translationY; partyRideTo = to
+        partyRiding = partyRideFrom != to
+        if (!partyRiding) v.translationY = to
+    }
+    private var partyRiding = false
+    private var partyRideFrom = 0f
+    private var partyRideTo = 0f
+    /** one frame of the page's motion at [k] (the list box's own fraction) */
+    private fun partyRideFrame(k: Float) { if (partyRiding) partyView.translationY = partyRideFrom + (partyRideTo - partyRideFrom) * k }
+    private fun partyRideEnd() { if (partyRiding) { partyRiding = false; partyView.translationY = partyRideTo } }
     /**
      * f-radial-behind (1.0.9, the user: "the radial needs to look like its behind the Map and Chat modules, not slide up in front of it"):
      * the item / spell wheel is drawn by HomeRadialView into THIS layer, which lies over the bars but UNDER every column (the chat, the
@@ -658,20 +874,100 @@ class HomeView(
     }
     /**
      * fix/menus-fit: THE LB PICTURE's place on the page as laid (LbFit): under the band as it is now, on the line between the columns,
-     * scaled to fit above a bar that stays (Both), and how far each side moves to clear it. Home's own coordinates.
+     * and how far each side moves to clear it. Home's own coordinates. feat/radial-castbar: a column's bar goes with its column; Across's
+     * (no column's) stays when the picture fits above it at its full size (1.0.31: "If its set to both it can stay in place"), else it
+     * slides down out of the way (pauseSlide) and the picture takes the page down to its foot (it was scaled to fit above that bar)
      */
     fun lbPlace(): LbFit.Place {
+        val (place, drop) = lbFit()
+        if (pauseT > 0f && pauseSide > 0f) lbBars(drop)
+        return place
+    }
+    /** the sides' offsets (eased) the LB picture's last pauseSlide frame gave the left and the right column */
+    private var lbPushL = 0f
+    private var lbPushR = 0f
+    /**
+     * feat/radial-castbar: the page laid again under the open LB picture (a fight beginning or ending while LB is held: the band grows,
+     * the bar shows or hides). The picture asks for its place again as it draws ([lbPlace]); pauseSlide is not called while it is still,
+     * so the bars follow the same answer here: Across's dropped for a full-size picture ([drop]), back up for one that fits above it
+     * (only once the page has landed: on its way it only ever goes down, never up into sight), and a column's bar with its side (one
+     * that came back from below the page after the fight)
+     */
+    private fun lbBars(drop: Boolean) {
+        val e = (pauseT / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
+        val ee = 1f - (1f - e) * (1f - e)
+        val w = width.toFloat()
+        var down = drop
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val v = views[p] ?: continue
+            val r = now[p] ?: continue
+            val below = r.top + v.translationY >= frameH - 0.5f
+            val y = if (drop) slideDrop(p, r) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
+            val half = halfOf(p, r, w)
+            val x = if (half == HomeSlide.Half.NONE) v.translationX else HomeSlide.dx(half, lbPushL, lbPushR)
+            if (v.translationX != x || v.translationY != y) { v.animate().cancel(); v.translationX = x; v.translationY = y }
+        }
+        // fix/party-drop-wheels: the foot list that goes down with the bar for this picture ([pauseParty]) the same way
+        if (pauseParty) now[Part.PARTY]?.let { r ->
+            val v = partyView
+            val below = r.top + v.translationY >= frameH - 0.5f
+            val y = if (drop) (frameH - r.top).coerceAtLeast(0f) * ee else if (!settled && below) v.translationY.also { if (it > 0f) down = true } else 0f
+            if (v.translationX != 0f || v.translationY != y) { v.animate().cancel(); v.translationX = 0f; v.translationY = y }
+        }
+        lbDrop = down
+        barAwaySync()
+    }
+    /** [lbPlace] and whether Across's bar drops for it */
+    private fun lbFit(): Pair<LbFit.Place, Boolean> {
         val w = width.toFloat(); val g = UiKit.MODULE_GAP
         val line = columnsLine(w)
-        var bottom = frameH - g
-        for (p in listOf(Part.STRIP, Part.CAST2)) {
-            val r = now[p] ?: continue
-            // slid away: below the page, or (a top bar) up behind the band - no limit
-            if (views[p]?.visibility != View.VISIBLE || r.top >= frameH || r.bottom <= barsBottom() + 0.5f) continue
-            if (halfOf(p, r, w) == HomeSlide.Half.NONE) bottom = minOf(bottom, r.top - g)
+        fun at(bottom: Float) = LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+        val full = at(frameH - g)
+        // fix/party-drop-wheels (the user's pick "List drops with the bar"; "Stay when it fits" kept): Party mode's foot list right over
+        // Across's bar ([pauseParty]) no longer leaves sideways for the picture - it stays with the bar when the picture fits over both at
+        // its full size, else it goes straight down below the page with the bar (lbBars / pauseSlide), and the picture takes the page
+        // down to its foot, its size with the bar Off (where the list leaves sideways)
+        val list = if (if (pauseT > 0f) pauseParty else partyDrop(now, below = true) > 0f) now[Part.PARTY] else null
+        if (list != null) {
+            val kept = at(minOf(HomeSlide.stayFoot(acrossBox(now)?.top, frameH, g), list.top - g))
+            val drop = HomeSlide.makesRoom(list.top, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H,
+                LbFit.bars(kept).values.maxOf { it.b }, g)
+            return (if (drop) full else kept) to drop
         }
-        return LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+        // fix/party-drop-wheels (the user's pick "Bar Off: stay when it fits"): a foot list with no bar under it that drops stays where it
+        // is when the picture fits over it at its full size (chosen at the open, [lbStay]: a fight growing the list under the held picture
+        // then shrinks the picture over it, as the held wheels); otherwise it leaves sideways and the picture takes the page's foot
+        // (held through a fight's end - Hide in combat's bar back on the page under the list: the list stays, the picture over both)
+        if (pauseT > 0f && lbStay) lbList()?.let { list ->
+            return at(minOf(HomeSlide.stayFoot(acrossBox(now)?.top, frameH, g), list.top - g)) to false
+        }
+        if (pauseT <= 0f && lbStayNow()) lbFoot()?.let { foot -> return at(foot.top - g) to false }
+        val across = acrossBox(now) ?: return full to false
+        val kept = at(HomeSlide.stayFoot(across.top, frameH, g))
+        val drop = HomeSlide.makesRoom(across.top, kept.k * LbPartyView.PICT_H, full.k * LbPartyView.PICT_H,
+            LbFit.bars(kept).values.maxOf { it.b }, g)
+        return (if (drop) full else kept) to drop
     }
+
+    /** fix/party-drop-wheels: Party mode's full-width list shown at the page's foot with no bar under it that drops for a radial (the bar
+     *  Off, a bar above a column, one slid below the page for a fight) - the one the LB picture may leave in place ([lbStay]); else null */
+    private fun lbFoot(): RectF? = if (acrossBox(now) != null) null else lbList()
+    /** Party mode's full-width list shown at the page's foot (a bar under it or not) */
+    private fun lbList(): RectF? {
+        if (!laidPartyWide || views[Part.PARTY]?.visibility != View.VISIBLE) return null
+        return now[Part.PARTY]?.takeIf { it.centerY() >= frameH / 2f && it.top < frameH }
+    }
+    /** fix/party-drop-wheels: the LB picture fits over [lbFoot]'s list at its full size now (HomeSlide.lbListStays) */
+    private fun lbStayNow(): Boolean {
+        val foot = lbFoot() ?: return false
+        val w = width.toFloat(); val g = UiKit.MODULE_GAP
+        val line = columnsLine(w)
+        fun at(bottom: Float) = LbFit.place(w, barsBottom(), line.first, line.second, bottom, classicLook(), UiKit.pauseBarsBottom)
+        val kept = at(foot.top - g)
+        return HomeSlide.lbListStays(foot.top, kept.k, at(frameH - g).k, LbFit.bars(kept).values.maxOf { it.b }, g)
+    }
+    /** fix/party-drop-wheels: this LB picture leaves [lbFoot]'s list where it is (chosen at its open: [pauseSlide]) */
+    private var lbStay = false
 
     /** p-grow-glitch: when the big controller last grew (wall clock, onB's), for B's grace */
     private var grewAt = 0L
@@ -705,17 +1001,22 @@ class HomeView(
         if (auraPane.open != null) { if (!auraPane.padHeld) { auraPane.close(); onBHome?.invoke() }; return }
         if (flow.takeover) {
             val now = System.currentTimeMillis()
+            // THE B RULE (the user, 2026-11-23: "our combat ruls where we press B and it grows back downwards"): In fights = Top screen
+            // follows Grow's rules - B brings the band back down in a fight too (TopCombatBar.bShrinks), the add-on's secure B hands the
+            // Wings back at the same press
+            val top = TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct)
             // p-grow-glitch (a player: "they expand then return to normal after the first second"): B in a fight shrinks the big
             // controller (the user's own design), but B is a fight button too. Not in the first GROW_B_GRACE_MS after it grew (the
-            // pull's opening presses), and never with ZL / ZR held (that B is a layer's ability)
-            if (now - grewAt < GROW_B_GRACE_MS || (lent(castView) && castView.triggerHeld())) return
-            // movable Home phase 3 (SPEC section 11): In fights = Top screen grew nothing - B in the fight has no new meaning (no shrink,
-            // no red reminder); out of a fight (an attack armed) it still gives the faces back, as today
+            // pull's opening presses) - Grow only: the add-on's give-back has no grace, so Top screen follows it at once (its padmap
+            // edge would bring the band down anyway) - and never with ZL / ZR held (that B is a layer's ability)
+            if ((!top && now - grewAt < GROW_B_GRACE_MS) || (lent(castView) && castView.triggerHeld())) return
             if (!TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)) return
             val shrank = grow.minimize(now)
             // the user's pick: out of a fight, B also gives A / X / Y back (Spells' give-back); in a fight B only shrinks
             if (HomeFightFace.giveBack(shrank, grow.fighting(now), fightArmed())) giveBackTap(retry = false)
-            if (shrank && flow.combat(false)) { changed(); tick() }
+            // the way down's hold: not behind the add-on (TopSlide.B_HOLD_MS) - marked only for the apply THIS B makes (the review, 11-23:
+            // marked on a shrink that changed no layout it stayed set and gave a later, padmap-started way down the B hold)
+            if (shrank && flow.combat(false)) { slideByB = top; changed(); tick() }
         }
         else if (flow.close()) { changed(); onBHome?.invoke() }
     }
@@ -777,26 +1078,86 @@ class HomeView(
     /** every padmap (MainActivity's route): Cast's fight faces and their switch (the host's, never a constant), and the map kept */
     fun onPadMap(map: PadMapModel.Map) {
         val ctWas = padMap?.dpad?.ct
+        val ccWas = padMap?.dpad?.cc
         padMap = map
-        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it
-        if (map.dpad?.ct != ctWas && laidLayout != null && laidLayout != layoutNow() && shown?.let { it.full == null || it.takeover } == true)
+        // the 1515 merge's review: the Wings' flag changed (the add-on said it, or a key came / went) - Top screen's band follows it;
+        // the cast bar's screen (`cc`) the same way
+        if ((map.dpad?.ct != ctWas || map.dpad?.cc != ccWas) && laidLayout != null && laidLayout != layoutNow()
+            && shown?.let { it.full == null || it.takeover } == true)
             shown?.let { apply(it, animate = isShown) }
         HomeAttackSwitch.note(map)                      // Spells' start-attack switch, drawn in Home's Settings section
         castView.fightFace = HomeFightFace.icons(map)
         castView.fightFaceOn = HomeFightFace.on(map)
         castView.fishName = map.fish?.name; castView.fishIcon = map.fish?.icon ?: 0        // m59: X fishes while a pole is in the main hand
         castView.smartYIcon = map.qitem?.icon?.takeIf { it > 0 } ?: map.smartY?.icon ?: 0     // m61: Smart Y's food / drink; m74: a quest item first
+        val fightWas = fightNow
         fightNow = map.fight                                            // m49: A / X / Y's switch (start attack / auto-repeat / combat)
         applyDpad()                                                      // Track C: the D-pad's In-combat spells, in fights only
+        topFightSync(fightWas, map.fight, map.combat)                    // the 11-23 B rule: the band follows the add-on's give-back / re-arm
         castView.commands = HomeFightFace.commandIcons(map)             // Track C: the companion's commands (overlays: the game's slot is empty)
+        castView.overMacro = PadMapModel.overMacroKeys(map)            // PadMap m188: our overlay over the player's own macro (a corner mark)
+        holdApply()                                                     // m190: the hold spells' badges (the state's tab)
     }
+
+    /** m190 PER TAB (the user on test 1528: "It should be seperate"): the badges are the holds that would fire NOW - In combat's while
+     *  the fight switch takes the press (the padmap's `fight`, Combat controls on), else Out of combat's; none while Party mode is on
+     *  (the 1530 audit: Party mode has no holds - PadMap's OV.hold.mapNow says "party" - so a badge there would promise nothing) */
+    private fun holdApply() {
+        val map = padMap ?: return
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }
+    }
+
+    /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */
+    fun onHoldCd(cds: Map<Int, PadMapModel.FaceCd>) = castView.holdCooldowns(cds, android.os.SystemClock.elapsedRealtime())
 
     /** the fight as the latest word says it: the padmap's `combat`, or a newer CURRENT `facewatch`'s `fight` (Tracking after test18:
      *  "have the app also honour the fight flag from faceswap/facewatch"; faceswap carries none) */
     private var fightNow = false
     private var dpadSaid: Map<Int, Int>? = null
 
-    fun onFightWord(fight: Boolean) { if (fight != fightNow) { fightNow = fight; applyDpad() } }
+    fun onFightWord(fight: Boolean) {
+        if (fight == fightNow) return
+        val was = fightNow
+        fightNow = fight; applyDpad(); holdApply()
+        topFightSync(was, fight, null)                                   // (facewatch carries no combat word: its re-arm edge only)
+    }
+
+    /**
+     * THE TWO SIDES IN STEP (the user's 11-23 B rule, Top screen live only): the router's switch - the padmap's `fight`, the Wings' own
+     * word (ActionBar nbar14 reads PadMap m188's fightSw) - turned against what Home shows:
+     *  - 1 -> 0 while Home's grow is up in a fight (the padmap says `combat` still): the game handed the buttons back without an app B
+     *    (a B the app read inside an overlay of its own, or one the app missed) - the Wings are leaving, so the band comes down too
+     *    ([HomeGrow.minimize], Grow's red reminder); never at the fight's own end (`combat` false then: both drop together as ever);
+     *  - 0 -> 1 while the grow is minimized in the fight ([HomeGrow.red]): the router re-armed on a harmful press that started no
+     *    auto-attack (a caster's next spell) - the Wings come back up, so the band goes away again ([HomeGrow.rearm]).
+     * Nothing is sent: the app follows the add-on, never the reverse. Party mode has no takeover (R0): nothing here
+     */
+    private fun topFightSync(was: Boolean, isNow: Boolean, combat: Boolean?) {
+        // nbar17 (the user, 11-23, testing 1523: "the top slides out faster than the bottom slides up"): the router's switch is the
+        // Wings' own start - with Top screen live it starts the band too (HomeGrow.noteArmed), so a caster's opener (no auto-attack, no
+        // combat word until the cast lands) slides the band away WITH the Wings instead of 1.5-3 s after them
+        val live = TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct) && !partyOnHere() && !editLive()
+        if (grow.noteArmed(live && isNow)) {
+            val t = System.currentTimeMillis()
+            if (live && isNow) Log.i("WCLOG", "home: top fight armed by the game (padmap fight 1): the band slides away with the Wings")
+            if (flow.combat(takeoverWanted(t))) { if (flow.takeover) grewAt = t; changed() }
+        }
+        if (was == isNow || !TopCombatBar.live(HomeSettings.layout, padMap?.dpad?.ct) || partyOnHere() || editLive()) return
+        val t = System.currentTimeMillis()
+        if (!grow.fighting(t)) return
+        if (was && !isNow) {
+            if (combat != true || !flow.takeover) return
+            if (grow.minimize(t)) {
+                Log.i("WCLOG", "home: top fight given back by the game (padmap fight 0): the band slides down")
+                if (flow.combat(false)) { changed(); tick() }
+            }
+        } else if (!was && isNow && grow.red(t)) {
+            if (grow.rearm()) {
+                Log.i("WCLOG", "home: top fight re-armed by the game (padmap fight 1): the band slides away")
+                if (flow.combat(takeoverWanted(t))) { grewAt = t; changed() }
+            }
+        }
+    }
     /** wk-dpad: the fight switch the D-pad's In-combat picture follows (the router's own `sw`): the host's early-bar gate reads it */
     fun dpadFight(): Boolean = fightNow
 
@@ -1285,12 +1646,40 @@ class HomeView(
     private val infoRecheck = Runnable { infoCheck() }
     private fun infoCheck(instant: Boolean = false) {
         val now = android.os.SystemClock.elapsedRealtime()
+        // fix/badges-cast: a cast's bar, its finish and its interrupt end with no event: look again at that very moment (CastView.
+        // castHoldLeft), from here - the old look-again was armed only from Home's own draw, which the cast bar's frames never run
+        val castLeft = castView.castHoldLeft(now)
+        removeCallbacks(infoRecheck)
+        if (castLeft > 0L) postDelayed(infoRecheck, castLeft.coerceAtMost(INFO_LOOK_MAX_MS))
         val grown = !castView.infoShrink(now)
+        infoLift(now, castLeft > 0L, grown, instant)
         if (instant) { infoGrown = grown; infoFrom = if (grown) 1f else 0f; infoAt = now; invalidate(); return }
         if (grown == infoGrown) return
         infoFrom = infoLinear(now); infoGrown = grown; infoAt = now
         invalidate()
     }
+
+    /**
+     * fix/badges-cast: how far the block's SMALL end is a cast's (1 = the extras row lifted clear of the cast's name: ClockBand.lift;
+     * 0 = today's small row, as LB + RB hold it), linear over the shrink's time. A cast: toward the lifted row - at once from a settled
+     * grown block (its shrink goes straight there); no cast with the block held small (LB + RB, ZL + ZR): back to today's small row; no
+     * cast and the block growing back: held where it is (the grow starts from where the row stands - no jump), and 0 again once grown.
+     */
+    private var liftFrom = 0f
+    private var liftTo = 0f
+    private var liftAt = 0L
+    private fun liftK(now: Long): Float {
+        val k = ((now - liftAt) / ClockBand.GROW_MS_OUT).coerceIn(0f, 1f)
+        return if (k >= 1f) liftTo else liftFrom + (liftTo - liftFrom) * k      // exactly its end once there (no frame asked for ever)
+    }
+    private fun infoLift(now: Long, cast: Boolean, grown: Boolean, instant: Boolean) {
+        val at = liftK(now)
+        val to = when { cast -> 1f; !grown -> 0f; else -> at }
+        if (instant || (cast && infoGrown && infoLinear(now) >= 1f)) { liftFrom = to; liftTo = to; liftAt = now; return }
+        if (to != liftTo) { liftFrom = at; liftTo = to; liftAt = now; invalidate() }
+    }
+    /** the cast name's lane in Home's px (CastView.restNameLane), set in place each draw */
+    private val nameLane = RectF()
 
     /**
      * THE EXTRAS ROW's items (feat/clock-extras-v2; the user's picks 2026-11-13, each by its own Bottom > Home row), in ClockBand's
@@ -1300,12 +1689,25 @@ class HomeView(
      * under the battery ([chipGold]; the user, 2026-11-13: "lets ditch the Icon for the gold and just list our total gold under the battery").
      */
     private fun bandItems(): List<UiKit.BandItem> {
-        val hs = HomeSettings.clockHearth && ItemCd.hearthHave != false
-        val tp = ItemCd.teleport.takeIf { HomeSettings.clockTeleport }
-        val bags = HomeSettings.clockBags && bagCount != null
-        val am = ammo.takeIf { HomeSettings.clockAmmo }
-        return ClockBand.kinds(hs, tp != null, bags, am != null).mapNotNull { k -> bandItem(k) }      // ItemCd is written off the main thread
+        // EDIT TABS (the user's pick 2026-11-24: the clock's badges per tab): a fight tab with its own badges shows exactly those - its
+        // own list, not Settings' rows (the review: Edit Home shows a fight tab's own list whatever Settings says, so the fight must too;
+        // Settings' rows are the Out of combat tab's): HomeLayout.badgeOn
+        val mine = badgesNow()
+        fun on(k: String) = HomeLayout.badgeOn(k, mine, BottomTiles.clockOn(k))
+        val hs = on("hearth") && ItemCd.hearthHave != false
+        val tp = ItemCd.teleport.takeIf { on("teleport") }
+        val bags = on("bags") && bagCount != null
+        val am = ammo.takeIf { on("ammo") }
+        // feat/extras-polish: the pet's happiness face while a pet with happiness is out (ItemCd.petMood), in the player's order
+        val pet = on("pet") && ItemCd.petMood != null
+        val shown = setOfNotNull(ClockBand.Kind.HEARTH.takeIf { hs }, ClockBand.Kind.TELEPORT.takeIf { tp != null },
+            ClockBand.Kind.BAGS.takeIf { bags }, ClockBand.Kind.AMMO.takeIf { am != null }, ClockBand.Kind.PET.takeIf { pet })
+        return ClockBand.kinds(extrasOrder(), shown).mapNotNull { k -> bandItem(k) }
     }
+    /** EDIT TABS: the badges of the tab Home lays now (null = Settings' own, the Out of combat tab's); a Settings picture: Settings' */
+    private fun badgesNow(): List<String>? = if (renderLook != null) null else HomeSettings.layout.badges(tabNow())
+    /** feat/extras-polish: the row's order now - edit mode's draft while it runs (each change glides), else this character's record */
+    private fun extrasOrder(): List<String> = (edit?.takeIf { !it.parked }?.draft ?: HomeSettings.layout).extras
     /** one extra as the row draws it from its data now (null = no data: the row leaves it out) */
     private fun bandItem(k: ClockBand.Kind): UiKit.BandItem? = when (k) {
         ClockBand.Kind.HEARTH -> if (ItemCd.hearthHave == false) null else {
@@ -1320,6 +1722,9 @@ class HomeView(
         ClockBand.Kind.BAGS -> bagCount?.let { b ->                                              // the backpack's icon, used / total
             UiKit.BandItem.Icon(Icons.get(VendorSlots.BAG_ICON), ClockBand.outOf(b.used, b.total), out = b.full) }
         ClockBand.Kind.AMMO -> ammo?.let { am -> UiKit.BandItem.Icon(Icons.get(am.icon), ClockBand.outOf(am.count, am.of), cooling = am.empty, out = am.empty) }
+        // feat/extras-polish (the user, 2026-11-23: "we should add pet happiness to this and remove it from the top screen HUD"): the kit's
+        // face for the game's three states (Happy / Content / Unhappy), no value under it (the face says it)
+        ClockBand.Kind.PET -> ItemCd.petMood?.let { mood -> UiKit.BandItem.Icon(UiKit.petMood(mood) ?: Icons.get(BottomTiles.PET_ICON), "") }
     }
 
     /**
@@ -1328,19 +1733,27 @@ class HomeView(
      * chrome draws its "+" on); [editRowKeys] their keys in the same order. Outside edit mode the row is [bandItems]' (unchanged)
      */
     private fun editRowKeys(): List<String> = buildList {
-        for (k in HomeEditModel.EXTRA_KEYS) if (k != "gold" && BottomTiles.clockOn(k)) add(k)
-        if (HomeEditModel.EXTRA_KEYS.any { !BottomTiles.clockOn(it) }) add(EDIT_PLUS)
+        // feat/extras-polish: in the draft's order (a drag or a step glides there); the pet's face only for a character with a pet that
+        // has happiness out (never a dimmed paw on a mage's row: [editExtras]). EDIT TABS: the tab's own badges (the model's)
+        val (on, off) = edit?.let { it.extrasOn to it.extrasOff } ?: editExtras()
+        for (k in ClockBand.order(extrasOrder())) if (k in on) add(k)
+        if (off.isNotEmpty()) add(EDIT_PLUS)
+    }
+    /** the extras edit mode shows (on) and keeps in its "+" tray (off), Settings' rows; the pet's happiness in neither while no pet with
+     *  happiness is out (it hides itself: nothing to arrange) */
+    private fun editExtras(): Pair<List<String>, List<String>> {
+        val keys = HomeEditModel.EXTRA_KEYS.filter { it != "pet" || ItemCd.petMood != null }
+        return keys.filter { BottomTiles.clockOn(it) } to keys.filter { !BottomTiles.clockOn(it) }
     }
     private fun editBandItems(keys: List<String>): List<UiKit.BandItem> = keys.map { k ->
-        val kind = when (k) { "hearth" -> ClockBand.Kind.HEARTH; "teleport" -> ClockBand.Kind.TELEPORT; "bags" -> ClockBand.Kind.BAGS; "ammo" -> ClockBand.Kind.AMMO; else -> null }
-        kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else BottomTiles.CLOCK_LINES.firstOrNull { it.first == k }?.let { Icons.get(it.third) },
-            "", cooling = true)
+        val kind = ClockBand.kindOf(k)
+        kind?.let { bandItem(it) } ?: UiKit.BandItem.Icon(if (k == EDIT_PLUS) null else UiKit.clockLinePicture(k), "", cooling = true)
     }
     /** edit mode's gold line: the purse while Gold is on (0 until the bags say it: the line still shows, wiggles and hides) */
-    private fun editChipGold(): Long? = if (HomeSettings.clockGold) (goldCopper ?: 0L) else null
+    private fun editChipGold(): Long? = if (edit?.let { "gold" in it.extrasOn } ?: HomeSettings.clockGold) (goldCopper ?: 0L) else null
     /** the clock block is edit mode's now (live, not parked): its extras as apps. P4 fix round (the review): not while the fight preview
      *  shows - the block is then drawn exactly as a fight draws it (the extras with data only, no "+" cell, nothing wiggling) */
-    private fun editClock(): Boolean = edit?.let { !it.parked && !it.fightPreview } == true
+    private fun editClock(): Boolean = edit?.let { !it.parked && (!it.fightPreview || it.tab.fight) } == true
     /** the row's keys the last edit-mode clock block drew (its cells' poses: [extraPoser]) */
     private var editRowDrawn: List<String> = emptyList()
     /** P2: each extra's wiggle on its own key (the gold line -1), about its cell's centre; nothing outside edit mode */
@@ -1348,21 +1761,58 @@ class HomeView(
     private val extraPoser = object : UiKit.CellPose {
         override fun apply(c: Canvas, i: Int, cx: Float, cy: Float) {
             val k = if (i < 0) "gold" else editRowDrawn.getOrNull(i) ?: return
-            if (!extraPoseAt(k)) return
+            if (!extraPoseAtCell(k, cx, cy)) return
             val p = extraPoseBuf
             c.translate(p.dx, p.dy); c.rotate(p.rot, cx, cy); c.scale(p.scale, p.scale, cx, cy)
         }
     }
-    /** extra [k]'s pose now into [extraPoseBuf]; false = none */
-    private fun extraPoseAt(k: String): Boolean {
+    /** extra [k]'s motion key (its place in EXTRA_KEYS: never reordered; "+" its own) */
+    private fun extraKeyOf(k: String): Int =
+        if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
+    /** extra [k]'s pose now into [extraPoseBuf] (its cell's centre [cx], [cy] - NaN: the last laid cell's); false = none. feat/extras-polish:
+     *  the extra a finger carries rides it (its grab kept: the drag's centre less its cell's), the others glide to a new place */
+    private fun extraPoseAt(k: String): Boolean = extraPoseAtCell(k, Float.NaN, Float.NaN)
+    private fun extraPoseAtCell(k: String, cx: Float, cy: Float): Boolean {
         if (!motion.on || !editPaintPosed() || !editClock()) return false          // the fight preview: nothing wiggles
-        val key = if (k == EDIT_PLUS) HomeEditMotion.PLUS_EXTRA else HomeEditMotion.extraKey(HomeEditModel.EXTRA_KEYS.indexOf(k).coerceAtLeast(0))
-        motion.pose(key, motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
+        motion.pose(extraKeyOf(k), motionNow(), EXTRA_HALF_DIAG, extraPoseBuf)
+        val m = edit
+        val d = m?.drag
+        if (d != null && d.stop == EditStop.EXTRAS && m.extraLifted == k) {
+            val ccx = if (cx.isNaN()) bandCells[k]?.centerX() else cx
+            val ccy = if (cy.isNaN()) bandCells[k]?.centerY() else cy
+            if (ccx != null && ccy != null) {
+                extraDragOff[0] = d.cx - ccx; extraDragOff[1] = d.cy - ccy
+                extraPoseBuf.dx += extraDragOff[0]; extraPoseBuf.dy += extraDragOff[1]
+            }
+        }
         return !extraPoseBuf.isIdentity
+    }
+    /** the carried extra's finger offset from its cell at the last frame (its drop plops in from there) */
+    private val extraDragOff = FloatArray(2)
+    /** the row's cells' centres as last laid, by key (a new order's glide starts from them) */
+    private val extraLaidX = HashMap<String, Float>()
+    /**
+     * feat/extras-polish: after each edit input, the row's cells laid again ([editBand]); an extra whose place moved (the order changed)
+     * glides there from where it stood (HomeEditMotion.slide) - the carried one rides the finger instead
+     */
+    private fun editExtrasGlide() {
+        if (edit?.takeIf { !it.parked } == null) { extraLaidX.clear(); return }
+        val before = HashMap(extraLaidX)
+        editBand()
+        extraLaidX.clear()
+        for ((k, r) in bandCells) if (k != "gold") extraLaidX[k] = r.centerX()
+        val t = motionNow()
+        val carried = edit?.takeIf { it.drag?.stop == EditStop.EXTRAS }?.extraLifted
+        for ((k, x) in extraLaidX) {
+            val was = before[k] ?: continue
+            if (k == carried || kotlin.math.abs(was - x) < 0.5f) continue
+            motion.slide(extraKeyOf(k), was - x, t)
+        }
+        if (motion.busy(t)) editKick()
     }
 
     /** the purse under the battery (the Gold row On and the bags said), else null: no line, the chip as before */
-    private fun chipGold(): Long? = goldCopper.takeIf { HomeSettings.clockGold }
+    private fun chipGold(): Long? = goldCopper.takeIf { HomeLayout.badgeOn("gold", badgesNow(), HomeSettings.clockGold) }
 
     /** feat/clock-extras-v2: the extras row under the triggers (ZL / ZR held = fading out, let go = back), Home's own fade; the clock chip keeps its own rules */
     private var trigHeld = false
@@ -1439,6 +1889,9 @@ class HomeView(
         }
     }
 
+    /** a9: the pinned buffs (name, the castbar cell that cancels it) for the pause wheel */
+    fun auraPins(): List<Pair<String, Int>> = auras.pins.map { it.name to it.col }
+
     /** character's `auras` document (a1): the player's buffs, debuffs and weapon enchants */
     fun onAuras(msg: JSONObject, current: Boolean) {
         if (auras.update(msg, current, System.currentTimeMillis())) auraPane.invalidate()
@@ -1449,6 +1902,10 @@ class HomeView(
         when (val a = auras.ack(msg, System.currentTimeMillis())) {
             AuraAck.Cancel -> if (!GameInput.tap(context, auras.pad, "auracancel", 0)) {
                 auras.sendFailed(); auraPane.note("The game has not published its tap pad")
+            }
+            AuraAck.Pin -> {
+                val cell = auras.pinCell
+                if (cell == null || !GameInput.tap(context, auras.pad, "aurapick", cell)) { auras.sendFailed(); auraPane.note("The game has not published its tap pad") }
             }
             is AuraAck.Note -> auraPane.note(a.text)
             AuraAck.Idle -> {}
@@ -1700,8 +2157,9 @@ class HomeView(
     private fun touchOpen(m: HomeModule): Boolean {
         val now = System.currentTimeMillis()
         val fighting = flow.takeover || grow.fighting(now)
-        // In fights = Top screen in the fight: the grow stays (the Wings stay up top); closing the module brings the takeover back
-        val keepGrow = !TopCombatBar.bShrinks(HomeSettings.layout, grow.fighting(now), padMap?.dpad?.ct)
+        // In fights = Top screen: a finger keeps the grow (it never reaches the add-on's give-back: the Wings stay up top); closing the
+        // module brings the takeover back (TopCombatBar.touchKeepsGrow)
+        val keepGrow = flow.takeover && TopCombatBar.touchKeepsGrow(HomeSettings.layout, padMap?.dpad?.ct)
         if (!HomeTouch.open(flow, grow, m, now, keepGrow)) return false
         if (fighting && flow.full != null) openedInFight = true
         Log.i("WCLOG", "home: $m opened by touch${if (fighting) " (in a fight)" else ""}")
@@ -1735,8 +2193,13 @@ class HomeView(
      *  preview lays each as its fight does (the 1519 audit: the solo preview hands the solver the takeover, so the takeover's rows) */
     private fun partyModeNow(s: HomeScreen): PartyLayout.Mode = when {
         s.takeover || previewTakeover() -> PartyLayout.Mode.FIGHT_OFF
-        partyFightNow() || previewPartyFight() ->
-            if (layoutNow(s).fight == HomeLayout.FightBand.TOP) PartyLayout.Mode.FIGHT_TOP else PartyLayout.Mode.FIGHT_ON
+        // (edit tabs: the Party mode tab's own Bottom screen grows the band - the list takes the takeover's rows: the proposal's
+        // decision 4 A)
+        partyFightNow() || previewPartyFight() -> layoutNow(s).let { l -> when {
+            l.fight == HomeLayout.FightBand.TOP -> PartyLayout.Mode.FIGHT_TOP
+            l.partyBand -> PartyLayout.Mode.FIGHT_OFF
+            else -> PartyLayout.Mode.FIGHT_ON
+        } }
         else -> PartyLayout.Mode.REST
     }
     /** Party mode on in a fight (the add-on's fight word: never an attack armed before the pull - no takeover in Party mode) */
@@ -1749,7 +2212,11 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange { post { if (PARTY_MODULE != laidPartyModule) partyChanged() } }
+        GameUi.onChange(weakly(this) { v -> v.post {
+            if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged()
+            // EDIT TABS: the Party mode tab comes and goes with QOL > Party (open on it when it goes: Out of combat)
+            v.edit?.let { m -> if (m.tabs.contains(HomeTab.PARTY) != v.PARTY_MODULE) v.editRun(m.tabsAre(v.PARTY_MODULE)) }
+        } })   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -1767,13 +2234,15 @@ class HomeView(
         partyView.invalidate()
         shown?.let { partyStripSync(it) }
         castStripFight()                                                  // cb15: Party mode on / off: the bar's Party layer and its fight rule
+        holdApply()                                                       // the 1530 audit: Party mode on / off: the hold badges go / come back
         onStateChanged?.invoke()                                          // the disc's red B follows
     }
 
     /** the strip's party layout (PARTY_BUILD.md 4.3) while Party mode is on and Home's rest page shows (no takeover then) */
     private fun partyStripSync(s: HomeScreen) {
         if (!lent(castView)) return
-        castView.partyStrip = partyOnHere() && !s.takeover && s.full == null
+        // (edit tabs: in Edit Home only on the Party mode tab - the Out of combat and In combat tabs show their own looks)
+        castView.partyStrip = partyOnHere() && partyLaidOn() && !s.takeover && !previewTakeover() && s.full == null
         castView.partyFight = grow.fighting(System.currentTimeMillis())
         // the trigger plates at frame y 124 (v13), in the band's own px (the band starts at y 8 at rest)
         castView.partyPlateTop = (124f - (if (big(s)) 10f else 8f)) * (width.takeIf { it > 0 }?.let { it / 1240f } ?: 1f)
@@ -1796,7 +2265,8 @@ class HomeView(
         partyDpadWas = mask
         // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
-        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown) partyView.selectPressed()
+        // (never under a wheel: the pause wheel's Select is its power button, 2026-11-24)
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown && overlayOpen?.invoke() != true) partyView.selectPressed()
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
@@ -1818,6 +2288,7 @@ class HomeView(
      */
     private fun places(s: HomeScreen, w: Float, h: Float): Map<Part, RectF> {
         val l = layoutNow(s)
+        placedRec = l                                                        // feat/top-castbar: the record [apply]'s line rule reads
         val full = s.full != null && !s.takeover
         var partyIn: HomeLayoutSolver.Party? = null
         if (!full) {
@@ -1838,8 +2309,13 @@ class HomeView(
         // page as its fight does, the party list filling the strip (the 1519 integration)
         val r = HomeLayoutSolver.places(l, HomeLayoutSolver.State(w, h, UiKit.MODULE_GAP, full = s.full, takeover = s.takeover || previewTakeover(),
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
+            partyOn = partyLaidOn(), castHidden = !full && castHiddenNow(), partyFight = partyFightNow() || previewPartyFight()))
         placedAway = !full && r.away
+        laidPartyPen = editPartyLook()
+        if (!full) laidPartyWide = r.partyWide
+        // party sizing: the rows' height the picks laid when it is not the mode's own (a Top fight's fill: the view fills its box)
+        if (partyIn != null) partyView.sizedH = r.partyRowH.takeIf { it > 0f && partyIn.mode != PartyLayout.Mode.FIGHT_TOP &&
+            kotlin.math.abs(it - PartyLayout.plateH(partyIn.mode)) > 0.01f }
         if (full) laidSide = CastStripModel.Side.OFF
         else {
             laidLayout = l
@@ -1847,6 +2323,10 @@ class HomeView(
             laidHidden = r.castHidden && r.castSide != CastStripModel.Side.OFF
             // P2: Split = the first view on slots 1-4 under the left column, the second on 5-8 under the right (no scroll)
             laidSplit = l.cast == HomeLayout.CastDock.SPLIT
+            // fix/party-drop-wheels (the user's pick "Split bar too"): the halves right under Party mode's full-width foot list
+            val pb = r.boxes[HomePart.PARTY]
+            laidSplitUnderList = !HomeSlide.splitParts(laidSplit, r.partyWide, pb?.t, pb?.b,
+                listOfNotNull(r.boxes[HomePart.STRIP], r.boxes[HomePart.CAST2]).minOfOrNull { it.t }, h)
             laidTop = r.castTop
             castStrip.splitHalf = if (laidSplit) 1 else 0
             if (laidSplit) { castStrip.side = CastStripModel.Side.LEFT; castStrip2.side = CastStripModel.Side.RIGHT }
@@ -1859,12 +2339,21 @@ class HomeView(
         for ((p, b) in r.boxes) PART_OF[p]?.let { out[it] = RectF(b.l, b.t, b.r, b.b) }
         return out
     }
+    /** where the band's line is ([TopCombatBar.lineAt]): the fight strip carries the band's cast bar and swing timer (STRIP), the add-on's
+     *  own bar above the HUD has them on the top screen (TOP: nothing of the line on this screen, the rooms' bar quiet too), or the band
+     *  draws them itself (BAND) */
+    private fun fightLine(at: TopCombatBar.Line) {
+        if (lent(castView)) castView.lineAway = at != TopCombatBar.Line.BAND
+        fightStrip.on = at == TopCombatBar.Line.STRIP && lent(castView)
+    }
     /** the layout record the page was last laid with (a change of it glides the page there) */
     private var laidLayout: HomeLayout? = null
     /** In fights = Top screen: the page [apply] laid last has the band above the page (the fight's takeover with the Wings on: TopSlide);
      *  [placedAway] the last [places]' answer (chatPaneBox asks places too: only apply moves [laidAway]) */
     private var laidAway = false
     private var placedAway = false
+    /** feat/top-castbar: the record the last [places] laid (TopCombatBar.lineAt: where the band's cast line is) */
+    private var placedRec: HomeLayout? = null
     /** the overall fraction (0..1) a Top-screen slide had reached when the next apply cancelled it, and its way; -1 = none */
     private var slideCutAt = -1f
     private var slideCutUp = false
@@ -1880,6 +2369,12 @@ class HomeView(
     private var holdUp = false
     /** the wall-clock start of the last up-slide (TopSlide.reversalHoldMs: how far in the Wings had got when the fight's end cut it); -1 = none */
     private var upSlideAt = -1L
+    /** the 11-23 B rule: the next [apply]'s way down was started by B on Home (TopSlide.holdMs byB: not behind the add-on); one apply.
+     *  [holdByB] the held slide's own, [slideCutByB] a cut one's (its rest keeps the B hold's bound) */
+    private var slideByB = false
+    private var holdByB = false
+    private var slideCutByB = false
+
     /** a held slide this apply cuts inside its hold: never started (a cancel would tell its listeners nothing), it is ended as a
      *  running one is - its cancel and end run (the motion's clean-up), then the hold it had left is noted for the next motion */
     private fun holdCut() {
@@ -1889,9 +2384,13 @@ class HomeView(
         a?.listeners?.toList()?.forEach { it.onAnimationCancel(a); it.onAnimationEnd(a) }
         slideCutAt = holdFrom; slideCutUp = holdUp
         slideCutHold = (holdUntil - SystemClock.uptimeMillis()).coerceAtLeast(1L)
+        slideCutByB = holdByB                                              // (a B hold's rest keeps the B hold's bound)
     }
     /** P2: the last [places] laid the tap-to-cast bar split in two halves */
     private var laidSplit = false
+    /** fix/party-drop-wheels: ... with Party mode's full-width list at the foot right over them: the halves are no column's
+     *  ([HomeSlide.splitParts]) - one bar that goes down with the list for every wheel, as Across's */
+    private var laidSplitUnderList = false
     /** the last [places] laid the bar at the top of its column (Above chat / Above map): hidden, it slides up behind the band */
     private var laidTop = false
     /** the party list's column on the right (the party menus mirror with it: the chat's for Classic's dock) */
@@ -1906,14 +2405,19 @@ class HomeView(
      */
     private fun layoutNow(s: HomeScreen? = shown): HomeLayout {
         val look = renderLook
-        // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there
-        var l = HomeLayoutRules.shown(look?.layout ?: editDraft() ?: HomeSettings.layout)
+        // P2: while edit mode runs (not parked by a fight), Home is laid with its draft: every change glides there. EDIT TABS (the user,
+        // 2026-11-24): the PAGE of a tab - edit mode's tab, else the situation's ([tabNow]: Party mode on = Party mode's, our takeover =
+        // In combat's, else Out of combat's; a fight tab's bar that is Off lies slid away at the Out of combat bar's dock: [tabPage])
+        val rec = look?.layout ?: editDraft()?.let { d -> edit?.tab?.let { d.forTab(it) } ?: d } ?: tabPage(s).first
+        var l = HomeLayoutRules.shown(rec)
             // P4: the room bar's fields are the bar's, not the page's (its order glides in the Strip; the XP track's place is [trackInset])
             .copy(rooms = RoomBar.DEFAULT, xpBar = true, hidden = emptyList())
         if (s != null) l = l.copy(rest = s.rest)
         // the 1515 merge's review (P5): Top screen only while the add-on's Wings are on (`ct` 1); no key / not confirmed = Grow. The
         // Fight preview (the 1519 audit) lays what the first fight after Done lays: Top screen whenever the add-on has the flag
-        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, padMap?.dpad?.ct) else TopCombatBar.honoured(l, padMap?.dpad?.ct)
+        val d = padMap?.dpad
+        if (look == null) l = if (editFightLook()) TopCombatBar.previewed(l, d?.ct, d?.cc)
+            else TopCombatBar.honoured(l, d?.ct, d?.cc)
         if (look != null) {
             l = l.copy(fight = if (look.grow) HomeLayout.FightBand.GROW
                 else (if (l.fight == HomeLayout.FightBand.GROW) HomeLayout.FightBand.SAME else l.fight))
@@ -1922,6 +2426,18 @@ class HomeView(
         }
         return l
     }
+
+    /** EDIT TABS: the tab whose layout Home lays now outside edit mode (HomeTab.active: Party mode on, our takeover, else Out of combat) */
+    private fun tabNow(s: HomeScreen? = shown): HomeTab = HomeTab.active(partyOnHere(), (s ?: flow.screen).takeover)
+    /** the record's page for [tabNow] and whether its bar lies slid away (HomeTab.page) */
+    private fun tabPage(s: HomeScreen? = shown): Pair<HomeLayout, Boolean> = HomeTab.page(HomeSettings.layout, tabNow(s))
+    /** the fight tab the NEXT fight lays (the add-on's Top screen / Cast bar flags follow it, CompanionHost.topCheck): Party mode's while
+     *  Party mode is on, else In combat's */
+    fun fightTab(): HomeTab = if (partyOnHere()) HomeTab.PARTY else HomeTab.COMBAT
+    /** EDIT TABS (the user's pick "Follow the layout on screen"): the DS toolbar's D-pad sides now - the page Home lays out of a fight
+     *  (HomeTab.dpad: Party mode's while Party mode is on, else Out of combat's); sent to the add-on out of fights only (CompanionHost) */
+    fun dpadTab(): HomeTab = HomeTab.dpad(partyOnHere())
+    fun mirrorWant(): Int = HomeTab.mirrorBit(HomeSettings.layout, partyOnHere())
 
     /** the tap-to-cast bar's place laid by the last [places] (a change of the choice lays the page again) */
     private var laidSide = CastStripModel.Side.OFF
@@ -1960,7 +2476,7 @@ class HomeView(
     }
 
     /** the bar's touch gate for Home's fight now (no re-lay: [apply] calls this before it lays the page) */
-    private fun castStripGate() { for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep()) }
+    private fun castStripGate() { val h = castHiddenNow(); for (st in strips) st.fight(castCombatNow(), fightShown(), castPartyKeep(), h) }
     /** cb15 (Option C, Bar in Party mode): Party mode on and its bar setting on: the bar stays in fights and its Party layer shows */
     private fun castPartyKeep(): Boolean = renderLook?.castSide == null && party.party?.onLive == true && HomeSettings.castBarPartyShow
 
@@ -1972,13 +2488,20 @@ class HomeView(
     private fun castCombatNow(): CastStripModel.Combat = if (renderLook?.castSide != null) CastStripModel.Combat.HIDE
         else TopCombatBar.stripCombat(layoutNow(), HomeSettings.castBarCombat)
 
-    /** cb7: the bar is slid away now (Hide in combat and Home shows a fight) */
-    private fun castHiddenNow(): Boolean = CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+    /** cb7: the bar is slid away now. EDIT TABS (2026-11-24): the tab Home lays has its bar Off while the Out of combat tab has one (the
+     *  In combat tab in our takeover, the Party mode tab whenever Party mode is on - "Show in combat" / "Bar in Party mode" ARE those
+     *  tabs' places now); never in edit mode (Off there is no place: "+" brings it back); a Settings picture keeps its own rule */
+    private fun castHiddenNow(): Boolean = when {
+        renderLook?.castSide != null -> CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+        renderLook != null -> CastStripModel.hiddenIn(castCombatNow(), fightShown(), castPartyKeep(), true)
+        editDraft() != null -> false
+        else -> tabPage().second
+    }
 
     /** the layout record changed in more than the bar since the page was laid */
     private fun layoutMoved(): Boolean {
         val was = laidLayout ?: return false
-        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, castSize = HomeLayout.SlotSize.L, name = "")
+        fun core(l: HomeLayout) = l.copy(cast = HomeLayout.CastDock.OFF, grow = false, name = "")
         return core(was) != core(layoutNow())
     }
 
@@ -2055,6 +2578,8 @@ class HomeView(
             castView.swingOn = renderLook?.swing ?: HomeSettings.swingTimer
             // P4: the preview's stand-in swing (no swing of the game's running); always false outside edit mode
             castView.swingPreview = editFightLook()
+            // Edit Home (the user, 2026-11-23): the L / R shoulder plates and the ZL / ZR chips out while edit mode's chrome is in
+            editPlatesSync()
             // LATER item 16 (the user: "under the controller area ... the trigger modifiers ... light them up like in the cast menu when
             // they get pressed but dimmed when they arent"): Cast's trigger strip under the diamonds (cast 197ec48, DIAMONDS only)
             castView.triggerStrip = true
@@ -2078,7 +2603,7 @@ class HomeView(
         // everywhere else B comes through the Cast view's reader
         watchB((s.full == HomeModule.CHAT || s.full == HomeModule.MAP) && !s.takeover && lent(mapView))
         val w = width.toFloat(); val h = frameH
-        slideCutAt = -1f; slideCutHold = 0L
+        slideCutAt = -1f; slideCutHold = 0L; slideCutByB = false
         holdCut()
         anim?.cancel()
         // a slide THIS cancel just cut short (its overall fraction and way; -1 = none; the hold it had left)
@@ -2086,8 +2611,14 @@ class HomeView(
         if (w <= 0f || h <= 0f) { chatReturn(); requestLayout(); return }       // placed at the first layout
         val wasAway = laidAway
         val to = places(s, w, h)
+        val laidRec = placedRec ?: layoutNow(s)
         laidAway = placedAway
         val away = laidAway
+        // the fight strip (HomeLayoutSolver.hasFightStrip): this record has one; it carries the band's line while the page is away and
+        // all through a slide (up from the band's foot into its place, back down with it), the band's own line left out meanwhile
+        val stripRec = to.containsKey(Part.FIGHT_CAST)
+        // Party mode's Top fight has no takeover (R0) but is a fight all the same: the strip shows its swing too, as the Wings did
+        if (lent(castView) && away && stripRec) castView.castOnly = false
         // IN FIGHTS = TOP SCREEN (TopSlide): the band leaving the page for the fight / coming back after it. Only the takeover's own change
         // (no full module before or now): a module opened from a Top fight / closed back into one keeps the module's time and curve, the
         // map's morph in step with its box (the 11-22 review)
@@ -2104,7 +2635,8 @@ class HomeView(
         // as long as the Wings, reversed from as far in as they had got, need (its wall-clock age; an early cut: at once)
         val clock = SystemClock.uptimeMillis()
         val upMs = if (cutUp && cutAt >= 0f && upSlideAt >= 0L) clock - upSlideAt else -1L
-        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs) else 0L
+        val byB = slideByB || (cutHold > 0L && slideCutByB); slideByB = false; slideCutByB = false
+        val hold = if (sliding) TopSlide.holdMs(slide, away, TopSlide.bandOff(now[Part.BARS]?.bottom), cutUp, cutHold, resumeAt, upMs, byB) else 0L
         if (slide) upSlideAt = if (away) clock else -1L
         // the down-slide's start (or the band on the page); held, the band stays away above the page - its cast bar given to the rooms'
         // bar - until the hold ends (below), so the player's cast never leaves the bottom screen
@@ -2114,10 +2646,19 @@ class HomeView(
             if (v.visibility != View.VISIBLE && !classOpen && pauseT == 0f) { v.animate().cancel(); v.translationX = 0f; v.translationZ = restZ(p) }
             v.visibility = View.VISIBLE; v.alpha = 1f
         }
+        // the 1523 audit: the fight strip's line first - the refits below fit under it (barsFoot reads fightStrip.on: set after them, a
+        // middle wheel held into a Top-screen fight was refitted as if there were no strip, its square from the page's top gap)
+        // feat/top-castbar: Cast bar = Top screen leaves the bottom screen from the up-slide's first frame (the add-on's bar has it at once)
+        fightLine(TopCombatBar.lineAt(laidRec, away, sliding))
         // fix/radials-clip-castbar: an open middle wheel follows the page laid again (a fight's start / end), never over the bar
         if (s.full == null || s.takeover) wheelRefit(to)
+        if (s.full == null || s.takeover) classRefit(to)
+        if (s.full == null || s.takeover) pauseRefit(to)
+
         if (!animate || before == null) {
+            partyRideEnd()                                                     // (fix/party-drop-wheels: laid at once, the list's drop too)
             if (lent(castView)) castView.away = away                           // laid at once (no motion): away now
+            fightLine(TopCombatBar.lineAt(laidRec, away, false))
             overlayFrom = overlayOf(s); overlayTo = overlayFrom; overlayOut = 1f; overlayIn = 1f
             flightClip(false)
             chatReturn()
@@ -2203,10 +2744,14 @@ class HomeView(
         val springs = !morphing && !combat && !sliding && !gliding && editGlides() && motion.on && motion.scale > 0f
         if (!springs) partVel.clear()
         val v0 = if (springs) from.keys.associateWith { p -> partVel[p]?.copyOf() ?: FloatArray(4) } else emptyMap()
+        // nbar17: a Top-screen slide runs on the wall clock as the add-on's Wings do (they never follow the system's animator duration
+        // scale): its duration divided by that scale (0 = "Animations off": still one frame), the scale logged once per slide
+        val animScale = if (sliding) systemAnimScale() else 1f
+        if (sliding) Log.i("WCLOG", "home: top slide ${if (away) "up" else "down"} ${ms} ms, animator scale $animScale")
         val dur = if (springs) HomeEditMotion.glideMs(ms) else ms          // (a hold waits before start(), on the wall clock: below)
         var cancelled = false
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = dur
+            duration = if (sliding) TopSlide.wallClockMs(dur, animScale) else dur    // (its fraction still over [dur]: the slide's own time)
             // the slide: linear time, every part on the way's curve (TopSlide.partK: ease-in up / ease-out down; the columns ride the band's foot)
             interpolator = if (springs || sliding) android.view.animation.LinearInterpolator() else Motion.curve()
             addUpdateListener { a ->
@@ -2240,6 +2785,8 @@ class HomeView(
                 if (overlayFrom != overlayTo) invalidate()
                 // only parts whose box moved are measured / placed (fix/controller placeFrame); a fade alone touches no layout (fix/rooms)
                 if (moving) placeFrame()
+                // fix/party-drop-wheels: a dropped party list laid again under a held wheel rides the list box's own fraction
+                partyRideFrame(if (sliding) TopSlide.resumeK(a.animatedFraction, slideFrom, away, band = false) else if (springs) a.animatedFraction else k)
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationCancel(a: Animator) {
@@ -2253,11 +2800,14 @@ class HomeView(
                 override fun onAnimationEnd(a: Animator) {
                     // a spring glide cut short keeps its parts' speeds for the next one; landed, they are still
                     if (!cancelled) partVel.clear()
+                    // (fix/party-drop-wheels: landed - the list's drop where it lands; cut short - the next apply's refit rides on from here)
+                    if (!cancelled) partyRideEnd() else partyRiding = false
                     if (sliding) partyView.stretch = false                 // (landed or cut: the next motion sets it again)
                     // the motion landed with the band laid above the page: it draws nothing more (CastView.away). Any motion that lands
                     // there, not only a whole up-slide (the 11-22 review: a re-lay inside the slide's 240 ms cancelled it, and the glide
                     // that took over never set it - the band sat off the page with its cast bar claimed, the bottom screen had none)
                     if (!cancelled && lent(castView)) castView.away = away
+                    if (!cancelled) fightLine(TopCombatBar.lineAt(laidRec, away, false))   // landed back on the page = the band's line again
                     // fires on cancel too: the morph always ends (Map's safety net would after 700 ms anyway)
                     if (morphing) { mapView.morph(1f, mFrom!!, mTo!!, isMap, card); flightClip(false) }
                     if (gliding) { chatGlideBox.setEmpty(); chatSlot.clipToOutline = false; chatSlot.invalidateOutline() }
@@ -2279,7 +2829,7 @@ class HomeView(
                 // animator duration scale): every part stands where it is until the slide starts
                 val va = this
                 val r = object : Runnable { override fun run() { if (holdRun === this) { holdRun = null; va.start() } } }
-                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away
+                holdRun = r; holdUntil = clock + hold; holdFrom = slideFrom; holdUp = away; holdByB = byB
                 holdHandler.postDelayed(r, hold)
             } else start()
         }
@@ -2337,7 +2887,8 @@ class HomeView(
     private val RIDER_HOST: Map<Part, Part> = mapOf(Part.QUESTS to Part.MAP, Part.AURAS to Part.MAP)
 
     /** r-combat-anim-off: the fight's BIGGER band ("Combat layout: Grow", the default); "Same size" keeps the rest's place and size */
-    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || editFightLook(), partyOn = partyOnHere()))
+    private fun big(s: HomeScreen) = HomeLayoutSolver.big(layoutNow(s), HomeLayoutSolver.State(takeover = s.takeover || previewTakeover(),
+        partyOn = partyLaidOn(), partyFight = partyFightNow() || previewPartyFight(), full = s.full))
 
     /**
      * P4 (the user's ruling 2026-11-22): edit mode's fight PREVIEW is on (the ribbon's Fight toggle; live, not parked): the band, its
@@ -2347,8 +2898,18 @@ class HomeView(
     private fun editFightLook(): Boolean = edit?.let { !it.parked && it.fightPreview } == true
     /** the preview's fight as the page lays it: the takeover with Party mode off; with it on the Party-mode fight (no takeover: R0 -
      *  Top screen's band away and the party list filling the strip, the user's ruling C) */
-    private fun previewTakeover(): Boolean = editFightLook() && !partyOnHere()
-    private fun previewPartyFight(): Boolean = editFightLook() && partyOnHere()
+    private fun previewTakeover(): Boolean = editFightLook() && !partyLaidOn()
+    private fun previewPartyFight(): Boolean = editFightLook() && partyLaidOn()
+    /** PARTY SIZING'S PREVIEW (the user's pick 2026-11-23: "the party list's pencil bubble in Edit Home with a fight preview"): the party
+     *  list's pencil bubble is open in edit mode (live) - the page lays the list as Party mode lays it (full width, the picks' rows) so
+     *  the player sees what the picks do, with Party mode off too; display only (the add-on, the Select tab's look and the taps hear
+     *  nothing of it) */
+    private fun editPartyLook(): Boolean = edit?.let { !it.parked && it.tab == HomeTab.PARTY } == true
+    /** Party mode as the page is laid: live, or [editPartyLook]'s preview. EDIT TABS: in edit mode the TAB decides - the Party mode tab
+     *  lays Party mode's look (with Party mode off too), the Out of combat and In combat tabs lay theirs (with Party mode live too) */
+    private fun partyLaidOn(): Boolean = edit?.takeIf { !it.parked }?.let { it.tab == HomeTab.PARTY } ?: partyOnHere()
+    /** [editPartyLook] as [places] last laid it (the bubble opened or closed: the page is laid again) */
+    private var laidPartyPen = false
     /** P4 fix round: the preview's look was given to the D-pad and the band (the toggle's Fx.Preview) and not taken back yet */
     private var previewLaid = false
     /**
@@ -2521,7 +3082,9 @@ class HomeView(
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
         // map's when it sits there), under the band as it is now
-        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let { u.union(it) } } }
+        // (full width in Party mode: the column's own width, the list's height - never across the whole page)
+        val partyCol = now[if (laidPartyInMap) Part.MAP else Part.CHAT]?.let { c -> RectF(c).also { u -> now[Part.PARTY]?.let {
+            if (laidPartyWide) { u.top = minOf(u.top, it.top); u.bottom = maxOf(u.bottom, it.bottom) } else u.union(it) } } }
         PartyMenuView.place(partyCol, barsBottom(), frameH, laidChatRight, (r - l).toFloat()).let { m ->
             partyMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
@@ -2589,7 +3152,16 @@ class HomeView(
     /** f-pause-bars: the controller's alpha under the open pause menu (the user's pick B: 40 %, "so the menu reads as on top") */
     var pauseBarsDim = 0.4f
     /** f-pause-bars: the bottom of the controller (the bars) in Home's px, 0 = none laid out */
-    fun barsBottom(): Float = (now[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)     // (Top screen's fight: the band above the page)
+    fun barsBottom(): Float = barsFoot(now)                                         // (Top screen's fight: the band above the page)
+    /** the band's foot in [places]: the band's bottom, or (a Top-screen fight with the fight strip carrying the cast bar) the strip's - the
+     *  menus and wheels that hang under the band (the LB picture, the middle and class wheels, the D-pad toast) hang under the strip */
+    private fun barsFoot(places: Map<Part, RectF>): Float {
+        val b = (places[Part.BARS]?.bottom ?: 0f).coerceAtLeast(0f)
+        val s = places[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.bottom ?: 0f
+        return maxOf(b, s)
+    }
+    /** the band and the fight strip (its line): never a column's part - they stay put when the columns part or slide */
+    private fun bandPart(p: Part): Boolean = p == Part.BARS || p == Part.FIGHT_CAST
     private var pauseMap = floatArrayOf(0f, 0f, 1f)
 
     /**
@@ -2601,11 +3173,53 @@ class HomeView(
      *  the selections"): the side parts move only that far, eased, a little dimmed; the controller bars as the pause has them */
     private var pauseSide = 0f
     private var pauseUp = false
+    /** feat/radial-castbar: how far along the full slide's drop of Across's bar is (0 .. 1, the chat's curve: pauseSlide) */
+    private var pauseDropK = 0f
+    /** fix/party-drop-wheels: this slide (the LB picture's, the pause wheel's, the target radial's) takes Party mode's foot list right
+     *  over Across's bar DOWN with the bar (chosen at its open: [pauseSlide]) */
+    private var pauseParty = false
+    /** fix/party-drop-wheels: how far Across's bar part [p] laid at [r] goes down in this slide: [barDrop], or - with the foot list going
+     *  down with it ([pauseParty]) - as far as the list does (below the page), so the two go down as one block on the same curve (the list
+     *  over the bar all the way; on its own distance the list, going further, ran down over the bar mid-slide) */
+    private fun slideDrop(p: Part, r: RectF?, places: Map<Part, RectF> = now): Float {
+        val d = barDrop(p, r)
+        if (d <= 0f || !pauseParty) return d
+        val list = places[Part.PARTY] ?: return d
+        return maxOf(d, frameH - list.top)
+    }
+    /**
+     * feat/radial-castbar: the page laid again under the pause wheel's / the target radial's full slide (a fight beginning or ending
+     * while it is open, as [wheelRefit] / [classRefit] for the other wheels): Across's bar laid on the page as it will be ([places])
+     * is dropped below it again from its new place - one coming back from below after a fight (opened with it slid away, it had
+     * cb3's left slide) never rises into sight over the wheel. A bar the page lays below it (a fight's start) keeps its offset
+     */
+    private fun pauseRefit(places: Map<Part, RectF>) {
+        if (pauseT <= 0f || pauseSide > 0f) return
+        for (p in listOf(Part.STRIP, Part.CAST2)) {
+            val v = views[p] ?: continue
+            val dy = slideDrop(p, places[p], places)
+            if (dy <= 0f) continue
+            v.animate().cancel(); v.translationX = 0f; v.translationY = dy * pauseDropK
+        }
+        // fix/party-drop-wheels: the foot list that went down with the bar, from its new place
+        if (pauseParty) places[Part.PARTY]?.let { r ->
+            partyView.animate().cancel(); partyView.translationX = 0f; partyView.translationY = (frameH - r.top).coerceAtLeast(0f) * pauseDropK
+        }
+        barAwaySync(places)
+    }
     /** [barsUp] (feat/pause-power: the PAUSE menu's; the user, 2026-11-18: "I want the pause radial to also push the top controller bar
      *  up out of the way so that it can be a bit larger"): the controller slides up off the screen on the kit's PAUSE_TOP curve, the
      *  reverse bringing it back down; false = the target radial's / the LB picture's rule below */
     fun pauseSlide(t: Float, sidePx: Float = 0f, barsUp: Boolean = false) {
         if (t == pauseT && sidePx == pauseSide && barsUp == pauseUp) return
+        // (the way the slide goes this frame: on its open (or still) Across's bar only ever goes down, on its close only up)
+        val opening = t >= pauseT
+        // fix/party-drop-wheels: Party mode's foot list right over Across's bar goes DOWN with the bar in this slide (its way chosen at
+        // the open, kept to its close: a fight laying the page again meanwhile never switches it to the sideways one mid-way)
+        if (pauseT <= 0f && t > 0f) pauseParty = partyDrop(now, below = true) > 0f
+        // (the user's pick "Bar Off: stay when it fits": the LB picture's way for a foot list with no bar under it, chosen at the open too)
+        if (pauseT <= 0f && t > 0f) lbStay = sidePx > 0f && !pauseParty && lbStayNow()
+        if ((pauseParty || lbStay) && t > 0f) partyRiding = false
         pauseT = t; pauseSide = sidePx; pauseUp = barsUp
         val screen = RectF(0f, 0f, width.toFloat(), frameH)
         // f-pause-bars (the user: "I dont think I want the controller top part to slide off screen"): over Home the controller stays,
@@ -2617,17 +3231,23 @@ class HomeView(
         pauseMap = UiKit.pauseOut(UiKit.PAUSE_MAP, t, screen)
         val half = width / 2f
         // fix/menus-fit: the LB picture's place on the page as laid: each side moves only as far as it needs to clear it
-        val lb = if (sidePx > 0f) lbPlace() else null
+        val lb = if (sidePx > 0f) lbFit().also { lbDrop = it.second }.first else null
+        // feat/radial-castbar: the full slide's drop on the chat's own curve (how far along its way off the chat is: 0 .. 1)
+        val leftEnd = UiKit.pauseOut(UiKit.PAUSE_LEFT, UiKit.PAUSE_OPEN_MS, screen)[0]
+        pauseDropK = if (leftEnd != 0f) (left[0] / leftEnd).coerceIn(0f, 1f) else if (t > 0f) 1f else 0f
         for ((p, v) in views) {
             // MOVABLE HOME (SPEC section 6 item 2): the side is the part's HALF, not its name: the left column slides left whatever it
             // holds (the map after a swap). A part across the whole page (a full-screen module) keeps its own side. fix/menus-fit: a
             // 1/3 or 2/3 column straddles the middle but is NOT across: it goes by its centre (the swapped Big map's map flew right,
             // across the open wheel and under the LB picture)
             val r = now[p]
+            val y0 = v.translationY                                  // (where the bar is before this frame: the drop's way below)
             val across = r == null || HomeSlide.fullWidth(r.left, r.right, width.toFloat(), UiKit.MODULE_GAP)
             val o = when {
-                p == Part.BARS -> pauseTop
+                bandPart(p) -> pauseTop                                                             // (the fight strip with the band)
                 p == Part.STRIP -> if (laidSide == CastStripModel.Side.RIGHT) pauseMap else left       // cb3: under the minimap, it goes with it
+                // full width in Party mode (2026-11-23): the list across both columns goes with its own column (its tab's side)
+                p == Part.PARTY && laidPartyWide -> if (laidChatRight) pauseMap else left
                 !across -> if (r!!.centerX() < half) left else pauseMap
                 p == Part.QUESTS -> if (cardOverMap()) pauseMap else left
                 p == Part.MAP || p == Part.AURAS -> pauseMap
@@ -2635,7 +3255,7 @@ class HomeView(
             }
             // FULLY OFF, whatever the part's size (the user 2026-10-09: the FULL-SCREEN map "only slide[s] ... half way out"): the kit's
             // distance is for the compact parts; a bigger one goes as far as it needs to leave the screen, on the same curve
-            val endX = UiKit.pauseOut(if (p == Part.BARS) UiKit.PAUSE_TOP else if (o === left) UiKit.PAUSE_LEFT else UiKit.PAUSE_MAP,
+            val endX = UiKit.pauseOut(if (bandPart(p)) UiKit.PAUSE_TOP else if (o === left) UiKit.PAUSE_LEFT else UiKit.PAUSE_MAP,
                 UiKit.PAUSE_OPEN_MS, screen)
             val kx = when {
                 endX[0] > 0f -> ((width - v.left) / endX[0]).coerceAtLeast(1f)
@@ -2648,22 +3268,71 @@ class HomeView(
             // the state's own fades leave every shown part at 1 when settled: the pause's alpha is the only one meanwhile
             if (v.visibility == View.VISIBLE) v.alpha = o[2]
             // the LB picture (the user: "don't make the top controller part shift away"): the controller stays as it is
-            if (sidePx > 0f && p == Part.BARS) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
-            if (sidePx > 0f && p != Part.BARS) {
+            if (sidePx > 0f && bandPart(p)) { v.translationX = 0f; v.translationY = 0f; if (v.visibility == View.VISIBLE) v.alpha = 1f }
+            // feat/radial-castbar (the user, 2026-11-23, "All wheels move the Across bar the same way"): the pause wheel's and the target
+            // radial's full slide DROP Across's bar (no column's) straight down below the page, where the other wheels lay it (barDrop),
+            // on the chat's curve - no longer off to the left with the chat (cb3); t = 0 brings it back up. A column's bar (Under / Above
+            // the chat or the map, Split's halves) still goes with its column; one slid away for a fight (below the page) keeps cb3's
+            // (review: Across's bar never goes sideways here, even one slid below the page for a fight - Hide in combat: the other
+            // wheels leave that one where it is, so does this slide; it went left with the chat, cb3's. On the open it never rises: a
+            // bar still on its way back up from a wheel just closed, or one the page is laying below it - a fight beginning mid-open -
+            // goes on down from where it is; on the close it only comes back up)
+            if (sidePx <= 0f && (p == Part.STRIP || p == Part.CAST2)) {
+                // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
+                if (t > 0f) v.animate().cancel()
+                val dy = slideDrop(p, r)
+                if (dy > 0f || r != null && laidSide == CastStripModel.Side.BOTH && !laidSplit) {
+                    val to = dy * pauseDropK
+                    val at = y0.coerceAtLeast(0f)
+                    v.translationX = 0f
+                    v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
+                }
+            }
+            // fix/party-drop-wheels (the user's pick "List drops with the bar"): the foot list right over Across's bar goes straight down
+            // below the page with the bar, on the same curve (no longer off with its column's side); t = 0 brings it back up
+            if (sidePx <= 0f && p == Part.PARTY && pauseParty) {
+                if (t > 0f) v.animate().cancel()
+                val to = (frameH - (r?.top ?: frameH)).coerceAtLeast(0f) * pauseDropK
+                val at = y0.coerceAtLeast(0f)
+                v.translationX = 0f
+                v.translationY = if (t <= 0f) 0f else if (opening) maxOf(at, to) else minOf(at, to)
+            }
+            if (sidePx > 0f && !bandPart(p)) {
                 val e = (t / UiKit.PAUSE_OPEN_MS).coerceIn(0f, 1f)
                 val ee = 1f - (1f - e) * (1f - e)
                 // fix/castbar-slides (the user on 1.0.31: "it should only slide the direction if its on that half. If its set to both it
                 // can stay in place"): the cast bar by its side (Left with the chat, Right with the minimap), Both's bar stays.
                 // fix/menus-fit: every part by its column (its half), each side by its own distance (LbFit: Classic's 340 both)
                 val pl = (lb?.pushLeft ?: sidePx) * ee; val pr = (lb?.pushRight ?: sidePx) * ee
+                lbPushL = pl; lbPushR = pr
                 val bar = p == Part.STRIP || p == Part.CAST2
-                v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
+                // (full width in Party mode, 2026-11-23: the list across both columns would still cover the picture's middle after a
+                // side's step: it leaves the page its own column's way, as for the pause wheel - the translation set above)
+                if (!(p == Part.PARTY && laidPartyWide)) v.translationX = if (r != null && (!across || bar)) HomeSlide.dx(halfOf(p, r, width.toFloat()), pl, pr)
                     else if (o === left) -pl else pr
-                v.translationY = 0f
+                // feat/radial-castbar: Across's bar (no column's: never sideways, fix/castbar-slides) slides down out of the picture's
+                // way on the sides' curve when the picture needs the room (lbFit), so it keeps its full size
+                // (a bar still on its way back from a wheel just closed - its animator - is stopped: this slide places it now)
+                if (bar && t > 0f) v.animate().cancel()
+                v.translationY = if (lbDrop) slideDrop(p, r) * ee else 0f
+                // fix/party-drop-wheels: the foot list over Across's bar ([pauseParty]) never sideways here: it stays with the bar when the
+                // picture fits over both, else goes straight down below the page with it on the sides' curve ([lbFit])
+                if (p == Part.PARTY && pauseParty) {
+                    if (t > 0f) v.animate().cancel()
+                    v.translationX = 0f
+                    v.translationY = if (lbDrop && r != null) (frameH - r.top).coerceAtLeast(0f) * ee else 0f
+                }
+                // (the user's pick "Bar Off: stay when it fits": a foot list with no bar under it, the picture fitting over it - it stays)
+                if (p == Part.PARTY && laidPartyWide && lbStay) {
+                    if (t > 0f) v.animate().cancel()
+                    v.translationX = 0f; v.translationY = 0f
+                }
                 if (v.visibility == View.VISIBLE) v.alpha = 1f - 0.35f * ee
             }
         }
+        if (t <= 0f) { pauseParty = false; lbStay = false }
         invalidate()
+        barAwaySync()
         // 1.0.20: the class wheel that waited for the LB picture's sides opens now they are back
         if (classPending && sidePx > 0f && t <= 0f) { classPending = false; classLayerShow(true) }
     }
@@ -2751,7 +3420,7 @@ class HomeView(
     /** the host's hooks: the ribbon + the disc's tick (the chrome, null = gone), the bar's slots (the Controller room's Tap-to-cast
      *  tab), the chat's filters (the Chat room's checklist) */
     var onEditChrome: ((HomeEditView?) -> Unit)? = null
-    var onEditSlots: (() -> Unit)? = null
+    var onEditSlots: ((HomeTab) -> Unit)? = null
     var onEditFilters: (() -> Unit)? = null
     /** a behaviour row's press with the host's env (BottomTiles.press); null = Home presses it itself (the off-device renders) */
     var onEditPress: ((String, Int) -> Unit)? = null
@@ -2780,8 +3449,9 @@ class HomeView(
     fun roomBarFor(dirs: Map<Int, String>?): Map<Int, String>? { roomBarReal = dirs; roomBarKept = true; return editRoomBar(dirs) }
     private fun editRoomBar(dirs: Map<Int, String>?): Map<Int, String>? {
         val draft = editDraft()
-        val want = draft?.let { HomeLayoutSolver.mirrorBit(it) }
-            ?: roomBarHold?.takeIf { it == HomeLayoutSolver.mirrorBit(HomeSettings.layout) }
+        // (edit tabs: the edited tab's own sides - HomeTab.dpadPreview; outside edit mode the page Home lays out of a fight: mirrorWant)
+        val want = draft?.let { d -> HomeLayoutSolver.mirrorBit(d.forTab(HomeTab.dpadPreview(edit?.tab ?: HomeTab.OUT))) }
+            ?: roomBarHold?.takeIf { it == mirrorWant() }
             ?: run { roomBarHold = null; return dirs }
         val have = dirs?.let { ToolbarMirror.bitOf(it) } ?: return dirs
         if (have == want) { if (draft == null) roomBarHold = null; return dirs }
@@ -2835,13 +3505,14 @@ class HomeView(
         override fun holdK(): Float? = editHoldK()
         override fun holdDone(down: Boolean): Boolean = if (down) { editHoldDown(); false } else editHoldUp()
         override fun roomPose(r: Room, out: FloatArray): Boolean {
-            if (!motion.on) return false
+            // (edit tabs: the room bar is shared - it sits still on the In combat and Party mode tabs: decision 7 A)
+            if (!motion.on || edit?.tab?.fight == true) return false
             motion.pose(HomeEditMotion.roomKey(r.ordinal), motionNow(), ROOM_HALF_DIAG, pose)
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
         }
         override fun plusPose(out: FloatArray): Boolean {
-            if (!motion.on) return false
+            if (!motion.on || edit?.tab?.fight == true) return false
             motion.pose(HomeEditMotion.PLUS_ROOM, motionNow(), ROOM_HALF_DIAG, pose)
             out[0] = pose.scale; out[1] = pose.rot; out[2] = pose.dx; out[3] = pose.dy
             return !pose.isIdentity
@@ -2911,23 +3582,42 @@ class HomeView(
             gb?.let { byKey["gold"] = it }
             for ((i, k) in keys.withIndex()) cells.getOrNull(i)?.let { byKey[k] = it }
             bandCells.putAll(byKey)
-            if (!m.fightPreview) {
+            if (ed) {
                 for (k in HomeEditModel.EXTRA_KEYS) byKey[k]?.let { extras += k to RectF(it) }
                 plus = byKey[EDIT_PLUS]?.let { RectF(it) }
             }
         }
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
-            away = b.bottom <= 0f)                                        // Top screen's preview: the band above the page
+            away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
+            strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
+        // fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): with the fight pencil's bubble open the pencil
+        // stays where it was at the open (HomeEditModel.fightPenHold) - the strip laid or taken away by the bubble's Cast bar / Swing timer
+        // moves it only once the bubble has closed. Every reader takes it from here: the pencil's paint, the cursor round it, its taps,
+        // the bubble's anchor. (A bubble opened while the page is still moving - In fights changed and the bubble closed and opened again
+        // at once - rides it to where the page lands and holds there: a place taken mid-motion would leave it hanging where the band was
+        // passing. No fight pencil at all - the preview off - drops the hold: a preview back on takes the place anew)
+        if (pieces.fightPen == null) m.fightPenHold = null
+        val fightPen = pieces.fightPen?.let { live ->
+            when {
+                m.menu != EditStop.FIGHT_PEN -> live
+                m.fightPenHold != null -> m.fightPenHold
+                anim?.isRunning == true || holdRun != null -> live
+                else -> live.also { m.fightPenHold = it }
+            }
+        }
         return HomeEditView.BandGeo(RectF(b), pad, face, rf(pieces.padPen), rf(pieces.facePen), pieces.look?.let { rf(it) },
-            pieces.fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
+            fightPen?.let { rf(it) }, extras, plus, diamonds, chip, keys)
     }
 
     /** P2: the extras now for edit mode's model (Settings' clock rows: on, hidden) - fed before every input reaches it */
     private fun editBandFeed(m: HomeEditModel? = edit) {
         m ?: return
-        m.bandIs(HomeEditModel.EXTRA_KEYS.filter { BottomTiles.clockOn(it) }, HomeEditModel.EXTRA_KEYS.filter { !BottomTiles.clockOn(it) })
+        val (on, off) = editExtras()
+        // (the review of the edit tabs: Settings' rows On that edit mode does not offer now - the pet's face with no pet out - so a tab's
+        // own list written now keeps them)
+        m.bandIs(on, off, HomeEditModel.EXTRA_KEYS.filter { it !in on && it !in off && BottomTiles.clockOn(it) })
     }
     private val editView: HomeEditView by lazy { HomeEditView(context, editHost) }
     /** the host's Strip draws the ribbon through this */
@@ -2948,15 +3638,21 @@ class HomeView(
         override val colTop: Float get() = barsBottom() + UiKit.MODULE_GAP
         override val colBottom: Float get() = frameH - UiKit.MODULE_GAP
         override fun barSlots(): List<Float> = roomBar?.slotCentres() ?: emptyList()
+        override fun extraSlots(): List<Float> {
+            val m = edit ?: return emptyList()
+            editBand()
+            return m.extraRow.mapNotNull { bandCells[it]?.centerX() }
+        }
     }
 
     /** the page's state now, as [places] hands it to the solver (for a drop well and a drop's check) */
     private fun solveState(l: HomeLayout): HomeLayoutSolver.State {
         val p = party.party
         val partyIn = if (PARTY_MODULE && p != null) HomeLayoutSolver.Party(partyModeNow(flow.screen), p.view.size, p.viewPet) else null
-        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover,
+        // (edit tabs: the tab's own state - In combat's takeover, Party mode's fight preview - since its widgets are moved there too)
+        return HomeLayoutSolver.State(width.toFloat(), frameH, UiKit.MODULE_GAP, takeover = flow.takeover || previewTakeover(),
             card = homeCard() != null, cardH = laidCardH.coerceAtLeast(0f), auraOpen = auraPane.open != null, party = partyIn,
-            partyOn = partyOnHere(), castHidden = castHiddenNow(), partyFight = partyFightNow())
+            partyOn = partyLaidOn(), castHidden = castHiddenNow(), partyFight = partyFightNow() || previewPartyFight())
     }
     private fun solveFor(l: HomeLayout): Map<HomePart, HomeLayoutSolver.Box> =
         HomeLayoutSolver.places(HomeLayoutRules.shown(l.copy(rest = flow.rest)), solveState(l)).boxes
@@ -2976,11 +3672,12 @@ class HomeView(
             folded = HomeSettings.questMin, zoomOut = Settings.minimapYd, zoomIn = Settings.minimapIndoorYd,
             castShowInFight = CastStripModel.showOf(HomeSettings.castBarCombat), castParty = HomeSettings.castBarPartyShow,
             toolbarOn = d?.want == true, toolbarAvail = d?.colOn != null, rest = HomeSettings.rest, rankBadges = HomeSettings.rankBadges,
-            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct)
+            fightBand = HomeSettings.fightBand, swing = HomeSettings.swingTimer, ct = d?.ct, fightCast = HomeSettings.fightCast, cc = d?.cc,
+            fightPreview = edit?.fightPreview == true)
     }
     private fun editMenuRows(s: EditStop): List<MenuRow> {
         val m = edit ?: chromeModel ?: return emptyList()
-        return HomeWidgetMenus.rows(s, m.draft, editValues())
+        return HomeWidgetMenus.rows(s, m.page, editValues(), m.tab)
     }
 
     /**
@@ -2997,7 +3694,7 @@ class HomeView(
         if (classOpen) classLayerShow(false)
         val saved = HomeSettings.layout
         chromeModel = null
-        val m = HomeEditModel(saved, start)
+        val m = HomeEditModel(saved, start, HomeTab.opening(partyOnHere()), PARTY_MODULE)
         editBandFeed(m)
         edit = m
         editOwner = HomeLayoutStore.owner()                               // the record this draft was read under (it is saved only there)
@@ -3109,7 +3806,7 @@ class HomeView(
         edit = null
         editBackDue = false
         editPersisted = null; editLate = null
-        roomBarHold = if (write) HomeLayoutSolver.mirrorBit(HomeSettings.layout) else null   // fix round 3: the record's sides until `d` says them
+        roomBarHold = if (write) mirrorWant() else null                   // fix round 3: the record's sides until `d` says them
         editOwner = null
         liveDraft = null
         editRestSync()                                                    // the record's rest
@@ -3222,8 +3919,20 @@ class HomeView(
         if (m.cursorCheck(editView.stops())) {
             Log.i(TAG, "home edit: the cursor's widget is gone: on ${m.cursor.name.lowercase()}")
             if (was != null && m.lifted == null) editLift(null)            // 1518: its lift ended too: no stale lifted pose
+            // the review (2026-11-23): the party list gone with its bubble open - the frame's check closed it (no key, no run): its Fight
+            // preview and Party look end on the page too, laid next turn (not inside this frame's decor pass)
+            editUi.post { if (edit === m) editBubbleLookSync() }
             editView.invalidate()
         }
+    }
+
+    /** the party list's bubble closed (any way: a key, a tap, the frame's cursor check) - the page follows the model: */
+    private fun editBubbleLookSync() {
+        // the bubble closed with the Fight its Preview row chose (the user's pick 2026-11-23, "Off on close"): the model ended the
+        // preview with no Fx.Preview - the D-pad's own pictures and the band's rest look again
+        if (previewEnded()) editRelay(Motion.COMBAT_SHRINK, force = true)
+        // party sizing's preview: the party list's bubble opened or closed - the page laid again as Party mode (or not) lays it
+        if (editPartyLook() != laidPartyPen) editRelay(Motion.MODULE_OPEN, force = true)
     }
 
     /** one key of edit mode's (the guest's, Start from the host's reader, the tests) */
@@ -3246,7 +3955,7 @@ class HomeView(
             // the bar's slots / the chat's filters (another room): the draft is saved first; a session that changed nothing ends, one
             // that did WAITS (the room's giveBack parks it, editAwayPark) so Discard can still put it back, and edit mode is back where
             // it was with Home
-            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(); return }
+            HomeEditModel.Fx.EditSlots -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditSlots?.invoke(m?.tab ?: HomeTab.OUT); return }
             HomeEditModel.Fx.Filters -> { m?.let { editPersist(it) }; if (m?.changed != true) editEnd(discard = false); onEditFilters?.invoke(); return }
             is HomeEditModel.Fx.Refuse -> editRefuse(f.stop)
             HomeEditModel.Fx.Lift -> editLift(m?.lifted)
@@ -3257,10 +3966,22 @@ class HomeView(
                 applyDpad()
                 editRelay(if (f.on) Motion.COMBAT_GROW else Motion.COMBAT_SHRINK, force = true)
             }
+            // EDIT TABS: another tab - its look (the fight's pictures on In combat) and its page in the one motion; the band's party faces
+            is HomeEditModel.Fx.Tab -> {
+                Log.i(TAG, "home edit: tab ${f.tab.name.lowercase()}")
+                previewLaid = editFightLook()
+                applyDpad()
+                editBandFeed(m)
+                shown?.let { partyStripSync(it) }
+                editRoomBarSync()                                           // (the D-pad's pictures: that tab's sides - HomeTab.dpadPreview)
+                editRelay(Motion.MODULE_OPEN, force = true)
+            }
         }
         m?.let { m2 -> if (m2.drag != null) { editUi.removeCallbacks(dragTick); editUi.postDelayed(dragTick, HomeEditModel.HOVER_MS + 4L) } }
         m?.let { editPersist(it) }                                        // 1518: a settled change is saved as it is made
         m?.let { editBandFeed(it); if (it.settled) editCursorCheck(it) } // P2: Settings' extras as they are now; a piece gone: the cursor on
+        editExtrasGlide()                                                 // feat/extras-polish: a reordered extra glides to its new cell
+        editBubbleLookSync()
         editBarSync(fx.lastOrNull { it is HomeEditModel.Fx.Relay }?.let { (it as HomeEditModel.Fx.Relay).ms } ?: Motion.MODULE_OPEN)
         editNotice()
         editDecor()
@@ -3275,6 +3996,7 @@ class HomeView(
         val t = motionNow()
         motion.scale = motionScale()
         motion.enter(t, from?.let { rippleFrom(it) }); cardOwnTo(0f, t, 0L)
+        extraLaidX.clear()                                                // feat/extras-polish: a new session's row starts where it is
         val m = edit
         seenCursor = m?.cursor; seenMenu = m?.menu; seenSheet = m?.sheet
         editKick()
@@ -3368,7 +4090,8 @@ class HomeView(
     private fun editLift(s: EditStop?) {
         val t = motionNow()
         if (s != null) {
-            val k = s.key
+            // feat/extras-polish: a lifted extra on its own wiggle key (the band never moves)
+            val k = if (s == EditStop.EXTRAS) edit?.extraLifted?.let { extraKeyOf(it) } ?: s.key else s.key
             // 1518: the drop's Lift and the new one come in one run (the model's state is the new lift's by then): once is enough
             if (liftStop == s && liftKey == k && motion.lifted == k) { editKick(); editDecor(); return }
             // 1518: another widget still in its lifted pose (a lift that replaced it): it plops into its dock first
@@ -3378,8 +4101,10 @@ class HomeView(
             motion.lift(liftKey, t); if (s == EditStop.QUEST) cardOwnTo(1f, t, Motion.WIGGLE_IN)
         }
         else liftStop?.let { was ->
-            val ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; val oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
+            var ox = if (edit?.drag == null) dragOffsetNow[0] else 0f; var oy = if (edit?.drag == null) dragOffsetNow[1] else 0f
             dragOffsetNow.fill(0f)
+            // feat/extras-polish: a carried extra plops into its (maybe new) cell from where the finger let it go
+            if (was == EditStop.EXTRAS) { ox = extraDragOff[0]; oy = extraDragOff[1]; extraDragOff.fill(0f) }
             motion.drop(liftKey, ox, oy, t)
             // dropped (on the map): it rides the map's pose again over its plop
             if (was == EditStop.QUEST) cardOwnTo(0f, t, CARD_RIDE_BACK)
@@ -3430,6 +4155,7 @@ class HomeView(
         Part.STRIP, Part.CAST2 -> EditStop.CAST.key
         Part.PARTY -> HomeEditMotion.PARTY
         Part.CHAT_FULL -> -1
+        Part.FIGHT_CAST -> -1                                             // the fight strip: no widget (the band's line, laid by the fight)
     }
     /** the box [p]'s pose turns about (its key's widget: the map for its riders, both halves for a Split bar) into [out] */
     private fun ownerBox(p: Part, out: RectF): Boolean {
@@ -3549,7 +4275,7 @@ class HomeView(
         }
         val m = edit
         when (key) {
-            BottomTiles.REST, BottomTiles.COMBAT -> if (m != null && !m.parked) {
+            BottomTiles.REST, BottomTiles.COMBAT, BottomTiles.FIGHT_CAST -> if (m != null && !m.parked) {
                 // the session's own settled change first (a widget dropped by this very tap), then the record as it is now
                 editPersist(m)
                 editRebase(m); liveDraft = m.draft
@@ -3611,6 +4337,8 @@ class HomeView(
             if (editOwnerCheck("the fight ended on another character")) return
             editRebase(m)
             m.resume(); liveDraft = m.draft
+            // (edit tabs: back on the In combat tab - its fight look's pictures again, as the tab switch gives them)
+            if (editFightLook()) { previewLaid = true; applyDpad() }
             editRestSync()
             editRoomBarSync(); editBarSync(Motion.COMBAT_SHRINK)
             editGuest(true)
@@ -3633,7 +4361,7 @@ class HomeView(
         // at once, while the band is still Home's - the room that takes it next never gets the preview's look
         if (previewEnded()) shown?.let { apply(if (it.rest != flow.rest) flow.screen else it, animate = false) }
         editAway = true
-        chromeAnim?.cancel(); chromeA = 0f
+        chromeAnim?.cancel(); chromeA = 0f; editPlatesSync()
         liftStop = null; dragOffsetNow.fill(0f); motion.still(); cardOwnTo(0f, 0L, 0L); editDecor()
         onEditChrome?.invoke(null)
     }
@@ -3650,6 +4378,7 @@ class HomeView(
         }
         editRebase(m)
         m.resume(); liveDraft = m.draft
+        if (editFightLook()) { previewLaid = true; applyDpad() }       // (edit tabs: the In combat tab's fight pictures again)
         editRestSync()
         editGuest(true)
         onEditChrome?.invoke(editView)
@@ -3662,14 +4391,18 @@ class HomeView(
 
     private fun chromeFade(to: Float, ms: Long, end: (() -> Unit)? = null) {
         chromeAnim?.cancel()
-        if (!live || ms <= 0L) { chromeA = to; editView.invalidate(); end?.invoke(); return }
+        if (!live || ms <= 0L) { chromeA = to; editPlatesSync(); editView.invalidate(); end?.invoke(); return }
         chromeAnim = ValueAnimator.ofFloat(chromeA, to).apply {
             duration = ms; interpolator = Motion.curve()
-            addUpdateListener { chromeA = it.animatedValue as Float; editView.invalidate(); onEditChrome?.let { _ -> editRibbonRedraw?.invoke() } }
-            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) { chromeA = to; end?.invoke() } })
+            addUpdateListener { chromeA = it.animatedValue as Float; editPlatesSync(); editView.invalidate(); onEditChrome?.let { _ -> editRibbonRedraw?.invoke() } }
+            addListener(object : AnimatorListenerAdapter() { override fun onAnimationEnd(a: Animator) { chromeA = to; editPlatesSync(); end?.invoke() } })
             start()
         }
     }
+    /** Edit Home (the user, 2026-11-23: "declutter it in that mode we can hide them"; the ZL / ZR chips "Hide them too"): the band's L / R
+     *  shoulder plates and ZL / ZR chips fade out as the chrome fades in and back as it goes (Done, Discard, a fight's park); a band
+     *  another room holds keeps them */
+    private fun editPlatesSync() { castView.platesAlpha = if (lent(castView)) 1f - chromeA else 1f }
     /** the host's: redraw the ribbon (it lives in the room bar) */
     var editRibbonRedraw: (() -> Unit)? = null
 
@@ -3843,7 +4576,53 @@ class HomeView(
         return null
     }
 
+    /**
+     * EDIT TABS (the proposal: "the row takes the top 76 px; the live page is drawn at about 0.92 under it - the iPhone zoom out"): while
+     * edit mode's chrome shows, the whole page (its views, Home's own paint and the chrome over it) is drawn scaled about the frame's top
+     * centre and moved down by the tab row ([HomeEditView.TAB_ROW]), so it fills the frame under the row; the room bar and the ribbon
+     * (the host's Strip) stay full size. It rides the chrome's fade ([chromeA]: in as edit mode opens, out at a fight's park or the
+     * end). Touches map through it ([dispatchTouchEvent]): every hit test stays in Home's px. False = none (identity)
+     */
+    private fun pageMatrix(out: android.graphics.Matrix): Boolean {
+        if (!pageZoomOn) return false
+        val k = if (edit != null || chromeModel != null) chromeA.coerceIn(0f, 1f) else 0f
+        if (k <= 0.001f || frameH <= 0f) return false
+        val row = HomeEditView.TAB_ROW * k
+        val s = (frameH - row) / frameH
+        out.reset(); out.postScale(s, s, width / 2f, 0f); out.postTranslate(0f, row)
+        return true
+    }
+    private val pageM = android.graphics.Matrix()
+    private val pageInv = android.graphics.Matrix()
+    /** the off-device renders that sample the page in Home's own px (the older edit-mode suites): the page unzoomed, no tab row */
+    var pageZoomOn = true
+    /** the tab row has the finger (its DOWN came on the row) */
+    private var tabFinger = false
+    /** Home's px [x], [y] as the screen shows them now (the page zoomed under the tab row while editing; else the same point) */
+    fun screenOf(x: Float, y: Float): FloatArray { val pt = floatArrayOf(x, y); if (pageMatrix(pageM)) pageM.mapPoints(pt); return pt }
+    /** the off-device tests: the page's zoom now (scale, dy), null = none */
+    fun pageZoom(): Pair<Float, Float>? = if (pageMatrix(pageM)) FloatArray(9).also { pageM.getValues(it) }.let { it[0] to it[5] } else null
+
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        // EDIT TABS: the tab row over the zoomed page (its own finger), and every other touch mapped into Home's px through the zoom
+        if (edit?.parked == false && pageMatrix(pageM)) {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) tabFinger = e.y < HomeEditView.TAB_ROW && !holdTakes
+            if (tabFinger) {
+                val up = e.actionMasked == MotionEvent.ACTION_UP
+                editView.tabTouch(e.x, e.y, up)
+                if (up || e.actionMasked == MotionEvent.ACTION_CANCEL) tabFinger = false
+                return true
+            }
+            if (pageM.invert(pageInv)) {
+                val t = MotionEvent.obtain(e)
+                t.transform(pageInv)
+                try { return dispatchPage(t) } finally { t.recycle() }
+            }
+        } else tabFinger = false
+        return dispatchPage(e)
+    }
+
+    private fun dispatchPage(e: MotionEvent): Boolean {
         // the hold fired: the child that had the touch is cancelled once (no Chat room, no map module), the rest is edit mode's
         if (holdTakes || holdSwallow) {
             if (!holdChildCancelled) {
@@ -3952,7 +4731,7 @@ class HomeView(
      */
     fun toastBox(wsum: Float, h: Float = 54f): RectF {
         val cx = width / 2f
-        val bb = (now[Part.BARS]?.bottom ?: 226f).coerceAtLeast(0f)
+        val bb = if (now[Part.BARS] == null) 226f else barsBottom()
         val diamonds = 8f + REST_DIAMONDS_BARS + CastBarPlace.REST_STRIP
         val l = cx - wsum / 2f - 28f; val r = cx + wsum / 2f + 28f
         // Classic's diamonds grown for a fight: 1516's pill on the band's foot (a thin-row record is not 1516's Classic look: under it)
@@ -4004,12 +4783,64 @@ class HomeView(
         postInvalidateOnAnimation()
     }
 
+    // ================================================================ PadLayerNote: a WoW setting put a bar on LT / RT (PadMap m187's report)
+
+    /** the notes waiting (the first on show), at most [PAD_NOTES_MAX]; each lives PadLayerNote.SHOW_MS from its FIRST DRAW (a note that
+     *  came while Home was not on screen waits for it), or until B ([padNoteB]) */
+    private val padNotes = ArrayDeque<String>()
+    private var padNoteAt = 0L
+    private val PAD_NOTES_MAX = 3
+    fun padNote(words: String) {
+        if (words in padNotes) return
+        padNotes.addLast(words); while (padNotes.size > PAD_NOTES_MAX) padNotes.removeFirst()
+        invalidate()
+    }
+    /** B (the host's pad reader on Home): the note on show goes; true = there was one */
+    fun padNoteB(): Boolean {
+        if (padNotes.isEmpty() || padNoteAt == 0L) return false
+        padNotes.removeFirst(); padNoteAt = 0L
+        invalidate()
+        return true
+    }
+    /** the note in the D-pad toast's pill and spot (after the toast: one at a time), its words shrunk to fit Home's width */
+    private fun drawPadNote(c: Canvas) {
+        val words = padNotes.firstOrNull() ?: return
+        if (toastWords.isNotEmpty()) { postInvalidateOnAnimation(); return }
+        val now = SystemClock.uptimeMillis()
+        if (padNoteAt == 0L) padNoteAt = now
+        val a = PadLayerNote.alpha(now - padNoteAt)
+        if (a <= 0f) {
+            padNotes.removeFirst(); padNoteAt = 0L
+            if (padNotes.isNotEmpty()) postInvalidateOnAnimation()
+            return
+        }
+        val text = Tr.t(words)
+        pToast.textSize = 26f; UiKit.asBody(pToast); pToast.color = Theme.text; pToast.alpha = (255 * a).toInt()
+        val room = (width - 2f * (UiKit.MODULE_GAP + 28f) - 16f).coerceAtLeast(120f)
+        while (pToast.textSize > 18f && pToast.measureText(text) > room) pToast.textSize -= 1f
+        val shown = TextUtils.ellipsize(text, TextPaint(pToast), room, TextUtils.TruncateAt.END).toString()
+        val h = 54f
+        val box = toastBox(pToast.measureText(shown), h)
+        pToastEdge.color = Theme.gold; pToastEdge.alpha = (255 * a).toInt()
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Theme.ink; alpha = (235 * a).toInt() }
+        c.drawRoundRect(box, h / 2f, h / 2f, fill)
+        c.drawRoundRect(box, h / 2f, h / 2f, pToastEdge)
+        c.drawText(shown, box.left + 28f, box.centerY() - (pToast.ascent() + pToast.descent()) / 2f, pToast)
+        postInvalidateOnAnimation()
+    }
+
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        // EDIT TABS: the page (and the chrome over it) zoomed out under the tab row while edit mode's chrome shows ([pageMatrix])
+        val zoomed = pageMatrix(pageM)
+        val z = if (zoomed) c.save() else -1
+        if (zoomed) c.concat(pageM)
         dispatchDrawHome(c)
         if (editView.visibility == View.VISIBLE && editView.width > 0) {
             val s = c.save(); c.translate(editView.left.toFloat(), editView.top.toFloat()); editView.draw(c); c.restoreToCount(s)
         }
+        if (z >= 0) c.restoreToCount(z)
+        if (zoomed && editView.visibility == View.VISIBLE) editView.drawTabs(c, width.toFloat(), chromeA.coerceIn(0f, 1f))
     }
     override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
 
@@ -4100,8 +4931,11 @@ class HomeView(
         if (trigA != (if (trigHeld) 0f else 1f)) postInvalidateOnAnimation()
         val lin = infoLinear(tNow)
         if (lin != (if (infoGrown) 1f else 0f)) postInvalidateOnAnimation()
-        // a cast's finish ends with no event: look again while small for a cast
-        if (!infoGrown) { removeCallbacks(infoRecheck); postDelayed(infoRecheck, 100L) }
+        // (a cast's end: infoCheck looks again at that moment itself - fix/badges-cast)
+        // fix/badges-cast: grown again, the small end is today's again (unseen: the block is all grown)
+        if (infoGrown && lin >= 1f && liftTo != 0f) { liftFrom = 0f; liftTo = 0f; liftAt = tNow }
+        val lift = liftK(tNow)
+        if (lift != liftTo) postInvalidateOnAnimation()
         val g = infoCurve.getInterpolation(lin)
         val chipOn = clockA > 0.01f && barsSeen && clockText.isNotEmpty() && batteryPct >= 0
         val bandA = clockA * trigA
@@ -4118,10 +4952,17 @@ class HomeView(
                 for (i in 0 until spot.size - 1) spot[i] += if (i % 2 == 0) b.left else b.top
             } else null
             // the band itself never moves in edit mode (1518 build 3; the user's ruling 2026-11-22): only the extras wiggle
+            // fix/badges-cast (the user on 1523: "The icons shift smaller when casting but still overlap with the cast text instead of
+            // shifting up"): the cast name's lane at rest (its plate on the bar, between the button groups); while a cast holds the block
+            // small its row is lifted over it (ClockBand.lift, eased in with [liftK]), and nothing of the block is drawn into the lane
+            // while the bar or its name may show (the shrink from the grown block passes behind the name). Edit mode exactly as before.
+            val lane = if (!ed && spot != null && castView.restNameLane(nameLane)) nameLane.apply { offset(b.left, b.top) } else null
+            val keep = lane?.let { it.top - CastBarPlace.CLOCK_PAD * castView.width / CastBarPlace.FRAME_W } ?: Float.NaN
             val save = if (clockA < 0.99f) c.saveLayerAlpha(b.left, b.top, b.right, b.bottom, (clockA * 255).toInt()) else -1
             UiKit.clockBlock(c, b.centerX(), b.top + ClockBand.CHIP_TOP, clockText, batteryPct, charging, if (ed) editChipGold() else chipGold(),
                 spot, items, g, rowAlpha = if (rowOn) (trigA * 255).toInt() else 0, chipAlpha = if (chipOn) 255 else 0,
-                pose = if (ed) extraPoser else null)
+                pose = if (ed) extraPoser else null, keep = keep, lift = if (lane != null) lift else 0f,
+                clip = lane?.takeIf { castView.castShowing(tNow) })
             if (save >= 0) c.restoreToCount(save)
             // the mm:ss counts (as the auras' times); nothing ticks otherwise
             if (items.any { it is UiKit.BandItem.Icon && it.value.contains(':') }) postInvalidateDelayed(1000L)
@@ -4138,6 +4979,7 @@ class HomeView(
         }
         if (pauseSave >= 0) c.restoreToCount(pauseSave)
         drawToast(c)                                                      // the D-pad toast over the clock block's chips (final_05)
+        drawPadNote(c)                                                    // PadLayerNote: a WoW bar setting on LT / RT, once
     }
 
     // ================================================================ the bars: a tap opens them full screen
@@ -4165,7 +5007,7 @@ class HomeView(
         if (flow.full == HomeModule.BARS || barsSlot.visibility != View.VISIBLE) return false
         // the (-) Party mode tag stands over the bars' foot: its touch is the tag's
         if (e.actionMasked == MotionEvent.ACTION_DOWN) barsDown = inBars(e) &&
-            !(partyView.visibility == View.VISIBLE && partyView.tagAt(e.x - partyView.left - partyView.translationX, e.y - partyView.top))
+            !(partyView.visibility == View.VISIBLE && partyView.tagAt(e.x - partyView.left - partyView.translationX, e.y - partyView.top - partyView.translationY))
         return barsDown
     }
 
@@ -4326,7 +5168,7 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
-        init { ChatFilter.onChange { postInvalidate() } }
+        init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
@@ -4535,6 +5377,8 @@ class HomeView(
         }
         private val buffBox = RectF(); private val debuffBox = RectF()
         private val panel = RectF(); private val removeBox = RectF()
+        /** a9: Pin for fights / Unpin, left of Remove */
+        private val pinBox = RectF()
         private val zoomIn = RectF(); private val zoomOut = RectF()
         private var zoomTouchAt = 0L
         private var zoomDown = 0                     // the zoom button under the finger: -1 = in (+), +1 = out (-), 0 = none
@@ -4572,7 +5416,7 @@ class HomeView(
 
         private fun drawPane(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat(); val now = System.currentTimeMillis()
-            rows.clear(); buffBox.setEmpty(); debuffBox.setEmpty(); panel.setEmpty(); removeBox.setEmpty()
+            rows.clear(); buffBox.setEmpty(); debuffBox.setEmpty(); panel.setEmpty(); removeBox.setEmpty(); pinBox.setEmpty()
             zoomIn.setEmpty(); zoomOut.setEmpty()
             val full = fullMap()
             if (!full && (open == null || !auras.live(now))) zoom(c, w, h, now)      // the open list covers that corner
@@ -4939,6 +5783,7 @@ class HomeView(
             UiKit.divider(c, r.left + 8f, r.top + 2f, r.right - 8f, r.top + 2f)
             val removable = !debuff && !a.enchant
             val textRight = if (removable) r.right - REMOVE_W - 20f else r.right - 12f
+            pinBox.setEmpty()
             val text = when {
                 a.tip.isNotEmpty() -> a.tip.joinToString("\n")
                 greyed -> "Hidden by the game in combat"
@@ -4960,7 +5805,29 @@ class HomeView(
                 val label = if (waiting) "Removing" else "Remove"
                 val state = if (can) UiKit.Button.UP else UiKit.Button.DISABLED
                 if (padHeld) UiKit.button(c, removeBox, label, aGlyph(), state) else UiKit.button(c, removeBox, label, state)
+                // a9 (the user, 2026-11-24: "pin buffs for fight"): this buff cancelled from the pause wheel in a fight (by keys)
+                if (auras.pinCell != null) {
+                    val pinned = auras.pinOf(a.name)
+                    pinBox.set(removeBox.left, removeBox.top - REMOVE_H - 8f, removeBox.right, removeBox.top - 8f)
+                    val ok = !greyed && auras.pending(now) == null && (pinned != null || auras.pins.size < 2)
+                    UiKit.button(c, pinBox, if (pinned != null) "Unpin" else "Pin for fights", if (ok) UiKit.Button.UP else UiKit.Button.DISABLED)
+                }
             }
+        }
+
+        /** a9: pin the buff for fights (the pick, then the pin cell on its ok), or unpin it (one tap) */
+        private fun pinOrUnpin(id: Int) {
+            val now = System.currentTimeMillis()
+            val a = auras.shownBuffs.firstOrNull { it.id == id } ?: return
+            val pinned = auras.pinOf(a.name)
+            if (pinned != null) {
+                val cell = auras.unpinCell(pinned) ?: return note("Update the add-ons to pin buffs")
+                if (!GameInput.tap(context, auras.pad, "aurapick", cell)) note("The game has not published its tap pad")
+            } else when (val t = auras.pin(id, GameInput.live(now), now)) {
+                is AuraTap.Send -> if (!GameInput.tap(context, auras.pad, "aurapick", t.slot)) { auras.sendFailed(); note("The game has not published its tap pad") }
+                is AuraTap.Refused -> note(t.why)
+            }
+            invalidate()
         }
 
         private fun remove(id: Int) {
@@ -5130,6 +5997,7 @@ class HomeView(
                     else { sel = hit; open = debuff; resetCursor(); scroll = hitScroll(debuff, hit); invalidate() }
                 }
                 removeBox.contains(x, y) -> sel?.let { remove(it) }
+                pinBox.contains(x, y) -> sel?.let { pinOrUnpin(it) }
                 // a finger's choice moves the controller's cursor with it (the A goes to Remove, as A would)
                 panel.contains(x, y) -> rows.firstOrNull { it.first.contains(x, y) }?.let { sel = it.second; cur = it.second; invalidate() }
                 else -> close()                                             // outside the open list: close it
@@ -5286,6 +6154,8 @@ class HomeView(
         const val ZONE_BAND_BOTTOM = 72f
         /** the page's fade at a move's start (out) and end (in) (HARMONY_SPEC section 3) */
         const val FADE_MS = 120f
+        /** fix/badges-cast: the info block's look-again at a cast's end comes at least this often (ms) while the cast holds it small */
+        const val INFO_LOOK_MAX_MS = 1000L
         /** the buff button, below the small map's zone bar */
         const val BTN_TOP = ZONE_BAND_BOTTOM + 8f
         /** b129, UI Art: the open map's auras - right-aligned at w - FULL_RIGHT (left of the filter corner and its Start glyph),
@@ -5373,11 +6243,14 @@ class HomeView(
 internal object ClassSlot {
     data class Slot(val left: Float, val top: Float, val side: Float)
     data class Area(val left: Float, val top: Float, val right: Float, val bottom: Float)
-    /** the column's area: the union of its parts' boxes [parts] (l, t, r, b), under the bars; none shown = that half of the page */
-    fun column(parts: List<Area>, barsBottom: Float, h: Float, gap: Float, left: Boolean, w: Float): Area =
+    /** the column's area: the union of its parts' boxes [parts] (l, t, r, b), under the bars; none shown = that half of the page.
+     *  feat/radial-castbar: [reach] = the foot of a bar of no column that slides down out of the way (HomeSlide.barDrop): the column's
+     *  parts end over it, the wheel takes the column down to where it ended (as with no bar there); 0 = none */
+    fun column(parts: List<Area>, barsBottom: Float, h: Float, gap: Float, left: Boolean, w: Float, reach: Float = 0f): Area =
         if (parts.isEmpty()) (if (left) Area(gap, barsBottom + gap, w / 2f - gap / 2f, h - gap) else Area(w / 2f + gap / 2f, barsBottom + gap, w - gap, h - gap))
         // fix/menus-fit: never below the frame (the wheel ran off it into the room bar when a stray box counted)
-        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right }, minOf(h - gap, parts.maxOf { it.bottom }))
+        else Area(parts.minOf { it.left }, maxOf(barsBottom + gap, parts.minOf { it.top }), parts.maxOf { it.right },
+            minOf(h - gap, maxOf(reach, parts.maxOf { it.bottom })))
     /** the wheel: the largest square in the column's area, centred in it */
     fun inColumn(a: Area): Slot {
         val side = minOf(a.right - a.left, a.bottom - a.top).coerceAtLeast(1f)
@@ -5412,7 +6285,10 @@ internal object ClassSlot {
  * width, its centre is the page's middle (not left of it), so it counted as the RIGHT column: RB + RT's wheel took the union of the right
  * column AND the full-width bar as its area (a square as tall as the page) and slid the bar away with the map. Now the cast bar's half
  * is its side: Left goes with the chat, Right with the minimap, Both with neither (it stays); a bar slid away for a fight is no
- * column's (it is below the page). The pause wheel's full slide keeps cb3's choice (Both goes left with the chat, pauseSlide).
+ * column's (it is below the page). The pause wheel's full slide kept cb3's choice (Both went left with the chat, pauseSlide).
+ * feat/radial-castbar (2026-11-23): Both's (Across's) bar still never slides sideways in these, but when a radial would be smaller with
+ * it there it slides DOWN out of the way ([barDrop], [makesRoom]) so each radial keeps its full size; the pause wheel's and the target
+ * radial's full slide always drop it the same way ("All wheels move the Across bar the same way").
  */
 internal object HomeSlide {
     enum class Half { LEFT, RIGHT, NONE }
@@ -5433,9 +6309,57 @@ internal object HomeSlide {
     /** fix/menus-fit: a part that spans the whole page (a full-screen module) - the only one that keeps its NAME's side in the slides;
      *  a 1/3 or 2/3 column straddles the middle but belongs to the half its centre is in */
     fun fullWidth(left: Float, right: Float, w: Float, gap: Float): Boolean = left <= gap + 1f && right >= w - gap - 1f
-    /** the middle wheel's lowest edge: above Both's laid bar (it stays), else the page's foot */
-    fun middleBottom(side: CastStripModel.Side, hidden: Boolean, stripTop: Float?, h: Float, gap: Float): Float =
-        if (side == CastStripModel.Side.BOTH && !hidden && stripTop != null) minOf(h - gap, stripTop - gap) else h - gap
+    /**
+     * feat/radial-castbar (the user, 2026-11-23: "When using radials and the tap to cast bar is set to full size, it should still move
+     * out of the way to make space for the full sized radials"): how far DOWN a tap-to-cast bar part slides while a radial over Home is
+     * open (the middle wheel, the class wheels, the LB picture). A bar of neither column ([half] NONE: Across, one bar under both columns)
+     * laid on the page goes below it, to the box Hide in combat lays it in (behind the room bar); a column's bar goes with its column
+     * (0 here: its side slide), one already below the page (hidden for a fight) stays. The radial then takes its size with no bar there
+     * (the middle wheel, the LB picture: down to the page's foot; a class wheel: its column's own square). 0 for any other part.
+     */
+    fun barDrop(strip: Boolean, half: Half, top: Float, h: Float): Float = if (strip && half == Half.NONE && top < h) h - top else 0f
+    /** the foot a radial may reach with Across's bar staying at [barTop] (a gap over it); none ([barTop] null) = the page's foot */
+    fun stayFoot(barTop: Float?, h: Float, gap: Float): Float = if (barTop == null) h - gap else minOf(h - gap, barTop - gap)
+    /**
+     * whether Across's bar at [barTop] makes room (drops) for a radial: only when the radial is smaller with the bar staying ([kept] <
+     * [full], its size in px) or would reach down over it ([keptBottom]); one that fits above it at its full size leaves it be (1.0.31's
+     * "If its set to both it can stay in place"). No such bar = never
+     */
+    fun makesRoom(barTop: Float?, kept: Float, full: Float, keptBottom: Float, gap: Float): Boolean =
+        barTop != null && (kept < full - 0.5f || keptBottom + gap > barTop + 0.5f)
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "List drops with the bar": "While a wheel is open, the party list and the Across
+     * bar both slide down out of the way, so the wheel gets full size. Both come back when it closes."): how far DOWN Party mode's
+     * full-width list laid at [top]..[bottom] ([wide]) slides with Across's bar laid from [barTop] when that bar drops for a radial. Only
+     * a list at the FOOT, right over the bar (the solver lays it there; a top list, or one with no bar laid under it, never moves: 0).
+     * The middle and class wheels: by the bar's own drop ([barDrop]: the same motion, the same distance), so the list lands where it lies
+     * with the bar Off - its well on the page's foot - and the wheel is the size it has then. [below] (the LB picture, the pause wheel's
+     * and the target radial's full slides, where with the bar Off the list leaves the page sideways): on down below the page, as the bar
+     */
+    fun partyDrop(wide: Boolean, top: Float, bottom: Float, barTop: Float?, h: Float, below: Boolean = false): Float = when {
+        !wide || barTop == null || barTop >= h || (top + bottom) / 2f < h / 2f || bottom > barTop + 0.5f -> 0f
+        below -> h - top
+        else -> h - barTop
+    }
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "Split bar too": "With a Split bar, the party list and the bar drop out of the
+     * way so the wheel gets full size, same as Across."): Split's halves part with their columns ([half]'s split) - unless Party mode's
+     * full-width list ([wide], laid [listTop]..[listBottom]) lies at the FOOT right over them (the halves laid from [barTop], on the
+     * page): then the two halves are one bar of no column, as Across's, and go down with the list for every wheel ([barDrop],
+     * [partyDrop]). A top list, one laid elsewhere, or halves slid below the page for a fight: they part as before
+     */
+    fun splitParts(split: Boolean, wide: Boolean, listTop: Float?, listBottom: Float?, barTop: Float?, h: Float): Boolean =
+        split && !(wide && listTop != null && listBottom != null && barTop != null && barTop < h &&
+            (listTop + listBottom) / 2f >= h / 2f && listBottom <= barTop + 0.5f)
+    /**
+     * fix/party-drop-wheels (the user's pick 2026-11-23, "Bar Off: stay when it fits": "With the bar off, the LB picture leaves the party
+     * list where it is when the picture fits, like it now does over Across."): Party mode's full-width list at the foot with no bar
+     * under it that drops (the bar Off, a bar above a column, one slid below the page for a fight) stays where it is for the LB picture
+     * when the picture, ending a gap over the list ([keptK] its scale there, [keptBottom] its foot), is as large as with the whole page
+     * ([fullK]) and clears the list's top [listTop]; otherwise it leaves the page sideways, as before
+     */
+    fun lbListStays(listTop: Float, keptK: Float, fullK: Float, keptBottom: Float, gap: Float): Boolean =
+        !makesRoom(listTop, keptK * LbPartyView.PICT_H, fullK * LbPartyView.PICT_H, keptBottom, gap)
 }
 
 /** p-card-invisible: the quest card's state in words, for the WCHOME "quest card:" line (pure, so the JVM tests read it) */

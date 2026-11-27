@@ -412,7 +412,7 @@ end
 -- the buff cancel and the game window's open / close), NOT on a row of their own: the pad has 54 rows and every one counts (1.0.8:
 -- the dialogs' row, asked for last, got none). Those cells carry no secure action, so a tap only runs Auras' onClick, which hands it
 -- here (WC.character.onSetCell). Each key keeps its cell as a plain row's would (pad.slotFor's "eqset" namespace, its quarantine).
-local EQ_ROW, EQ_FIRST, EQ_CELLS = "auracancel", 3, 40
+local EQ_ROW, EQ_FIRST, EQ_CELLS = "auracancel", 3, 40     -- (a9 pins live on the castbar row, not here)
 local function eqCell(key)
     if not (WC.pad and type(WC.pad.slotFor) == "function") then return nil end
     local s = WC.pad.slotFor("eqset", key)

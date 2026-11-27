@@ -514,7 +514,8 @@ def _info():
     return {"proto": PROTO, "bridge_port": PORT, "host_id": state["host_id"], "pc_name": PC_NAME, "ver": VERSION,
             "sunshine": {"http_port": SUNSHINE_HTTP, "https_port": SUNSHINE_HTTPS},
             "wow": w,
-            "lan": lan_addresses(), "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {})}
+            "lan": lan_addresses(), "stream": "unknown", "pairing_open": True, **({"tls": True, "fp": FINGERPRINT} if FINGERPRINT else {}),
+            "pc_ms": int(time.time() * 1000)}     # Q1 (2026-11-24): the Thor compares the two clocks
 
 _tasks = set()
 def spawn(coro):
@@ -753,6 +754,7 @@ async def start_session(ws, device):
     async with feed_lock:
         sessions[device] = ws
         log(f"Session for {device[:8]}…, backlog {len(backlog)}")
+        welcome["pc_ms"] = int(time.time() * 1000)   # Q1b: stamped at the send (not before the lock), the Thor compares clocks
         await send(ws, {"t": "welcome", **welcome, "device_id": device, "backlog": len(backlog)})
         for msg in list(backlog):
             await send(ws, msg)
@@ -984,6 +986,19 @@ def doctor():
              f"sudo firewall-cmd --permanent --add-port={PORT}/tcp --add-service=mdns && sudo firewall-cmd --reload")
     elif shutil.which("ufw"):
         print(f"  NOTE ufw: if it is on, allow the Thor in: sudo ufw allow {PORT}/tcp && sudo ufw allow mdns")
+    # Linux Streaming Edition (Q1 / Q5, 2026-11-24): the clock, the encoder Sunshine really uses, other streamers
+    if shutil.which("timedatectl"):
+        ntp = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], capture_output=True, text=True).stdout.strip()
+        line(ntp == "yes", "the PC's clock is synced (NTP)", "turn on automatic time: sudo timedatectl set-ntp true")
+    enc = _sunshine_encoder()
+    if enc:
+        line(not any(sw in enc for sw in ("libx264", "libx265", "software")), f"Sunshine encodes with {enc}",
+             "Sunshine fell back to software encoding (the stream lags): restart Sunshine; if it stays, check the GPU driver")
+    others = [n for n in ("parsecd", "steamlink", "rustdesk", "anydesk") if subprocess.run(["pgrep", "-x", n], capture_output=True).returncode == 0]
+    n_sun = len(subprocess.run(["pgrep", "-x", "sunshine"], capture_output=True, text=True).stdout.split())
+    if n_sun > 1: others.append(f"{n_sun} Sunshine processes")
+    line(not others, "no other streaming program competes for the encoder" if not others else "other streaming programs: " + ", ".join(others),
+         "close them while you play (they take the encoder or the input)")
     svc = subprocess.run(["systemctl", "--user", "is-active", "dsf-bridge"], capture_output=True, text=True).stdout.strip()
     line(svc == "active", "helper service running (dsf-bridge)", "run ./install.sh, or: systemctl --user enable --now dsf-bridge")
     have = addons.installed_set(ADDONS_DIR)
@@ -992,6 +1007,15 @@ def doctor():
     print(f"  INFO paired Thors: {len(state['devices'])}")
     print("All good." if not probs else f"{probs} thing(s) to fix.")
     return probs
+
+def _sunshine_encoder():
+    """The encoder of Sunshine's last stream ("hevc_nvenc", ...) from its log, or "" (no log / no stream yet)."""
+    try:
+        txt = (SUNSHINE_DIR / "sunshine.log").read_text(errors="replace")[-200_000:]
+    except OSError:
+        return ""
+    found = re.findall(r"Creating encoder \[([^\]]+)\]", txt)
+    return found[-1] if found else ""
 
 def _in_range(port, spec):
     a = spec.split("/")[0]

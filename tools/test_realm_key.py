@@ -1,5 +1,5 @@
-"""NO PARTIAL CHARACTER KEY (Safety k6 WC.charKey / WC.realmFix; PadMap m178, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p26,
-TapPad pad27, Trail prd21, Hub hub74, Map pq2), off-device: the REAL add-on files under tools/wowstub.py's stubbed game, Lua 5.1 as the game's.
+"""NO PARTIAL CHARACTER KEY (Safety k6 WC.charKey / WC.realmFix; PadMap m178, ActionBar cb16, Spells s18, Radial r28 / q8, Professions p26,
+TapPad pad27, Trail prd22, Hub hub74, Map pq2), off-device: the REAL add-on files under tools/wowstub.py's stubbed game, Lua 5.1 as the game's.
 
     python tools/test_realm_key.py
 
@@ -201,12 +201,12 @@ check('WC.KERNEL = "k12"' in TEXT["safety"] and "-- k11 (the k10 review, round 1
       and "-- k9 (the k6 review, round 3): THE CHARACTER'S OWN GUID" in TEXT["safety"] and "-- k10 THE STICKY REALM" in TEXT["safety"]
       and "Realms work different in wow forever" in TEXT["safety"] and "function WC.charKeyPick(i)" in TEXT["safety"],
       "0. Safety k12 (k6-k11's notes kept): WC.charKey, the sticky realm, the note quotes the user")
-check('local BV = "b76"' in SRC["book"] and "b74 THE STICKY REALM'S QUESTION" in SRC["book"] and "P3[9] = function()" in SRC["book"],
+check('local BV = "b85"' in SRC["book"] and "b74 THE STICKY REALM'S QUESTION" in SRC["book"] and "P3[9] = function()" in SRC["book"],
       "0. Book b74: the third page's 9 / 10-19 (the sticky realm's question)")
-check('local PV = "m187"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb16"' in AB and 'local SV = "s18"' in TEXT["spells"]
-      and 'local RV = "r28"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p28"' in TEXT["prof"] and 'p26 NO PARTIAL CHARACTER KEY' in TEXT["prof"]
-      and 'local PADV = "pad37"' in TEXT["tappad"] and 'WC.prd = { V = "prd21"' in TEXT["trail"] and 'local HV = "hub77"' in TEXT["hub"]
-      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m182, ActionBar cb16, Spells s18, Radial r27 / q8, Professions p27 (its p26 note kept), TapPad pad27, Trail prd21, Hub hub77, Map pq2")
+check('local PV = "m198"' in TEXT["padmap"] and "m180 THE STICKY REALM" in TEXT["padmap"] and "m181 (Safety k11" in TEXT["padmap"] and "m182 (Safety k12" in TEXT["padmap"] and 'local CBV = "cb17"' in AB and 'local SV = "s18"' in TEXT["spells"]
+      and 'local RV = "r29"' in TEXT["radial"] and 'local SRV = "q8"' in TEXT["radial"] and 'local PV = "p29"' in TEXT["prof"] and 'p26 NO PARTIAL CHARACTER KEY' in TEXT["prof"]
+      and 'local PADV = "pad38"' in TEXT["tappad"] and 'WC.prd = { V = "prd24"' in TEXT["trail"] and 'local HV = "hub80"' in TEXT["hub"]
+      and 'v = "pq2"' in TEXT["map"], "0. the tags: PadMap m182, ActionBar cb16, Spells s18, Radial r28 / q8, Professions p28 (its p26 note kept), TapPad pad27, Trail prd23, Hub hub75, Map pq2")
 # every per-character builder goes through WC.charKey: no file but Safety concatenates GetRealmName() into a key any more
 for k, s in list(TEXT.items()) + [("actionbar", AB)]:
     if k == "safety":
@@ -403,7 +403,7 @@ check(C.eval('WowCompanion.pad.rows.castbar') is not None and C.eval('WowCompani
       "f. the realm empty: the cast bar's row casts the REAL castBar's spell (403), not the orphan's")
 check(C.eval('WowCompanionSpellsDB.castBar["Korvash-?"]') is None, "f. the castBar \"Korvash-?\" orphan folded away")
 cb = [d for d in docs(C, 'castbar')]
-check(cb and cb[-1].get('v') == 'cb16', "f. the cast bar document: cb16", cb[-1].get('v') if cb else None)
+check(cb and cb[-1].get('v') == 'cb17', "f. the cast bar document: cb16", cb[-1].get('v') if cb else None)
 clean(C, "f")
 
 # ================================================================ g the realm back (live) with orphans from before

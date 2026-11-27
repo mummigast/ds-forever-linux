@@ -158,7 +158,7 @@ class ControllerTilesRoomTest {
         assertEquals(listOf(SettingsTabs.Group.BUTTONS, SettingsTabs.Group.WHEELS, SettingsTabs.Group.COMBAT), groups)
         for (gb in r.groupBoxes.filter { it.group in groups }) assertTrue("${gb.group}", gb.parts.single() is ControllerTiles)
         assertEquals(View.GONE, r.groupBoxes.first { it.group == SettingsTabs.Group.SMART_Y }.box.visibility)
-        assertEquals(listOf("abxy", "glyphs", "smarty"), partOf(r, "abxy").tileIds())                  // no pet class: no B tile
+        assertEquals(listOf("abxy", "glyphs", "smarty", "holdtime"), partOf(r, "abxy").tileIds())      // no pet class: no B tile; m190: Hold time last
         assertEquals(listOf("pause", "item", "spell", "classL", "classR"), partOf(r, "pause").tileIds())
         // no class known yet: every helper's slot is there (dim "..." tiles until the game says)
         assertEquals(listOf(GameUi.PMODE_ID, GameUi.SRES_ID, GameUi.ATK_ID, "attackcast", GameUi.SHOT_ID), partOf(r, GameUi.ATK_ID).tileIds())
@@ -179,7 +179,7 @@ class ControllerTilesRoomTest {
         // with the pet's tile: the wide one at columns 4-5, ending at the page's margin
         pet = PadMapModel.PetB(on = true, cls = true, pet = true, bound = true)
         partOf(r, "abxy").refresh(); lay(r)
-        assertEquals(listOf("abxy", "glyphs", "petb", "smarty"), partOf(r, "abxy").tileIds())
+        assertEquals(listOf("abxy", "glyphs", "petb", "smarty", "holdtime"), partOf(r, "abxy").tileIds())
         assertEquals(W - 16f, tileBoxes(r).getValue("smarty").right, 0.5f)
     }
 
@@ -271,6 +271,19 @@ class ControllerTilesRoomTest {
             GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, cls)
             assertFalse(cls, GameUi.SHOT_ID in c.tileIds())
         }
+        // fix/lbrb-wheels: a class wheel's tile only for a class with that wheel (Druid / Paladin left, Warrior right, Hunter / Warlock both)
+        val w = partOf(r, "pause")
+        for ((cls, want) in listOf("MAGE" to listOf("pause", "item", "spell"), "PRIEST" to listOf("pause", "item", "spell"),
+                "DRUID" to listOf("pause", "item", "spell", "classL"), "PALADIN" to listOf("pause", "item", "spell", "classL"),
+                "WARRIOR" to listOf("pause", "item", "spell", "classR"), "HUNTER" to listOf("pause", "item", "spell", "classL", "classR"),
+                "WARLOCK" to listOf("pause", "item", "spell", "classL", "classR"))) {
+            GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, cls)
+            w.refresh(); lay(r)
+            assertEquals(cls, want, w.tileIds())
+        }
+        GameUi::class.java.getDeclaredField("playerClass").apply { isAccessible = true }.set(GameUi, null)
+        w.refresh(); lay(r)
+        assertEquals(listOf("pause", "item", "spell", "classL", "classR"), w.tileIds())
     }
 
     /** Smart Y: dim "..." before the game; On / Off through Smart Y's own taps; "List" opens the list as a sub-page that lands on its
@@ -292,7 +305,7 @@ class ControllerTilesRoomTest {
         sent.clear()
         doc = smartDoc(on = true); b.refresh(); lay(r)
         // the cursor onto Smart Y, A, down to the band's List, A
-        press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT")   // (pick 5: no heading stop first)
+        press(r, "PADDDOWN"); press(r, "PADDRIGHT"); press(r, "PADDRIGHT")   // (pick 5: no heading stop first; m190: Hold time after Smart Y)
         val tile = tileBoxes(r).getValue("smarty")
         assertEquals(tile, r.pad.focusBox())
         press(r, "PAD1")

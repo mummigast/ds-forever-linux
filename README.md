@@ -23,10 +23,11 @@
 - **Smoother fights.** Less work per frame inside the game, so fewer hitches when a fight starts.
 - **Streaming only.** The game runs on the PC, never on the Thor, so the app is smaller and installs next to the official one.
 
-## Latest: 1.0.39.2
+## Latest: 1.0.41.1
 
-Professions and Bags work from the first press, and the bank names its items. On top of 1.0.39.1 (DS Forever 1.0.39,
-party and battleground pop-ups on the bottom screen).
+DS Forever 1.0.41 (Edit Home tabs, our own cast bar above the HUD, performance mode), plus hold to cast while streaming, buffs
+pinned for fights, controller rumble, and fixes from a full test round on the Thor (switches by keys, no background work while
+you stream).
 [All changes](CHANGES.md)
 
 ## What you need

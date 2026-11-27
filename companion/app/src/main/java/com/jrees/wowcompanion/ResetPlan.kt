@@ -16,8 +16,10 @@ package com.jrees.wowcompanion
  *                        LAYOUTS (per char) dpad (the DS WoW toolbar; back to its default ON, never "not asked": the prompt stays answered),
  *                                 rbm (movable Home, PadMap m178: the toolbar's mirror bit; a reset = Left is the chat again, mirror 0),
  *                                 ctop (movable Home phase 3, PadMap m179: the top-screen combat bar's flag; a reset = off, the band grows)
+ *                                 ctcb (PadMap m187: "Cast bar in fights: Top screen"; a reset = Bottom screen)
+ *                                 ctsw (PadMap m190: the swing with our top cast bar; a reset = on)
  *                        NEVER   formSlotsBy, smartModel, cdLearn, petSpellBy, petDeadBy (learned / remembered game facts); dpadZL,
- *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1 (one-time clean-ups / probes: a
+ *                                 srGone, srBy, srMacros, genUse, fix181, keyProbe, aclOurs, aclReset1, holdGuide (one-time clean-ups / probes: a
  *                                 reset would run them again); faceSwap, faceCd, combatFace (crash recovery / learned, never synced);
  *                                 macroRoom (the Macros room's last tab); attack (legacy shared record); padLayout, startOver, castBarTab,
  *                                 castBarShow (cb14: the add-on's copy of castBarCombat, home LAYOUTS), castBarPShow (cb15: the add-on's
@@ -33,18 +35,19 @@ package com.jrees.wowcompanion
  *                                 chatStyleSet2, cursorSoftSet (one-time moves, probes, calibrations: a reset would run them again)
  *
  * APP PREFERENCES (SharedPreferences files)
- *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
- *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme
- *               NEVER    browserLogin, windowsId (+ windowsIdRan*), gameAccountAsk, gameAccountPick (the sign-in), polestarGuide, polestarOffBoot,
+ *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), pageOut, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
+ *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme,
+ *                        graphicsDriver (an opt-in test driver: back to Recommended)
+ *               NEVER    browserLogin, windowsId (+ windowsIdRan*), graphicsDriverRan, gameAccountAsk, gameAccountPick, gameAccountHandover (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
- *  framegen     SETTINGS enabled, multiplier, flowScale, performance, fpsLimitContainer, fpsLimitAsk   NEVER fpsLimit108, fpsLimitNote
+ *  framegen     SETTINGS enabled, multiplier, flowScale, performance, fpsLimitContainer, fpsLimitAsk   NEVER fpsLimit108, fpsLimitNote, fpsLimit60
  *  gameui       SETTINGS mode.<element>, sw.pmode, castbar.hide   LAYOUTS (per char) sw.<part>.<who>, hud.<who>, prdy./prdw./prds.<who>,
  *                        mt.<part>.<who>
  *  cast         SETTINGS buttonLayout, abxyLocation
  *  home         SETTINGS pauseOverGame, rankBadges   LAYOUTS (app-wide: Home has no per-character store) rest, questMin, questOverMap, combatGrow,
  *                        swingTimer, castBarSide, castStrip, castBarCombat, castBarPartyShow (Bar in Party mode), clockHearth,
- *                        clockTeleport, clockGold, clockBags, clockAmmo,
+ *                        clockTeleport, clockGold, clockBags, clockAmmo, clockPet,
  *                        and the wheels' open / pick: radialTap, radialPickA, spellTap, spellPickA, classTapL, classPickAL, classTapR,
  *                        classPickAR, pauseTap, pausePickA; movable Home (SPEC section 9): per char homeLayout.<who> (a reset = Classic
  *                        WRITTEN under that key: the default stays), and ONLY with "All characters" (fix round 3: they belong to no one
@@ -60,8 +63,8 @@ package com.jrees.wowcompanion
  *  dsf_lang     SETTINGS lang         dsf_stream  SETTINGS quality   NEVER host, client_id, client_cert, client_key (pairing)
  *  NEVER (whole files) addons (the add-ons the player installed), polestar_qol, polestar_handoff, newspells, wc_itemcd, questwatch,
  *        taxinet, questme, cityexits, interact, chat_filter, chat_talk (decision: chat not named), data_staleness, dsf_art_near, report,
- *        dsf_last_run, dsf_region, voice, home_login_prefs, dsf_conn_test, wow_forever, battle_net_login, crash_logs, the GameNative
- *        DataStore (PluviaPreferences)
+ *        dsf_last_run, dsf_region, voice, home_login_prefs, dsf_conn_test, wow_forever, battle_net_login, crash_logs, padnote (the game's
+ *        Stance / Possess Bar settings last seen per character: PadLayerNote's one-time note), the GameNative DataStore (PluviaPreferences)
  *
  * APP FILES
  *  Documents/DS Forever/combat/<who>.json   SKILLS (per char): the In-combat backup the app puts back when the store is empty at login
@@ -76,8 +79,8 @@ package com.jrees.wowcompanion
  *  - every start: gxApi, ResampleQuality, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
  *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489); the old defaults once per folder (#293)
  *  - Low-memory graphics: the textures (LOW_MEMORY_GRAPHICS) and, on 8 / 12 GB Thors, LOW_MEMORY_8GB (recorded: Reset gives them back)
- *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" (the user's ruling 2026-11-20, A) marks the
- *    learned label "!" in accountList (Settings.gameAccountPick; no recorded original: the game rewrites the list itself; not reset)
+ *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" writes nothing (the "!" write went 2026-11-20;
+ *    Browser login hands the account to the game in the Wine registry instead, never Config.wtf: GameAccountHandover, 2026-11-23)
  *  - ClientSettings_WORK_OPTIMS_BY_API_MASK (the user's ruling 2026-11-20, B): the server's value "16001,0xe,0x0,0x1ff", launch client
  *    only, only where missing (recorded: GameConfigWtf.WORK_OPTIMS_SAVED; Reset removes it again while it is still our value)
  */
@@ -96,10 +99,12 @@ object ResetPlan {
 
     val SV_KEYS: List<SvKey> = listOf(
         *listOf("faceBy", "fightBy", "formFightBy", "cmdBy", "binds", "stickBy", "attackBy", "ccOff", "lowPickBy", "smartOn", "smartBuffs",
-            "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
+            "partyBy", "radialPins", "sradials", "sradial", "castBar", "castBarFight", "castBarParty", "holdBy").map { SvKey(SPELLS, it, Kind.SKILLS, true) }.toTypedArray(),
         SvKey(SPELLS, "dpad", Kind.LAYOUTS, true, default = true),
         SvKey(SPELLS, "rbm", Kind.LAYOUTS, true),                                   // movable Home: the DS toolbar's mirror bit (none = off)
         SvKey(SPELLS, "ctop", Kind.LAYOUTS, true),                                  // movable Home phase 3: the top-screen combat bar (none = off)
+        SvKey(SPELLS, "ctcb", Kind.LAYOUTS, true),                                  // PadMap m187: "Cast bar in fights" (none = Bottom screen)
+        SvKey(SPELLS, "ctsw", Kind.LAYOUTS, true),                                  // PadMap m190: the swing with our top cast bar (none = on)
         *listOf("lay", "hubSw", "hubLy", "meters", "prdY", "prdS", "prdW").map { SvKey(DB, it, Kind.LAYOUTS, true) }.toTypedArray(),
         SvKey(DB, "bagBinds", Kind.SKILLS, true),
         *listOf("compass", "hideTips", "aggroRings", "lootTop").map { SvKey(DB, it, Kind.SETTINGS, false) }.toTypedArray(),
@@ -111,7 +116,7 @@ object ResetPlan {
     val SV_NEVER: Map<String, Set<String>> = mapOf(
         SPELLS to setOf("formSlotsBy", "smartModel", "cdLearn", "petSpellBy", "petDeadBy", "dpadZL", "srGone", "srBy", "srMacros", "genUse",
             "fix181", "keyProbe", "aclOurs", "aclReset1", "faceSwap", "faceCd", "combatFace", "macroRoom", "attack", "padLayout", "startOver",
-            "castBarTab", "castBarShow", "castBarPShow"),
+            "castBarTab", "castBarShow", "castBarPShow", "holdGuide"),       // m190: hold to cast's probe answer (a game fact)
         DB to setOf("pqol", "pskip", "npEnemies", "npFriends", "npFriendsOff", "npFriendsSet", "routeWp", "chatTop", "compassCal",
             "compassCam", "layV", "prdYv", "prdCurve", "camProbe", "calProbe", "qtDefaults", "chatStyleSet2", "cursorSoftSet",
             "realmOf", "realmFixBak", "who",     // Safety k6: the realms each name was seen with, and the orphan keys' fold backups;
@@ -121,7 +126,9 @@ object ResetPlan {
             // Linux Edition 2026-11-20: the stutter diagnostics (Sink perf2 / perf3: the last fight starts and hitch frames)
             "perf", "hitch",
             // Linux Edition 2026-11-24: the Lua error log of this session and the one before (ErrLog.lua)
-            "luaErr", "luaErrPrev", "taintLogReset1"),
+            "luaErr", "luaErrPrev", "taintLogReset1",
+            // Linux Edition 2026-11-24 (a9): the buffs pinned for fights, per character (the player's own picks: a reset keeps them)
+            "auraPins"),
     )
 
     /** a character key as the add-on writes it ("Name-Realm"; [CharKey]: never a partial "Name-?" / "Name-_" one) */
@@ -169,21 +176,24 @@ object ResetPlan {
     private fun char(file: String, kind: Kind?, vararg prefixes: String) = prefixes.map { PrefKey(file, it, kind, perChar = true) }
 
     val PREFS: List<PrefKey> = listOf(
-        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
-            "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme"),
-        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", "gameAccountAsk", "gameAccountPick",
-            "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
+        exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "pageOut", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
+            "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme",
+            // 2026-11-23: an opt-in test graphics driver goes back to Recommended with the other settings
+            GraphicsDriver.KEY),
+        exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", GraphicsDriver.KEY_RAN,
+            "gameAccountAsk", "gameAccountPick",
+            "gameAccountHandover", "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",
             "theme_custom", "swapScreensFails", "settingsTab"),
         exact("framegen", Kind.SETTINGS, "enabled", "multiplier", "flowScale", "performance", "fpsLimitContainer", "fpsLimitAsk"),
-        exact("framegen", null, "fpsLimit108", "fpsLimitNote"),
+        exact("framegen", null, "fpsLimit108", "fpsLimitNote", "fpsLimit60"),
         exact("gameui", Kind.SETTINGS, "sw.pmode", "castbar.hide"),
         char("gameui", Kind.SETTINGS, "mode."),
         char("gameui", Kind.LAYOUTS, "sw.*.", "hud.", "prdy.", "prdw.", "prds.", "mt.*."),
-        exact("cast", Kind.SETTINGS, "buttonLayout", "abxyLocation"),
+        exact("cast", Kind.SETTINGS, "buttonLayout", "abxyLocation", "holdTime"),     // m190: hold to cast's hold time
         exact("home", Kind.SETTINGS, "pauseOverGame", "rankBadges"),
         exact("home", Kind.LAYOUTS, "rest", "questMin", "questOverMap", "combatGrow", "swingTimer", "castBarSide", "castStrip", "castBarCombat",
             "castBarPartyShow",
-            "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "radialTap", "radialPickA", "spellTap", "spellPickA",
+            "clockHearth", "clockTeleport", "clockGold", "clockBags", "clockAmmo", "clockPet", "radialTap", "radialPickA", "spellTap", "spellPickA",
             "classTapL", "classPickAL", "classTapR", "classPickAR", "pauseTap", "pausePickA"),
         // fix round 3: the first-login seed and 1517's unread "Mine" slots are the device's, never one character's ("This character" keeps them)
         device("home", Kind.LAYOUTS, HomeLayoutStore.KEY_DEFAULT, HomeLayoutStore.KEY_SLOTS_LEGACY, HomeLayoutStore.KEY_HELD),
@@ -203,7 +213,7 @@ object ResetPlan {
     /** whole files a reset never opens */
     val NEVER_FILES = setOf("addons", "polestar_qol", "polestar_handoff", "newspells", "wc_itemcd", "questwatch", "taxinet", "questme",
         "cityexits", "interact", "chat_filter", "chat_talk", "data_staleness", "dsf_art_near", "report", "dsf_last_run", "dsf_region", "voice",
-        "home_login_prefs", "dsf_conn_test", "wow_forever", "battle_net_login", "crash_logs")
+        "home_login_prefs", "dsf_conn_test", "wow_forever", "battle_net_login", "crash_logs", "padnote")
 
     /** [key] of [file] matches [r]: exact; a per-character prefix ("sw.*." = "sw.<part>."; "mode." takes any element) followed by
      *  [who] (or, with [all], any character key); the "*" whole file */

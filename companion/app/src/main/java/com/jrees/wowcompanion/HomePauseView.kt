@@ -18,8 +18,11 @@ import org.json.JSONObject
  * INPUT, all read here while open (its own PadInput, as the consumables wheel): a stick lights a slice, letting it go OR A picks (the
  * user 2026-10-09, "A picks too", as our other wheels); B closes (on Emotes: back to the main page); LB / RB the pages; the right
  * stick's click drops the pick; D-pad Up = Emotes, Down = Sit / Stand (both on the release; Sit closes the wheel as an emote does,
- * [HomePauseModel.SIT]); Start closes. A finger works too. Y (or a tap on the top-right corner's power button) asks "Close DS Forever?"
- * ([PausePower]; feat/pause-power, the user 2026-11-18): A closes DS Forever (and WoW, on the PC too while streaming), B goes back.
+ * [HomePauseModel.SIT]); Start closes. A finger works too. THE CORNERS (the user, 2026-11-24: "the power button swapped to the left side
+ * and then an edit button added on the right set to the x button that puts them into the home edit mode. Change the power button to
+ * select or minus"): Select / Minus (or a tap on the top-LEFT corner's power button) asks "Close DS Forever?" ([PausePower]): A closes
+ * DS Forever at once (ExitNow, in a fight too), B goes back; X (or a tap on the top-RIGHT corner's pencil) folds the wheel and opens
+ * Edit Home ([HomePauseModel.EDIT]; a fight: Edit Home's own refusal, its pencils flash). Y does nothing on the wheel.
  *
  * THE CONTROLLER: while open it holds the guest "radial" (the consumables wheel's; never both open: the router only sends "pause" when
  * no guest holds), so the game acts on none of it; Quests q34 adds Start to that guest's keys.
@@ -51,6 +54,8 @@ class HomePauseView(
     var onPick: (HomePauseModel.Slice) -> Unit = {}
     /** pk1: Polestar's Skip / Previous can be pressed now (the Map's state, read at each open and each frame) */
     var polestar: () -> Pair<Boolean, Boolean> = { false to false }
+    /** a9: the pinned buffs (name, castbar cell) from Home's auras */
+    var pins: () -> List<Pair<String, Int>> = { emptyList() }
     /** feat/pause-power: a stream runs (the prompt's line says the PC closes and is put back) */
     var streaming: () -> Boolean = { false }
     /** feat/pause-power: why the power button can't be used now (a fight), null = it can */
@@ -60,6 +65,8 @@ class HomePauseView(
     private val power = PausePower.Flow()
     /** a finger held on the power button; on the prompt's Cancel or Close (UiKit.POWER_*), -1 none */
     private var powerDown = false
+    /** a finger held on the Edit button */
+    private var editDown = false
     private var powerPressed = -1
     /** the prompt's line, fixed when it opened (a stream ending meanwhile doesn't change the question asked) */
     private var powerStream = false
@@ -132,7 +139,7 @@ class HomePauseView(
         }
         openByStart = byStart
         UiKit.pauseRoomy = true                                             // feat/pause-power: Home's controller goes up, the wheel grows
-        power.reset(); powerDown = false; powerPressed = -1
+        power.reset(); powerDown = false; powerPressed = -1; editDown = false
         LatLog.mark("wheel", "pause open")
         flow.reset(); flow.holdOpen = !HomeSettings.pauseTap; flow.pickA = HomeSettings.pausePickA      // its own pair (the user, 2026-10-09)
         psState()
@@ -373,8 +380,9 @@ class HomePauseView(
         }
         when {
             pressed(PadInput.SLOT_START) -> { close("Start"); return }
-            // feat/pause-power: Y = the power button (its glyph on the button's corner)
-            pressed(PadInput.SLOT_FACE_TOP) -> { powerAct(power.press(powerRefusal()), "Y"); return }
+            // the corners (the user, 2026-11-24): Select / Minus = the power button (left), X = Edit (right); their glyphs on the buttons
+            pressed(PadInput.SLOT_SELECT) -> { powerAct(power.press(powerRefusal()), "Select"); return }
+            pressed(PadInput.SLOT_FACE_LEFT) -> { editPress("X"); return }
             pressed(PadInput.SLOT_FACE_RIGHT) -> { if (flow.b() == HomePauseModel.Act.Close) pressHub() else invalidate(); return }
             pressed(PadInput.SLOT_RSTICK) -> { flow.cancel(); invalidate() }
             pressed(PadInput.SLOT_FACE_BOTTOM) -> act(flow.a())
@@ -430,7 +438,15 @@ class HomePauseView(
         invalidate()
     }
 
-    /** the preview / tests only: the prompt up ([closing] = the close under way), as Y would open it */
+    /** the corner's Edit (X or a touch): the wheel folds, then Edit Home's own entry (the host's [onPick] of [HomePauseModel.EDIT]) */
+    private fun editPress(how: String) {
+        Log.i("WCLOG", "pause: Edit ($how): the wheel folds, Edit Home opens")
+        editDown = false
+        after = HomePauseModel.EDIT
+        close("Edit ($how)")
+    }
+
+    /** the preview / tests only: the prompt up ([closing] = the close under way), as Select would open it */
     fun previewPower(streamingNow: Boolean, closing: Boolean = false) {
         power.reset(); power.press(null); powerStream = streamingNow
         if (closing) power.confirm()
@@ -453,6 +469,7 @@ class HomePauseView(
                     }
                     pvpArmedAt = 0L
                 }
+                if (pinCancel(cmd)) return
                 game(cmd)
             }
             HomePauseModel.Kind.ROOM, HomePauseModel.Kind.HOME -> { after = s; close("a room picked") }
@@ -465,6 +482,16 @@ class HomePauseView(
      * "pressing the sit button from the pause menu should close the pause menu"; it stayed open up to 1.0.32, as the game's radial
      * does after its D-pad Sit). The Game Menu: the game's own menu
      */
+    /** a9: a pinned buff's cancel: ONE key press on the castbar's pin cell (its macro armed out of combat); false = not a pin pick */
+    private fun pinCancel(cmd: String): Boolean {
+        if (cmd != HomePauseModel.PIN1.cmd && cmd != HomePauseModel.PIN2.cmd) return false
+        val p = runCatching { pins() }.getOrDefault(emptyList()).getOrNull(if (cmd == HomePauseModel.PIN1.cmd) 0 else 1)
+        val ok = p != null && TapBridge.tap(context, questsPad(), "castbar", p.second) { why -> Log.i(TAG, "pause: pin cancel refused ($why)") }
+        Log.i(TAG, "pause: $cmd ${p?.first} ${if (ok) "sent" else "NOT sent"}")
+        if (ok) { lastActAt = SystemClock.uptimeMillis(); close("a pin cancel") } else say("Comes with the next add-on update")
+        return true
+    }
+
     private fun game(cmd: String) {
         if (cmd == "menu") {
             // 1.0.21 (the user: "showing the escape menu on the bottom screen was a mistake since we have to reopen it on the top screen for
@@ -633,6 +660,7 @@ class HomePauseView(
     private fun psState() {
         val (sk, pv) = runCatching { polestar() }.getOrDefault(false to false); flow.psSkip = sk; flow.psPrev = pv
         flow.inBg = PvpModel.queues.any { it.status == "active" }
+        flow.pinNames = runCatching { pins().map { it.first } }.getOrDefault(emptyList())
     }
 
     override fun onDraw(c: Canvas) {
@@ -704,7 +732,10 @@ class HomePauseView(
         // (the prompt dims the stage; the button stays bright over it, in its gold box, while its prompt is up)
         if (power.busy) UiKit.pausePowerPrompt(c, screen, PausePower.context(powerStream),
             closing = if (power.state == PausePower.State.CLOSING) PausePower.closing(powerStream) else null, pressed = powerPressed)
-        UiKit.pausePower(c, screen, ((tt - 440f) / 160f).coerceIn(0f, 1f), down = powerDown, lit = power.busy)
+        val cornersIn = ((tt - 440f) / 160f).coerceIn(0f, 1f)
+        UiKit.pausePower(c, screen, cornersIn, down = powerDown, lit = power.busy)
+        // the corners (the user, 2026-11-24): Edit in the top-right corner, under the prompt's dim while it asks
+        if (!power.busy) UiKit.pauseEdit(c, screen, cornersIn, down = editDown)
         if (power.state == PausePower.State.CLOSING) postInvalidateDelayed(50L)       // the spinner turns
         // the open runs to its end whatever the kit says (its "moving" covers the wheel only, the panels slide too)
         if (moving || tt < UiKit.PAUSE_OPEN_MS || closingFrom >= 0f || hubPressAt != 0L || hubHeldAt != 0L || line != null) postInvalidateOnAnimation()
@@ -752,6 +783,17 @@ class HomePauseView(
                 MotionEvent.ACTION_MOVE -> if (powerPressed >= 0 && hit != powerPressed) { powerPressed = -1; invalidate() }
                 MotionEvent.ACTION_UP -> { powerPressed = -1; powerAct(power.touch(hit), "touch") }
                 MotionEvent.ACTION_CANCEL -> { powerPressed = -1; invalidate() }
+            }
+            return true
+        }
+        // the corner's Edit: a finger lifted on it = X
+        val onEdit = UiKit.pauseEditHit(scr, e.x, e.y)
+        if (editDown || (onEdit && e.actionMasked == MotionEvent.ACTION_DOWN)) {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { editDown = true; invalidate() }
+                MotionEvent.ACTION_MOVE -> if (!onEdit) { editDown = false; invalidate() }
+                MotionEvent.ACTION_UP -> { editDown = false; if (onEdit) editPress("touch") else invalidate() }
+                MotionEvent.ACTION_CANCEL -> { editDown = false; invalidate() }
             }
             return true
         }

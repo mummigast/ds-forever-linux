@@ -112,7 +112,7 @@ nreg0 = int(L.eval(NREG))
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "cb2: an empty bar at the login registers NO castbar row")
 d = last(L, "castbar")
 check(d is not None and d.get("pick") is None and d.get("nopad") == 1 and d.get("pp") == [39, 19] and d.get("e") in ([], {})
-      and d.get("v") == "cb16" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
+      and d.get("v") == "cb17" and d.get("n") == N, "the first document: an empty bar, no pick cell (nopad), the padtab pick 39 then 19", d)
 check(L.eval('WowCompanion.pad.describe().rows.castbar') is None, "describe() has no castbar row yet")
 L.execute('WowCompanion.castBar.sync(); fire("PLAYER_REGEN_ENABLED"); runTimers(NOW + 5)')
 check(L.eval('WowCompanion.pad.rows.castbar') is None, "a sync / fight's end with an empty bar: still no row")
@@ -122,7 +122,7 @@ L.execute('QSOON = 0; WowCompanion.questsSoon = function() QSOON = QSOON + 1 end
 edit(L, 403)
 check(int(L.eval('QSOON')) == 1, "cb2b: the row registered mid-session asks for the quests document again once (Home's pad copy)", L.eval('QSOON'))
 row = L.eval('WowCompanion.pad.rows.castbar')
-check(row is not None and bool(row.secure) and int(row.n) == 3 * N + 1, "cb6 / cb14 / cb15: the first edit registers the row 'castbar': 25 secure cells (8 + the pick + the 8 fight + the 8 party cells)", row and (row.secure, row.n))
+check(row is not None and bool(row.secure) and int(row.n) == 3 * N + 1 + 2, "cb6 / cb14 / cb15 / cb17: the first edit registers the row 'castbar': 27 secure cells (+ the two pins) (8 + the pick + the 8 fight + the 8 party cells)", row and (row.secure, row.n))
 # (TapPad pad26: a ranked row takes its own row - ORDER - so the pad's nrows need not grow; the count of rows does, by one)
 check(row is not None and int(row.row) < int(L.eval('WowCompanion.pad.nrows')) <= 56 and int(L.eval(NREG)) == nreg0 + 1
       and (L.eval('WowCompanion.pad.SLOT') is None or int(row.row) == int(L.eval('WowCompanion.pad.SLOT.castbar'))),
@@ -130,6 +130,14 @@ check(row is not None and int(row.row) < int(L.eval('WowCompanion.pad.nrows')) <
 desc = L.eval('WowCompanion.pad.describe()')
 check(desc['rows']['castbar'] is not None, "describe() publishes the castbar row (the app's TapBridge finds it)")
 check(L.eval('WowCompanion.pad.rows.castbar.cells[1].a["type"]') is None, "an empty slot's cell has no action")
+# cb17 (2026-11-24, "pin buffs for fight"): the two pin cells 25 / 26: empty without pins; a pin arms "/cancelaura <name>" (out of combat)
+check(L.eval('WowCompanion.pad.rows.castbar.cells[25].a["type"]') is None, "cb17: no pin -> the pin cell has no action")
+L.execute('WowCompanion.auraPinName = function(i) if i == 1 then return "Divine Shield" end end; WowCompanion.castBarPinsArm()')
+check(L.eval('WowCompanion.pad.rows.castbar.cells[25].a["type"]') == "macro"
+      and L.eval('WowCompanion.pad.rows.castbar.cells[25].a["macrotext"]') == "/cancelaura Divine Shield"
+      and L.eval('WowCompanion.pad.rows.castbar.cells[26].a["type"]') is None, "cb17: pin 1 -> cell 25 = /cancelaura Divine Shield, cell 26 empty")
+check(L.eval('WowCompanion.castBarPinCol(2)') == 26 and L.eval('WowCompanion.castBarPinCol(3)') is None, "cb17: the pin columns 25 / 26")
+L.execute('WowCompanion.auraPinName = nil; WowCompanion.castBarPinsArm()')
 check(store(L) == {1: 403}, "the pick then Lightning Bolt: slot 1, the character's store (name-realm)", store(L))
 check(L.eval('WowCompanion.pad.rows.castbar.cells[0].a["type"]') == "spell"
       and L.eval('WowCompanion.pad.rows.castbar.cells[0].a["spell"]') == 403, "slot 1's cell: type spell, the spell's id")

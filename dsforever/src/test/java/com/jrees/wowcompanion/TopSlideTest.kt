@@ -126,8 +126,12 @@ class TopSlideTest {
             assertFalse(calm.away); assertTrue("$rest: away in the fight", fight.away)
             assertEquals("$rest: the band's bottom 16 over the frame's top", -16f, b.b, 0f)
             assertEquals("$rest: the same size (no re-measure)", a.h, b.h, 0.001f); assertEquals(a.w, b.w, 0f)
-            assertEquals("$rest: the chat's column from the top gap", 8f, fight.boxes.getValue(HomePart.CHAT).t, 0f)
-            assertEquals("$rest: the map's", 8f, fight.boxes.getValue(HomePart.MAP).t, 0f)
+            // (Cast bar in fights = Bottom screen, the default: the fight strip at the top gap, the columns a gap under it)
+            assertEquals("$rest: the chat's column under the fight strip", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), fight.boxes.getValue(HomePart.CHAT).t, 0f)
+            assertEquals("$rest: the map's", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), fight.boxes.getValue(HomePart.MAP).t, 0f)
+            val gameBar = HomeLayoutSolver.places(l.copy(fightCast = HomeLayout.FightCast.TOP), HomeLayoutSolver.State(takeover = true))
+            assertEquals("$rest: the game's bar: the chat's column from the top gap", 8f, gameBar.boxes.getValue(HomePart.CHAT).t, 0f)
+            assertEquals("$rest: the map's", 8f, gameBar.boxes.getValue(HomePart.MAP).t, 0f)
             assertEquals(0f, fight.barsBottom, 0f)
             assertTrue(HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), fight).isEmpty())
         }
@@ -272,14 +276,19 @@ class TopSlideTest {
     /**
      * A REVERSAL WAITS AS LONG AS THE WINGS NEED (the 11-22 review: the fight's end 200-230 ms into the up-slide - the band ~93 % off the
      * page, the Wings ~93 % in - turned the band back down at once; at +48 ms it was half back while the Wings still showed 85 %). The
-     * Wings' way up is the add-on's (HOLD_IN 60 ms, IN_S 0.26 s on NB.easeOut); reversed, they leave from where they are on the way
-     * down's curve. The band holds where it stands until they are mostly off, whatever the channel's delay on the fight's end.
+     * Wings' way up is the add-on's (nbar17: an 80 ms hold, then the band's own curve until it has left the bottom screen, then an even
+     * brake); reversed, they leave from where they are on the way down's curve. The band holds where it stands until they are mostly
+     * off, whatever the channel's delay on the fight's end.
      */
     @Test fun aLateReversalWaitsForTheWings() {
-        assertEquals(60L, TopSlide.WINGS_HOLD_IN_MS); assertEquals(260L, TopSlide.WINGS_IN_MS)       // ActionBar NB.TOP.HOLD_IN / IN_S
-        assertTrue(TopSlide.WINGS_IN.contentEquals(floatArrayOf(0f, 0f, 0.2f, 1f)))                  // NB.easeOut
-        assertEquals(0f, TopSlide.wingsIn(60L), 0f); assertEquals(1f, TopSlide.wingsIn(320L), 0f)
-        assertEquals("the review's figure: 93 % in at 230 ms", 0.93f, TopSlide.wingsIn(230L), 0.01f)
+        assertEquals(80L, TopSlide.WINGS_HOLD_IN_MS)                                                // ActionBar NB.TOP.HOLD_IN
+        assertEquals(0f, TopSlide.wingsIn(80L), 0f)
+        assertEquals(1f, TopSlide.wingsIn(TopSlide.WINGS_HOLD_IN_MS + TopSlide.WINGS_IN_MS + 1L), 0f)
+        // nbar17: the Wings ride the band's own curve (Motion.TOP_SLIDE_UP on UP, its 242 bottom px in top px) - 230 ms after the fight's
+        // start they are 150 ms into it: about 38 % in (84 % on nbar14's IN_C, 93 % on the old ease-out)
+        val band150 = TopSlide.BAND_TOP_PX * TopSlide.cubic(150f / Motion.TOP_SLIDE_UP, TopSlide.UP) / TopSlide.WINGS_DROP0_PX
+        assertEquals("the band's own curve", band150.toFloat(), TopSlide.wingsIn(230L), 0.002f)
+        assertTrue("well short of nbar14's 84 % (${TopSlide.wingsIn(230L)})", TopSlide.wingsIn(230L) < 0.5f)
         assertEquals(0L, TopSlide.wingsOutAt(1f)); assertEquals(TopSlide.WINGS_OUT_MS, TopSlide.wingsOutAt(0f))
         // the hold: none before the Wings move or for no age; the whole one when they were all in; never more; never a step
         assertEquals(0L, TopSlide.reversalHoldMs(-1L))
@@ -293,10 +302,11 @@ class TopSlideTest {
             assertTrue(h in 0L..TopSlide.HAND_BACK_MS)
             was = h
         }
-        assertTrue("late (230 ms): a real hold (${TopSlide.reversalHoldMs(230L)})", TopSlide.reversalHoldMs(230L) >= 40L)
+        // nbar17: the Wings come in with the band, so a cut must come later for a real hold (they are far less in at 230 ms)
+        assertTrue("late (350 ms): a real hold (${TopSlide.reversalHoldMs(350L)})", TopSlide.reversalHoldMs(350L) >= 30L)
         // the property: cut at [up] on the add-on's clock (the Wings reverse at 0 from wingsIn(up), gone WINGS_OUT_MS - e0 later); the app
         // hears it [lat] 40-90 ms later, holds, then the animator's first moving frame: never more than one frame before they are gone
-        for (up in 0L..239L step 3) for (lat in 40L..90L step 5) {
+        for (up in 0L..399L step 3) for (lat in 40L..90L step 5) {
             val e0 = TopSlide.wingsOutAt(TopSlide.wingsIn(up))
             val gone = TopSlide.WINGS_OUT_MS - e0
             val first = lat + TopSlide.reversalHoldMs(up) + TopSlide.START_FRAMES_MS
@@ -309,6 +319,44 @@ class TopSlideTest {
      * bar while the band left too - the bottom screen had no fight control at all): Top screen keeps it (STAY) - Party mode's fight too
      * (the 1519 audit: ruling C sends the band up there as well) - Grow / Same size keep the player's setting. The solver then lays it on the page in the fight, in its dock.
      */
+    /**
+     * B BRINGS IT DOWN (the user's 11-23 B rule): a way down started by B on Home is not behind the add-on (the add-on's secure B hands the
+     * Wings back at the same press: no channel) - the hold is the Wings' whole way down less the animator's start and one frame: 149 ms
+     * (HAND_BACK_MS 109 for a padmap-started one); its first moving frame comes in the Wings' last frame, never before they are mostly off.
+     * A B reversal of the way up waits [TopSlide.CHANNEL_MIN_MS] longer than a padmap one, up to the B hold.
+     */
+    @Test fun bBringsItDownOnTheWingsOwnClock() {
+        assertEquals(149L, TopSlide.B_HOLD_MS)
+        assertEquals(TopSlide.WINGS_OUT_MS - TopSlide.START_FRAMES_MS - TopSlide.OVERLAP_MS, TopSlide.B_HOLD_MS)
+        assertEquals("a fresh way down by B", TopSlide.B_HOLD_MS,
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = true, cutUp = false, cutHold = 0L, resumeAt = -1f, byB = true))
+        assertEquals("by the padmap's edge: the hand-back", TopSlide.HAND_BACK_MS,
+            TopSlide.holdMs(slide = true, isAway = false, bandOff = true, cutUp = false, cutHold = 0L, resumeAt = -1f, byB = false))
+        assertEquals("B never holds the way up", 0L,
+            TopSlide.holdMs(slide = true, isAway = true, bandOff = false, cutUp = false, cutHold = 0L, resumeAt = -1f, byB = true))
+        assertEquals("a re-lay inside a B hold waits what was left, up to the B hold", 140L,
+            TopSlide.holdMs(false, isAway = false, bandOff = true, cutUp = false, cutHold = 140L, resumeAt = 0f, byB = true))
+        // the band's first moving frame (the hold + the animator's start) vs the Wings, both started by the same press
+        val first = TopSlide.B_HOLD_MS + TopSlide.START_FRAMES_MS
+        assertTrue("the band's first frame in the Wings' last ($first vs ${TopSlide.WINGS_OUT_MS})",
+            first <= TopSlide.WINGS_OUT_MS && TopSlide.WINGS_OUT_MS - first <= TopSlide.OVERLAP_MS)
+        assertTrue("the Wings mostly off by then (${TopSlide.wingsOff(first)})", TopSlide.wingsOff(first) >= 0.8f)
+        // a B reversal: the padmap one + CHANNEL_MIN_MS while inside the bounds; never less, never past the B hold, continuous
+        var was = 0L
+        for (up in 0L..400L) {
+            val p = TopSlide.reversalHoldMs(up)
+            val b = TopSlide.reversalHoldMs(up, byB = true)
+            assertTrue("up=$up: B $b >= padmap $p", b >= p)
+            assertTrue(b in 0L..TopSlide.B_HOLD_MS)
+            if (p in 1L until TopSlide.HAND_BACK_MS) assertEquals("up=$up", p + TopSlide.CHANNEL_MIN_MS, b)
+            assertTrue("up=$up: no step ($was -> $b)", b - was <= 8L)
+            was = b
+            assertEquals(b, TopSlide.holdMs(slide = true, isAway = false, bandOff = false, cutUp = true, cutHold = 0L, resumeAt = -1f,
+                upMs = up, byB = true))
+        }
+        assertEquals("all in: the whole B hold", TopSlide.B_HOLD_MS, TopSlide.reversalHoldMs(400L, byB = true))
+    }
+
     @Test fun theTapToCastBarStaysInATopFight() {
         val top = HomeLayout(fight = HomeLayout.FightBand.TOP, cast = HomeLayout.CastDock.UNDER_CHAT)
         assertTrue(TopCombatBar.stripStays(top))
@@ -332,7 +380,41 @@ class TopSlideTest {
             assertTrue("$cast: on the page (${b.t}..${b.b} of ${st.h})", b.t >= 0f && b.b <= st.h + 0.01f)
             assertTrue("$cast: ${HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r)}",
                 HomeLayoutRules.problems(l, HomeLayoutSolver.State(takeover = true), r).isEmpty())
-            if (cast.top) assertEquals("$cast: at the top of its grown column (the top gap)", 8f, b.t, 0.01f)
+            if (cast.top) assertEquals("$cast: at the top of its grown column (under the fight strip)", (8f + HomeLayoutSolver.FIGHT_STRIP_H + 8f), b.t, 0.01f)
         }
+    }
+
+    /**
+     * nbar17 THE WINGS' WAY UP RIDES THE BAND (the user, 2026-11-23, testing 1523: "It also looks like the top slides out faster than the
+     * bottom slides up"): the Wings move with the band mm for mm (top px x 0.06918 = the band's bottom px x 0.06055) until its last pixel
+     * has left the bottom screen, the same speed there with no kink, then brake evenly to the spot - the whole way up the bottom's own
+     * ([TopSlide.COLS_UP_MS]) within 5 %. A Top slide runs on the wall clock (the Wings never follow the animator duration scale).
+     */
+    @Test fun theWingsRideTheBand() {
+        val mmTop = 0.06918; val mmBottom = 0.06055
+        for (ms in 0..TopSlide.BAND_EXIT_MS.toInt()) {
+            val band = 242.0 * TopSlide.cubic(ms / Motion.TOP_SLIDE_UP.toFloat(), TopSlide.UP) * mmBottom
+            assertEquals("ms=$ms: the band's mm", band, TopSlide.wingsPx(ms.toDouble()) * mmTop, 0.02)
+        }
+        val ex = TopSlide.BAND_EXIT_MS
+        assertEquals("the band's last pixel off ~230 ms in", 230.0, ex, 2.0)
+        val before = TopSlide.wingsPx(ex) - TopSlide.wingsPx(ex - 1.0)
+        val after = TopSlide.wingsPx(ex + 1.0) - TopSlide.wingsPx(ex)
+        val bandV = (242.0 * mmBottom / mmTop) * (TopSlide.cubic(((ex + 0.5) / Motion.TOP_SLIDE_UP).toFloat(), TopSlide.UP)
+            - TopSlide.cubic(((ex - 0.5) / Motion.TOP_SLIDE_UP).toFloat(), TopSlide.UP))
+        assertEquals("the band's exit speed at the seam", bandV, before, bandV * 0.05)
+        assertEquals("no kink at the seam", before, after, before * 0.03)
+        var was = after
+        for (ms in (ex.toInt() + 1) until TopSlide.WINGS_IN_MS.toInt()) {
+            val v = TopSlide.wingsPx(ms + 1.0) - TopSlide.wingsPx(ms.toDouble())
+            assertTrue("ms=$ms: only slower after the seam ($was -> $v)", v <= was + 1e-6)
+            was = v
+        }
+        assertEquals("landed", TopSlide.WINGS_DROP0_PX, TopSlide.wingsPx(TopSlide.WINGS_IN_MS + 1.0), 1e-6)
+        assertEquals("the whole way up: the bottom's own", TopSlide.COLS_UP_MS.toDouble(), TopSlide.WINGS_IN_MS.toDouble(),
+            TopSlide.COLS_UP_MS * 0.05)
+        // the wall clock under the animator duration scale
+        assertEquals(240L, TopSlide.wallClockMs(240L, 1f)); assertEquals(120L, TopSlide.wallClockMs(240L, 2f))
+        assertEquals(480L, TopSlide.wallClockMs(240L, 0.5f)); assertEquals("animations off: as given", 240L, TopSlide.wallClockMs(240L, 0f))
     }
 }

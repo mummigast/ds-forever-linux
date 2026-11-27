@@ -3917,9 +3917,29 @@ do
     end
 end
 
-WC.prd = { V = "prd21", PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10, PET_HAPPY = 20,
-           PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, PET_HAPPY_TEX = "Interface\\PetPaperDollFrame\\UI-PetHappiness",
-           PET_HAPPY_U = { { 0.375, 0.5625 }, { 0.1875, 0.375 }, { 0, 0.1875 } }, PET_HAPPY_V = 0.359375, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
+-- prd24 THE 1523 TEST BUILD MERGE: feat/extras-polish's prd22 (the pet's happiness left the HUD) and feat/fight-castbar's prd22 +
+-- prd23 (Party mode centred on the top screen; centre the rows) took the same numbers from prd21; all kept, their notes as each
+-- wrote them below; nothing else changed.
+-- prd22 THE PET'S HAPPINESS LEFT THE HUD (feat/extras-polish; the user, 2026-11-23: "we should add pet happiness to this and remove it
+-- from the top screen HUD"): the pet strip keeps its portrait, its health and its power (prd12's unit, centred as before); the happiness
+-- face (prd11 / prd12 / prd13: PET_HAPPY past the unit's right rim, P.petHappyOn in the centring width) is gone, with its read. The app's
+-- Home shows it now, in the clock extras row (Spells' Radial r28 sends GetPetHappiness in the itemcd document).
+-- prd22 PARTY MODE CENTRED ON THE TOP SCREEN (the user, 2026-11-23, in a Party-mode Top-screen fight: "it sort of needs to shift the
+-- HUD to be centered and the controller bars still also need to shift around them to make space for the shifted party frames"): while
+-- ActionBar nbar14 says so (WC.nbar.centreDx: Party mode's Top-screen fight, the Wings up) the HUD block - the bars, the pet strip, the
+-- aura row, and Hub's party rows and Select tab hanging under it (P.partyGeo carries the shift, as the on-screen lift) - stands with
+-- its centre on the screen's: P.cx (1080-line px, + = right) is added in P.place and P.lay.block (the shift APPLIED) and in
+-- P.partyGeo (the shift WANTED, so Hub fades its rows to it at the same moment). It moves the way the lift does - faded out
+-- (PET_FADE_S), moved while unseen, faded in (P.petMoveStep) - and back to 0 when the fight ends, B hands the controls back or Party
+-- mode goes off. COMBAT SAFETY: P.f, its pet strip and its aura host are OUR plain frames (CreateFrame "Frame" / "StatusBar", no
+-- secure template; the game's AuraContainer inside the host is filled by the game and never anchors a protected frame to ours), so a
+-- SetPoint on them is legal in a fight - the lift has done it since prd15. P.cxFor checks anyway: in the lockdown, if any of them
+-- reports IsProtected, the shift waits (the one applied is kept) until the fight ends; nothing else changes.
+-- prd23 (the user's pick 11-23, "Centre the rows"): with our HUD bars off (P.wanted false: P.tick returns before it reads Party mode,
+-- so P.partyOn kept its last word) P.cxFor reads Party mode live (P.partyModeOn), so P.partyGeo still carries ActionBar nbar15's
+-- shift and Hub's rows and Select tab fade to the centre alone; none of Trail's frames move (P.cx is left as it is).
+WC.prd = { V = "prd24", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+           PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
            alpha = 0, shown = false, why = "off" }
@@ -4332,7 +4352,40 @@ do
         if not P.f then return end
         P.f:ClearAllPoints()
         local y = P.y or P.loadY()
-        P.f:SetPoint("TOP", UIParent, "CENTER", u(num(P.x) or 0), u(y + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
+        -- prd22: Party mode's centring shift applied (1080-line px; P.x is in the bars' own scaled px)
+        local x = (num(P.x) or 0) + (num(P.cx) or 0) / (((num(P.sc) or P.S_DEF) / 100))
+        P.f:SetPoint("TOP", UIParent, "CENTER", u(x), u(y + (P.dy or 0) + (num(P.lift) or 0)))   -- prd15: the guard's lift
+    end
+    -- prd22 THE CENTRING SHIFT WANTED (1080-line px): ActionBar nbar14's NB.centreDx while Party mode is on (plain number only), 0
+    -- otherwise; in the lockdown with one of the HUD's frames protected (never expected: all are ours) the shift applied is kept
+    function P.cxFor()
+        local want = 0
+        -- prd23: our HUD bars off (P.on false: P.tick never read Party mode) - read it live, for Hub's rows
+        local party = P.partyOn == true
+        if P.on ~= true then party = P.partyModeOn() == true end
+        if party then
+            local nb = rawget(WC, "nbar")
+            local fn = type(nb) == "table" and rawget(nb, "centreDx") or nil
+            if type(fn) == "function" then
+                local ok, v = pcall(fn)
+                want = (ok and num(v)) or 0
+            end
+        end
+        if math.abs(want - (num(P.cx) or 0)) > 0.5 and P.protectedNow() then return num(P.cx) or 0 end
+        return want
+    end
+    -- prd22: one of the HUD's frames would refuse a move now (the lockdown, IsProtected true); false out of combat
+    function P.protectedNow()
+        local okC, c = pcall(InCombatLockdown)
+        if not (okC and c == true) then return false end
+        local box = P.box
+        for _, f in ipairs({ P.f or false, P.petL or false, (type(box) == "table" and box.host) or false }) do
+            if f and type(f.IsProtected) == "function" then
+                local ok, p = pcall(f.IsProtected, f)
+                if ok and p == true then return true end
+            end
+        end
+        return false
     end
     -- prd18 THE HUD AS A LAYOUT PIECE (Hub's editor gathers it): its anchor is the bars' top-centre, 1080-line pixels from the top-left
     P.lay = {
@@ -4360,7 +4413,7 @@ do
     P.lay.block = function(e)
         local sc = ((e and num(e.s)) or num(P.sc) or P.S_DEF) / 100
         local bx, by = P.lay.base()
-        local ax = bx + ((e and num(e.dx)) or 0)
+        local ax = bx + ((e and num(e.dx)) or 0) + (num(P.cx) or 0)     -- prd22: Party mode's centring shift applied
         local ay = by + ((e and num(e.dy)) or 0) - (num(P.lift) or 0) * sc
         local w = num(P.W) or num(P.wd) or P.W_DEF
         local base = P.HH + P.BAR_GAP + P.PH
@@ -4903,16 +4956,16 @@ do
         local mid = math.max(P.PET_ICON / 2, 3 * k + unit / 2)
         local g = { k = k, unit = unit, unitTop = mid - unit / 2, iconTop = mid - P.PET_ICON / 2 }
         g.row = math.max(g.iconTop + P.PET_ICON, g.unitTop + unit + 8 * k)
-        -- prd13 (review, 2026-11-11): the happiness face (2 + PET_HAPPY past the right rim) counted while it can show; the bars narrowed
-        -- when the whole group would not fit (W_MIN = 180), so the face stays inside the HUD frame
-        local fixed = P.PET_ICON + P.PET_IGAP + 7 * k + (P.petHappyOn and (2 + P.PET_HAPPY) or 0)
+        -- prd13 (review, 2026-11-11): the bars narrowed when the whole group would not fit (W_MIN = 180); prd22: no happiness face
+        -- past the right rim any more (Home shows it), so the portrait + the unit alone are centred
+        local fixed = P.PET_ICON + P.PET_IGAP + 7 * k
         g.barW = math.max(0, math.min(P.W * P.PET_W, P.W - fixed))
         g.x0 = math.max(0, (P.W - (fixed + g.barW)) / 2)
         if P.petSide == "beside" then g.x0 = 0 end                   -- prd15: beside the HP bar, from its own left
         return g
     end
     function P.petRow() return P.petGeo().row end
-    -- built with the bars, hidden until a pet is out: the round portrait, the green health, the power (one frame), the happiness face
+    -- built with the bars, hidden until a pet is out: the round portrait, the green health, the power (one frame); prd22: no happiness face
     function P.petBuild()
         if P.petL or not P.f then return P.petL end
         local L = CreateFrame("Frame", nil, P.f)                    -- beside P.g, never under it (the player's curve would hide it)
@@ -4956,13 +5009,7 @@ do
         -- prd13: the shade over the pet's HEALTH as the player's over theirs (45 % of the health bar, not of the whole unit)
         o.frame = P.frameFor(o.unit, L, o.lip, o.k, u(P.PET_HH) * 0.45)
         pcall(function() o.lip:SetFrameLevel(o.hp:GetFrameLevel() + 20) end)
-        -- a hunter's pet's happiness: the game's own faces (PetFrame's texture), PET_HAPPY big, past the unit's right rim (7 texels),
-        -- level with the bars (prd12: never over the portrait)
-        o.happy = o.lip:CreateTexture(nil, "OVERLAY", nil, 3)
-        o.happy:SetTexture(P.PET_HAPPY_TEX)
-        o.happy:SetSize(u(P.PET_HAPPY), u(P.PET_HAPPY))
-        o.happy:SetPoint("LEFT", o.unit, "RIGHT", 7 * o.k + u(2), 0)
-        o.happy:Hide()
+        -- prd22: no happiness face here (Home's clock extras row shows it: Radial r28's itemcd `pet`)
         P.petLayout(0, true)
         return L
     end
@@ -5057,16 +5104,8 @@ do
         end
         pcall(function() o.pw:SetMinMaxValues(0, UnitPowerMax("pet", pt)) end)
         pcall(function() o.pw:SetValue(UnitPower("pet", pt)) end)
-        -- happiness: only a plain answer (1 unhappy, 2 content, 3 happy); a secret or none: no face
-        local okH, hv = pcall(function()
-            if type(C_PetInfo) == "table" and type(C_PetInfo.GetPetHappiness) == "function" then return C_PetInfo.GetPetHappiness() end
-            return GetPetHappiness()
-        end)
-        local h = okH and num(hv) or nil
-        local uv = h and P.PET_HAPPY_U[h]
-        if uv then o.happy:SetTexCoord(uv[1], uv[2], 0, P.PET_HAPPY_V); o.happy:Show() else o.happy:Hide() end
-        if (uv ~= nil) ~= (P.petHappyOn == true) then P.petHappyOn = uv ~= nil; P.petLayout(P.petDrop, true) end   -- prd13: re-centred
-        x.dead, x.ptok, x.happy, x.icon = dead or nil, tok, uv and h or nil, o.icon ~= nil or nil
+        -- prd22: the happiness is no longer read here (Home shows it: Radial r28)
+        x.dead, x.ptok, x.icon = dead or nil, tok, o.icon ~= nil or nil
     end
     -- out of combat on the curve route: the strip's alpha the pet's own UnitHealthPercent through the same curve; its OWN bad flag (a
     -- refused pet call - no pet, a client without - never turns the player's curve off); otherwise plainly shown (it fades with the HUD)
@@ -5191,9 +5230,12 @@ do
         local cpx = (P.cp and P.cp:IsShown()) and (P.CP_GAP + P.CPH) or 0
         local w = num(P.W) or P.W_DEF
         y = y + P.liftFor(P.partyModeOn())                              -- (the guard's lift the block is going to: Hub fades its rows to it)
-        -- (h: the two bars' height, for the solo tab beside the [me][pet] row)
-        return { x = (u(num(P.x) or 0) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
-                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s }
+        local cx = P.cxFor()
+        local x = (num(P.x) or 0) + cx / s                              -- prd22: the centring shift it is going to (Hub fades to it too)
+        -- (h: the two bars' height, for the solo tab beside the [me][pet] row; prd22 cx: that shift in 1080-line px - Hub keeps this table
+        -- as the rows' drawn place (PF.g), so ActionBar reads the shift the rows stand at, which can differ from P.cx mid-fade)
+        return { x = (u(x) - u(w) / 2) * s, top = u(y) * s, h = u(P.HH + P.BAR_GAP + P.PH) * s,        -- prd18: the HUD's x
+                 y = u(y - (P.HH + P.BAR_GAP + P.PH + cpx + P.PET_GAP + P.PARTY_GAP)) * s, s = s, cx = cx }
     end
     -- prd15 THE ON-SCREEN GUARD (the user, 2026-11-12: "KEEP IT ON SCREEN"): in Party mode, the lift (spec px, up) that keeps the block -
     -- the HUD's bars (the combo pips included), and Hub's rows under them (P.partyRoomPx, their rings in it) or the bars' lip while solo -
@@ -5248,13 +5290,18 @@ do
         local L = P.petL
         local lift = P.liftFor(on)
         local lifts = math.abs((num(P.lift) or 0) - lift) > 0.01
-        local moved = P.petSide ~= want or P.auraUp ~= on or lifts
-        if lifts then P.hudFade = true end                               -- (the bars themselves move: they fade too)
+        local cx = P.cxFor()                                             -- prd22: Party mode's centring shift
+        local shifts = math.abs((num(P.cx) or 0) - cx) > 0.5
+        local moved = P.petSide ~= want or P.auraUp ~= on or lifts or shifts
+        if lifts or shifts then P.hudFade = true end                     -- (the bars themselves move: they fade too)
         local function swap()
             P.petSide, P.auraUp = want, on
             if P.f then P.petLayout(P.dropFor(), true) end
             P.cache = nil                                                -- (the aura row drawn again at its new place)
-            if math.abs((num(P.lift) or 0) - lift) > 0.01 then P.lift = lift; P.place() end
+            local re = false
+            if math.abs((num(P.lift) or 0) - lift) > 0.01 then P.lift = lift; re = true end
+            if math.abs((num(P.cx) or 0) - cx) > 0.5 then P.cx = cx; re = true end
+            if re then P.place() end
         end
         local hudShown = P.hudFade and P.f ~= nil and P.f:IsShown() and (num(P.alpha) or 0) > 0
         if not ((L and L:IsShown()) or P.aurasShown() or hudShown) then
@@ -5894,7 +5941,13 @@ end
 --   CVars READ only), a smoothstep to 1 at SHOW_HI (0.97). A plain multiply alone would still show a faint, smaller copy far out;
 --   the gate keeps it off until the plate is (nearly) fully in, as the user asked, and the multiply keeps it matched after.
 --   Plain reads only (no taint); a secret or missing value counts as 1 (as before). The plate is still never written or hooked.
-WC.rings = { V = "at10", SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
+-- at11 (test build 1529, the user's pick 2026-11-24: "Lighter add-ons + log" = "... less per-frame Lua work"): the tint's tick ran at
+--   EVERY frame and made new tables (the seen set, the why list, the CVar pair) and a dozen closures (one per pcall'd read) per mob per
+--   frame - garbage the game's collector then pays for in the frame. Now its tables are kept and wiped, every read is a named function
+--   made once (pcall(fn, args): the same reads, the same protection), and it runs at most every TICK_S (0.03 s: ~30 times a second, the
+--   elapsed time summed so the smoothing and the fade keep their speed). The tint is anchored to its plate (the engine moves it every
+--   frame), so only the fade and a state change land up to one 30 Hz step later. tools/test_tint_alloc.py measures it.
+WC.rings = { V = "at11", TICK_S = 0.03, SHOW_LO = 0.9, SHOW_HI = 0.97, BASE = 20, K_BELOW = 2.2, MIN = 5, MAX = 45, SKULL = 10, TAU = 0.4, VMAX = 10, FADE_S = 0.3, APPROACH = 10, NEAR = 5, HYST = 1,
              ALPHA = 0.95, OUTSET = 6, PAD = 9, TOP_IN = 4, TEX_V = 53 / 64, list = {}, est = {}, react = {}, why = {}, n = 0,
              COL = { far = { 0.32, 0.86, 0.36 }, approach = { 1, 0.84, 0.24 }, near = { 1, 0.55, 0.12 }, inside = { 0.93, 0.16, 0.12 } },
              TEX = "Interface\\AddOns\\WowCompanion\\Media\\tint_glow" }
@@ -5931,14 +5984,15 @@ do
         return true
     end
     -- the state for a distance d and a radius r, with the last state's margin (a state changes only HYST yd past its line)
+    -- at11: made once (they were made at every call)
+    local function at(st) return st == "inside" and 0 or st == "near" and R.NEAR or st == "approach" and R.APPROACH or nil end
+    local ORDER = { inside = 1, near = 2, approach = 3, far = 4 }
     function R.state(d, r, last)
         local e = d - r
-        local function at(st) return st == "inside" and 0 or st == "near" and R.NEAR or st == "approach" and R.APPROACH or nil end
         local raw = (e <= 0 and "inside") or (e <= R.NEAR and "near") or (e <= R.APPROACH and "approach") or "far"
         if last and last ~= raw then
             -- leaving a closer state for a farther one needs HYST more; a closer state is taken at once
-            local order = { inside = 1, near = 2, approach = 3, far = 4 }
-            if order[raw] > order[last] and at(last) and e <= at(last) + R.HYST then return last end
+            if ORDER[raw] > ORDER[last] and at(last) and e <= at(last) + R.HYST then return last end
         end
         return raw
     end
@@ -6001,8 +6055,10 @@ do
     -- at10: the plate's part of the tint's alpha: its effective alpha (pa) x the gate (0 below SHOW_LO of its full, smoothstep to 1
     -- at SHOW_HI). Its full: nameplateMaxAlpha, x nameplateNotSelectedAlpha while another unit is the target (READ only; 1 when
     -- unreadable). A secret / missing alpha = 1 (the tint as before at9)
+    local function getCVar(k) return C_CVar.GetCVar(k) end                    -- at11: made once
+    local function hasTarget() return UnitExists("target") == true end
     local function cvn(k)
-        local ok, v = pcall(function() return C_CVar.GetCVar(k) end)
+        local ok, v = pcall(getCVar, k)
         v = ok and type(v) == "string" and tonumber(v) or nil
         return (v and v > 0) and v or nil
     end
@@ -6014,8 +6070,11 @@ do
         if pa <= 0 then return 0 end
         local c = R.full
         if not c then                                                -- read once a tick (R.tick clears it)
-            local okT, hasT = pcall(function() return UnitExists("target") == true end)
-            c = { max = cvn("nameplateMaxAlpha") or 1, ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1 }
+            local okT, hasT = pcall(hasTarget)
+            c = R.fullT or {}                                        -- at11: one table, refilled
+            R.fullT = c
+            c.max = cvn("nameplateMaxAlpha") or 1
+            c.ns = (okT and hasT) and (cvn("nameplateNotSelectedAlpha") or 1) or 1
             R.full = c
         end
         local full = isTarget and c.max or c.max * c.ns
@@ -6025,13 +6084,28 @@ do
         return math.min(1, pa) * x * x * (3 - 2 * x)
     end
 
+    -- at11: the tick's reads, each a function made once (each was a new closure per mob per frame); the same bodies under the same pcall
+    local function plateOf(tok) return C_NamePlate.GetNamePlateForUnit(tok) end
+    local function isTargetUnit(tok) return UnitIsUnit(tok, "target") == true end
+    local function ufFlying() return type(WC.uf) == "table" and WC.uf.flying and WC.uf.flying() end
+    local function targetBarHp()
+        local uf = WC.uf
+        return type(uf) == "table" and uf.target and uf.tb and uf.tb.f and uf.tb.f:IsShown() and uf.tb.f.hp or nil
+    end
+    local function healthBarOf(plate) return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end
+    local function unitFrameOf(plate) return plate and plate.UnitFrame end
+    local function strataOf(ref) return ref:GetFrameStrata() end
+    local function levelOf(ref) return ref:GetFrameLevel() end
+    local seen = {}                                                  -- at11: kept, wiped each tick
+    local function wipe(t) for k in pairs(t) do t[k] = nil end end
+
     function R.tick(dt)
         local rec = A and A.last
         R.full = nil
         local on = R.wanted() and rec and type(rec.m) == "table" and not A.off
-        local seen = {}
+        wipe(seen)
         R.n = 0
-        R.why = {}
+        if type(R.why) == "table" then wipe(R.why) else R.why = {} end
         if on then
             local plv = A.pv and A.pv(UnitLevel, "player")
             for _, m in ipairs(rec.m) do
@@ -6040,7 +6114,7 @@ do
                 if st then okE, whyE = R.eligible(m, st.tok) end
                 local plate
                 if okE then
-                    local okP, p = pcall(C_NamePlate.GetNamePlateForUnit, st.tok)      -- beta: no closure per mob per frame
+                    local okP, p = pcall(plateOf, st.tok)
                     plate = okP and p or nil
                     if not plate then okE, whyE = false, "no plate" end
                 end
@@ -6064,18 +6138,16 @@ do
                     local o = tint(m.s)
                     -- at7 (the user: "The aggro tint is still showing hovering over targeted mobs instead of on the target frame"): the
                     -- TARGET's tint goes round Hub's target bar while it shows (the same HUD bar outline), never over its plate
-                    local okT, isT = pcall(UnitIsUnit, st.tok, "target"); isT = isT == true      -- beta: no closure per mob per frame
+                    local okT, isT = pcall(isTargetUnit, st.tok)
                     local tbHp = nil
                     -- at9 (the user, 2026-11-13: the target's plate "transitions ... to the top of the screen"): while Hub's copy flies up
                     -- (WC.uf.flying) the target's tint is down - on neither the hidden plate nor a bar not shown yet - and fades in on
                     -- the bar once it lands
-                    local okF, fly = pcall(function() return okT and isT and type(WC.uf) == "table" and WC.uf.flying and WC.uf.flying() end)
+                    local okF, fly = true, false
+                    if okT and isT then okF, fly = pcall(ufFlying) end
                     local held = okF and fly == true
                     if okT and isT and not held then
-                        local okH, hp = pcall(function()
-                            local uf = WC.uf
-                            return type(uf) == "table" and uf.target and uf.tb and uf.tb.f and uf.tb.f:IsShown() and uf.tb.f.hp or nil
-                        end)
+                        local okH, hp = pcall(targetBarHp)
                         tbHp = okH and type(hp) == "table" and hp or nil
                     end
                     if tbHp then
@@ -6098,7 +6170,7 @@ do
                         o.f:ClearAllPoints()
                         -- at3: anchored to the plate's health bar, PAD out (only anchored to: never read or written); a plate
                         -- without one (another style, another add-on's plates): the plate itself, OUTSET out, as before
-                        local okB, bar = pcall(function() return plate.UnitFrame and plate.UnitFrame.HealthBarsContainer end)
+                        local okB, bar = pcall(healthBarOf, plate)
                         bar = okB and type(bar) == "table" and bar or nil
                         local to, pad = bar or plate, bar and R.PAD or R.OUTSET
                         -- at6: the top TOP_IN in, clear of the name's letters (at5's layering below the plate's strata is GONE: the
@@ -6112,10 +6184,10 @@ do
                     -- at4: under the plate's UnitFrame (its name, level, bar fill): its strata, one level below (re-read each
                     -- tick: a targeted plate is raised)
                     -- at7: on the target bar, under the bar's own frame (its strata, one level below)
-                    local okU, uf = pcall(function() return plate and plate.UnitFrame end)
+                    local okU, uf = pcall(unitFrameOf, plate)
                     local ref = (o.onBar and tbHp:GetParent()) or (okU and type(uf) == "table" and uf) or plate
-                    local okS, strata = pcall(function() return ref:GetFrameStrata() end)
-                    local okL, lvl = pcall(function() return ref:GetFrameLevel() end)
+                    local okS, strata = pcall(strataOf, ref)
+                    local okL, lvl = pcall(levelOf, ref)
                     strata = okS and type(strata) == "string" and strata or "BACKGROUND"
                     lvl = okL and num(lvl) or 1
                     if o.strata ~= strata then o.f:SetFrameStrata(strata); o.strata = strata end
@@ -6151,6 +6223,15 @@ do
         end
     end
 
+    -- at11: at most every TICK_S, with the time since the last tick (so its smoothing and fade keep their speed)
+    local acc = 0
+    local function onUpdate(_, elapsed)
+        acc = acc + (tonumber(elapsed) or 0)
+        if acc < R.TICK_S then return end
+        local dt = acc
+        acc = 0
+        pcall(R.tick, dt)
+    end
     local f = CreateFrame("Frame")
-    f:SetScript("OnUpdate", function(_, elapsed) pcall(R.tick, elapsed) end)
+    f:SetScript("OnUpdate", onUpdate)
 end

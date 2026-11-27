@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -69,6 +70,25 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     private fun playable(q: StreamQuality = quality) = StreamQuality.forDevice(q, q.fps != 120 || can120(q))
     /** the running stream's frame rate (the refresh it asked for) */
     private var streamFps = 0
+    /** stream smoothness (StreamSmooth.kt): the Wi-Fi low-latency lock, held only from a stream's start to its end */
+    private val wifiLock by lazy { StreamWifiLock(activity) }
+    /** the PC search (mDNS) is stopped for the running stream ("discovery: paused"); started again when it ends */
+    private var discoveryPaused = false
+    /** the stats line's last reading (null = not streaming) and the running stream's RFI words */
+    private var statsLast: StatsSnap? = null
+    @Volatile private var smoothLabel = ""
+    private val statsTick = object : Runnable {
+        override fun run() {
+            val v = liveVideo ?: return
+            val a = statsLast ?: return
+            val b = v.snap(android.os.SystemClock.elapsedRealtime())
+            val rtt = try { if (MoonBridge.loaded) MoonBridge.getEstimatedRttInfo() else -1L } catch (_: Throwable) { -1L }
+            val (link, rssi) = StreamStats.wifiLink(activity)
+            Log.i(TAG, StreamStats.line(a, b, rtt, link, rssi, smoothLabel + if (wifiLock.held) ", wifi lock" else ""))
+            statsLast = b
+            main.postDelayed(this, StreamStats.EVERY_MS)
+        }
+    }
 
     private lateinit var surface: SurfaceView
     /** black round the zoomed window; a touch on the black goes nowhere */
@@ -395,16 +415,17 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
     }.getOrDefault(null to emptySet())
 
     /**
-     * The game account the PC's WoW remembers (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game account says:
-     * "Ask each time" sends nothing to remember; "Remembered" sends the pick the Thor's own Config.wtf remembers, if any (an account
-     * name: never logged)
+     * The Thor's remembered game account for DS Forever Desktop (the user's pick 2026-11-17, "Yes, remember it"), as Settings > Game
+     * account says: "Ask each time" sends nothing; "Remembered" sends the pick the Thor's own Config.wtf remembers, if any (an account
+     * name: never logged). Desktop uses it only to find the WTF/Account folder our settings tables follow: since the user's ruling
+     * 2026-11-23 it writes nothing into the PC's Config.wtf
      */
     private fun gameAccount(): BridgeProtocol.GameAccount {
         com.jrees.wowcompanion.Settings.init(activity)
         if (com.jrees.wowcompanion.Settings.gameAccountAsk) return BridgeProtocol.GameAccount(ask = true)
         val root = runCatching { com.jrees.wowcompanion.GameFiles.gameRoot(activity) }.getOrNull()
-        // A (the user's ruling 2026-11-20): the Thor's marked list, else the learned pick alone ("!WoW2|"); Desktop writes it into the
-        // PC's Config.wtf only where the PC remembers no pick of its own (WowAccount.Apply)
+        // A (the user's ruling 2026-11-20): the Thor's marked list, else the learned pick alone ("!WoW2|"), for Desktop's settings
+        // follow (WowSvSync.PickAccount); never written into the PC's Config.wtf (the user's ruling 2026-11-23)
         val list = root?.let { com.jrees.wowcompanion.GameConfigWtf.rememberedAccountList(it) }
             ?: com.jrees.wowcompanion.Settings.gameAccountPick?.let { com.jrees.wowcompanion.GameConfigWtf.accountListValue(null, it) }
         return BridgeProtocol.GameAccount(ask = false, list = list)
@@ -624,11 +645,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         streamFps = q.fps
         worker.execute {
             val id = store.identity()
+            // stream smoothness: reference-frame invalidation for HEVC / AV1 on a decoder that qualifies, unless it tripped on this build
+            val offWhy = RfiStore.offWhy(activity)
+            val caps = RfiPolicy.capabilities(q.codec, offWhy == null, VideoDecoder.rfiOk("video/hevc"), VideoDecoder.rfiOk("video/av01"))
+            val label = RfiPolicy.label(caps, offWhy ?: RfiPolicy.offReason(q.codec))
             main.post {
                 if (session != null || !surfaceReady || !isOpen) return@post
                 val video = VideoDecoder(surface.holder.surface).also { liveVideo = it }
+                smoothLabel = label
                 session = StreamSession(h, id, q, video, AudioOut(q.audioOnThor), events, mode = mode,
-                    httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }).also { it.start() }
+                    httpPort = { host?.httpPort?.takeIf { it > 0 } ?: h.httpPort }, videoCapabilities = caps, capsLabel = label).also { it.start() }
             }
         }
     }
@@ -638,6 +664,8 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         override fun started(width: Int, height: Int) = main.post { onStarted(width, height) }.let {}
         override fun ended(error: Int, notPaired: Boolean, message: String) = main.post { onEnded(error, notPaired, message) }.let {}
         override fun poorConnection(poor: Boolean) {}
+        // Q10 (2026-11-24): the PC game's controller rumble on the Thor (was dropped: the base Events.rumble is a no-op)
+        override fun rumble(low: Int, high: Int) = ThorRumble.rumble(activity, low, high)
     }
 
     private fun onStarted(w: Int, h: Int) {
@@ -645,7 +673,9 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         heal.reset()
         main.removeCallbacks(healTimeout)
         if (streamFps >= 100) StreamRate.request(activity, surface.holder.surface, streamFps)
+        smoothStart()
         padSent = 0
+        com.jrees.wowcompanion.HoldCast.streamStart(Runnable { main.post(holdTick) })     // hold to cast: the stream's road
         show(Screen.STREAMING)
         val k = StreamKeys(MoonBridge.INPUT, w, h).also { keys = it }
         DsForeverScreen.current?.attachStream(k)
@@ -656,6 +686,16 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         // and the PC is put back by Desktop, then the stream and the bridge stop
         SetupBridge.endSession = { why, asked, done -> main.post { endSession(why, asked, closeOnAck = true, then = done) } }
         SetupBridge.endStream = { main.post { endSession("the menu's Exit game", false) { back() } } }
+        // feat/exit-now: the Menu's Exit game closes DS Forever at once (ExitNow): Desktop told (it closes the PC's WoW and puts the PC
+        // back on its own), the send bounded, the stream and the bridge stopped; nothing waits for Desktop's word
+        SetupBridge.quitStream = { boundMs ->
+            val b = bridge
+            val sent = java.util.concurrent.atomic.AtomicBoolean(false)
+            val t = Thread({ sent.set(runCatching { b?.endSession(false) == true }.getOrDefault(false)) }, "dsf-stream-quit").apply { isDaemon = true; start() }
+            runCatching { t.join(boundMs) }
+            Log.i(TAG, "exit now: end_session ${if (sent.get()) "sent: Desktop closes WoW and puts the PC back on its own" else "not sent (no bridge connection, or not within $boundMs ms)"}")
+            main.post { stopStream("Exit game: DS Forever closes"); runCatching { bridge?.stop() } }
+        }
         touchMouse = StreamTouch(MoonBridge.INPUT, view.width, view.height, w, h,
             android.view.ViewConfiguration.get(activity).scaledTouchSlop.toFloat()) { ms, r -> main.postDelayed(r, ms) }
         try { MoonBridge.sendControllerArrivalEvent(0, 1, MoonBridge.LI_CTYPE_XBOX, StreamPad.SUPPORTED,
@@ -671,6 +711,10 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         val wasStreaming = screen == Screen.STREAMING
         val mode = session?.mode
         val failedStage = session?.failedStage.orEmpty()
+        // stream smoothness, the safe default: an RFI stream that may have gone wrong because of it turns RFI off on this Thor
+        session?.let { s -> liveVideo?.let { v ->
+            RfiPolicy.trips(s.videoCapabilities, error, v.decoderErrors, v.framesOut, v.codecMime)?.let { why -> worker.execute { RfiStore.trip(activity, why) } }
+        } }
         teardown()
         Log.i(TAG, "stream ended ($error, paired ${!notPaired}): $message; " + PadNote.sent(padSent, padDriver))
         if (!isOpen) return
@@ -840,11 +884,14 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
 
     private fun teardown() {
         seen = false
+        main.removeCallbacks(holdTick); com.jrees.wowcompanion.HoldCast.streamEnd()
+        ThorRumble.stop()                                   // Q10b: a rumble running when the stream ends would buzz on forever
         if (streamFps >= 100) StreamRate.release(activity, surface.holder.surface)
         streamFps = 0
+        smoothStop()
         SetupBridge.openPcKeyboard = null
         SetupBridge.exitStream = null
-        SetupBridge.endSession = null; SetupBridge.endStream = null
+        SetupBridge.endSession = null; SetupBridge.endStream = null; SetupBridge.quitStream = null
         boardByHand = false
         board(false)
         touchMouse?.cancel(); touchMouse = null
@@ -854,6 +901,29 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (keys != null) { pad.clear(); try { sendPad() } catch (_: Throwable) {} }
         keys = null
         DsForeverScreen.current?.detachGame()
+    }
+
+    /**
+     * STREAM SMOOTHNESS at a stream's start (StreamSmooth.kt; the user's picks 2026-11-23): the Wi-Fi low-latency lock, the PC search
+     * stopped (Moonlight stops polling during a stream), the stats line every 5 s
+     */
+    private fun smoothStart() {
+        Log.i(TAG, wifiLock.acquire())
+        if (discovery != null && !discoveryPaused) { discovery?.stop(); discoveryPaused = true; Log.i(TAG, "discovery: paused for the stream") }
+        main.removeCallbacks(statsTick)
+        statsLast = liveVideo?.snap(android.os.SystemClock.elapsedRealtime())
+        main.postDelayed(statsTick, StreamStats.EVERY_MS)
+    }
+
+    /** its end (every end: stop, Home, a pause, the screen closing, a lost connection): the lock let go, the search back while open */
+    private fun smoothStop() {
+        main.removeCallbacks(statsTick)
+        statsLast = null
+        wifiLock.release("the stream ended").takeIf { it.isNotEmpty() }?.let { Log.i(TAG, it) }
+        if (discoveryPaused) {
+            discoveryPaused = false
+            if (isOpen) { discovery?.start(); Log.i(TAG, "discovery: on again") }
+        }
     }
 
     // ---------------------------------------------------------------- pairing
@@ -1456,8 +1526,22 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
         if (!MoonBridge.loaded) { if (padSent == 0) { padSent = -1; Log.w(TAG, "pad: not sent (the stream library is not loaded)") }; return }
         if (padSent >= 0 && padSent++ == 0) Log.i(TAG, "pad: first controller input sent to the PC; " + PadNote.driver(padDriver))
         val s = pad.snapshot()
-        MoonBridge.sendMultiControllerInput(0, 1, s.buttons, s.lt.toByte(), s.rt.toByte(), s.lx.toShort(), s.ly.toShort(), s.rx.toShort(), s.ry.toShort())
+        // Linux Streaming Edition (2026-11-25): HOLD TO CAST over the stream - the state goes through DS Forever's gate (a press of a place
+        // with a hold spell is held back: a tap goes on release, a hold at the hold time with the Guide marker); off = unchanged
+        val now = SystemClock.uptimeMillis()
+        var buttons = s.buttons; var lt = s.lt; var rt = s.rt
+        runCatching {
+            buttons = com.jrees.wowcompanion.HoldCast.streamFilter(s.buttons, s.lt, s.rt, now)
+            lt = com.jrees.wowcompanion.HoldCast.streamLt(s.lt); rt = com.jrees.wowcompanion.HoldCast.streamRt(s.rt)
+        }.onFailure { Log.w(TAG, "hold: the gate failed, the pad goes as it is: $it") }
+        MoonBridge.sendMultiControllerInput(0, 1, buttons, lt.toByte(), rt.toByte(), s.lx.toShort(), s.ly.toShort(), s.rx.toShort(), s.ry.toShort())
+        main.removeCallbacks(holdTick)
+        val next = com.jrees.wowcompanion.HoldCast.nextAt()
+        if (next != Long.MAX_VALUE) main.postAtTime(holdTick, maxOf(next, now + 1))
     }
+
+    /** the gate's next moment (a tap's release, a hold's marker): the controller state sent again */
+    private val holdTick = Runnable { if (screen == Screen.STREAMING) runCatching { sendPad() } }
 
     // ---------------------------------------------------------------- the network
     private fun watchNetwork() {

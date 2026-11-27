@@ -8,7 +8,14 @@ internal class IndoorBakeQueue(
     private val build: String,
     private val catalogue: List<IndoorBakeStore.Work>,
     /** buildings that failed before with the same input identity (IndoorDeferrals): skipped, still counted as deferred */
-    private val skip: Set<String> = emptySet()
+    private val skip: Set<String> = emptySet(),
+    /**
+     * the dungeons and raids (signatures; the user's pick, 2026-11-23: "Build last, leave out of count"): built after every other
+     * building, near-me-first or not
+     */
+    private val last: Set<String> = emptySet(),
+    /** 1525: asked before each building's check below (the scheduler's yield point: every receipt is hashed, seconds on a Thor) */
+    onEach: () -> Unit = {}
 ) {
     data class Position(val continent: Int, val x: Double, val y: Double) {
         init { require(continent >= 0 && x.isFinite() && y.isFinite()) }
@@ -18,7 +25,7 @@ internal class IndoorBakeQueue(
 
     init {
         require(catalogue.map { it.key }.distinct().size == catalogue.size)
-        for (work in catalogue) if (store.completed(work) != null) finished.add(work.signature)
+        for (work in catalogue) { onEach(); if (store.completed(work) != null) finished.add(work.signature) }
     }
 
     val total: Int get() = catalogue.size
@@ -26,6 +33,14 @@ internal class IndoorBakeQueue(
     val ready: Int get() = finished.size
     /** buildings that failed in this instance, plus those deferred from before (until their input identity changes) */
     val deferred: Int get() = attempted.count { it !in finished } + skip.count { it !in finished && it !in attempted }
+
+    /** [work] has verified output (found at start or baked by this instance) */
+    fun isReady(work: IndoorBakeStore.Work): Boolean = work.signature in finished
+
+    /** [deferred], counting only the buildings [which] holds */
+    fun deferred(which: (IndoorBakeStore.Work) -> Boolean): Int = catalogue.count {
+        which(it) && it.signature !in finished && (it.signature in attempted || it.signature in skip)
+    }
 
     /**
      * Nearest first. Footprints nest (a tavern inside its district WMO), so among buildings the player is equally near -
@@ -36,9 +51,11 @@ internal class IndoorBakeQueue(
         // NO POSITION EVER (a fresh install's first session: character select / launcher; T3 run 2 baked the big dungeons first,
         // ~6.7 of the first 10.5 min, by key order): open-world buildings before instance-only maps, the smallest footprint first
         // (inns, houses, shops before keeps and cathedrals), the key last. With a position: nearest-first as before
-        if (position == null) return open.minWithOrNull(
-            compareBy<IndoorBakeStore.Work> { if (openWorld(it)) 0 else 1 }.thenBy { smallest(it) }.thenBy { it.key })
-        return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { distance(it, position) }.thenBy { area(it, position) }.thenBy { it.key })
+        // 2026-11-23: the dungeons and raids ([last]) after everything else in both orders: a position never pulls one ahead
+        if (position == null) return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { if (it.signature in last) 1 else 0 }
+            .thenBy { if (openWorld(it)) 0 else 1 }.thenBy { smallest(it) }.thenBy { it.key })
+        return open.minWithOrNull(compareBy<IndoorBakeStore.Work> { if (it.signature in last) 1 else 0 }
+            .thenBy { distance(it, position) }.thenBy { area(it, position) }.thenBy { it.key })
     }
 
     /** continents that hold many buildings are the open world; an instance map has only a few roots of its own */
@@ -70,7 +87,14 @@ internal class IndoorBakeQueue(
         return work
     }
 
-    fun publishCompleted(): Int = store.publish(build, catalogue)
+    /**
+     * 2026-11-24: [work]'s building was cancelled before it finished (the player moved beside the game: [IndoorGenerator.Cancelled]):
+     * it is open again in this run, neither deferred nor counted ([next] may pick it at once)
+     */
+    fun putBack(work: IndoorBakeStore.Work) { if (work.signature !in finished) attempted.remove(work.signature) }
+
+    /** [mayPublish]: asked under the store's lock (false: nothing published, -1) */
+    fun publishCompleted(mayPublish: () -> Boolean = { true }): Int = store.publish(build, catalogue, mayPublish)
 
     /** squared yards from [position] to [work]'s nearest footprint on the same continent (0 inside; infinite elsewhere) */
     fun distance(work: IndoorBakeStore.Work, position: Position?): Double {

@@ -211,6 +211,18 @@ object Settings {
         set(v) { prefs?.edit()?.putBoolean("lowMemGraphics", v)?.apply(); changed() }
 
     /**
+     * COMPRESS IDLE MEMORY (the user's picks 2026-11-23: the Wine helpers' and DS Forever's own idle memory into the Thor's zram when
+     * memory runs low, PageOut; then "Yes, carefully": the game client's COLD memory too, at character select and when memory is
+     * critically low in the world, GamePageOut). Unset = on for the 8 GB Thors (DeviceTier.pageOutDefault), off for the 12 / 16 GB.
+     * The helpers' and the game's part from the next game start (the preload is added at the launch), ours at once.
+     */
+    var pageOut: Boolean
+        get() = prefs?.takeIf { it.contains("pageOut") }?.getBoolean("pageOut", false) ?: DeviceTier.pageOutDefault()
+        set(v) { prefs?.edit()?.putBoolean("pageOut", v)?.apply(); changed() }
+    /** the player chose it (the report says "this Thor's default" otherwise) */
+    val pageOutSet: Boolean get() = prefs?.contains("pageOut") ?: false
+
+    /**
      * VIDEO MEMORY CAP (#56 G1, the user's approval 2026-11-19; Settings > Performance > Memory): our container tells the game a
      * smaller video memory, by the Thor's RAM (GameVideoMemory.capMb). Our emulator's config, not a game setting. On by default;
      * Off = the driver's own size, as before. From the next game start; Local play only.
@@ -222,20 +234,24 @@ object Settings {
     /**
      * GAME ACCOUNT (GitHub #47, 1.0.16 report: "i have more than1 account linked to my battle netaccount and cannot change which one to
      * use"): true = "Ask each time" - before every start GameConfigWtf clears the game's remembered game-account choice in Config.wtf,
-     * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered":
-     * Config.wtf as the game left it, plus (the user's ruling 2026-11-20, A) the player's last-picked game account marked "!" in its
-     * accountList at every start ([gameAccountPick]; GameConfigWtf.markAccount). Account labels are never logged.
+     * so the game's own account-select screen comes up and the player picks there with the pad. False (the default) = "Remembered"
+     * (shown as "Skip (Blizzard's page)", the user's ruling 2026-11-23): Config.wtf as the game left it (no "!" is written since the
+     * 2026-11-20 pick); on Browser login the helper hands the remembered game account ([gameAccountPick]) to the game, which then
+     * skips its list (GameAccountHandover). The saved login (login.txt) still shows the list: the game's kiosk login never takes an
+     * account. A change of this setting lifts a held hand-over. Account labels are never logged.
      */
     var gameAccountAsk: Boolean
         get() = prefs?.getBoolean("gameAccountAsk", false) ?: false
-        set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); changed() } }
+        set(v) { if (v != gameAccountAsk) { prefs?.edit()?.putBoolean("gameAccountAsk", v)?.apply(); GameAccountHandover.liftHold(); changed() } }
 
     /**
      * THE LAST-PICKED GAME ACCOUNT (the user's ruling 2026-11-20, A: "Learn the pick automatically ... Store only the account LABEL, in
      * the app's private prefs"): the label the game itself marked in Config.wtf's accountList (WoW1, WoW2 or the account's own name;
-     * GameConfigWtf.accountPickIn), learned at each Play before Config.wtf is written; never typed by the player. Used only with
-     * "Remembered". Never logged, never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in,
-     * as [gameAccountAsk]); forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
+     * GameConfigWtf.accountPickIn), learned at a Play before Config.wtf is written when the game wrote that mark anew; and (the user's
+     * ruling 2026-11-23) the row the player picked in the game's list on Browser login, learned at the next Browser login from the
+     * account folder the game wrote (GameAccountHandover.learn). Never typed by the player. Used only with "Remembered". Never logged,
+     * never in a report or diagnostics (write "set" / "unset"); never reset by Reset settings (the sign-in, as [gameAccountAsk]);
+     * forgotten with the saved login ([forgetGameAccountPick]). Null = none learned yet.
      */
     var gameAccountPick: String?
         get() = prefs?.getString("gameAccountPick", null)?.let(GameConfigWtf::cleanAccountLabel)
@@ -245,7 +261,16 @@ object Settings {
         }
 
     /** the saved login forgotten or changed: the next Battle.net login's game accounts may be others, so the pick is learned again */
-    fun forgetGameAccountPick() { gameAccountPick = null }
+    fun forgetGameAccountPick() { gameAccountPick = null; GameAccountHandover.forget() }
+
+    /**
+     * THE HAND-OVER'S OWN STATE (the user's ruling 2026-11-23; GameAccountHandover.State as JSON: held, strikes, an unseen outcome, when
+     * a Browser-login pick waits to be learned, a hash of the last "!" mark seen). No account name in it. Private prefs; never reset
+     * by Reset settings (the sign-in); null = none yet.
+     */
+    var gameAccountHandover: String?
+        get() = prefs?.getString(GameAccountHandover.KEY, null)
+        set(v) { if (v != gameAccountHandover) prefs?.edit()?.apply { if (v == null) remove(GameAccountHandover.KEY) else putString(GameAccountHandover.KEY, v) }?.apply() }
 
     /**
      * SWAP SCREENS (GitHub #232; ScreenSwap): true = the game on the second screen, DS Forever on the main one (display 0). Off by
@@ -286,11 +311,26 @@ object Settings {
     /**
      * BROWSER LOGIN (the user, 2026-11-18: upstream v2.4.5's Browser login, opt-in): Off (the default) = the saved login's private
      * login.txt; On = Blizzard's own sign-in page on the bottom screen, no login.txt. From the next game start. See [BrowserLogin]; the
-     * launcher reads it at each start (BattleNetBrowserLogin).
+     * launcher reads it at each start (BattleNetBrowserLogin). 2026-11-24: shown as "Battle.net sign-in: Saved login / Blizzard's page",
+     * in Settings and on the start screen's Menu (StartMenu.SIGNIN), both this one value.
      */
     var browserLogin: Boolean
         get() = prefs?.getBoolean(BrowserLogin.KEY, false) ?: false
         set(v) { if (v != browserLogin) { prefs?.edit()?.putBoolean(BrowserLogin.KEY, v)?.apply(); changed() } }
+
+    /**
+     * GRAPHICS DRIVER (the user, 2026-11-23: an opt-in test driver beside today's default): "recommended" (the default: the driver each
+     * GPU profile always used) or a test driver's id ([GraphicsDriver.Choice]); this device's, from the next Play. Reset settings puts it
+     * back to Recommended (ResetPlan). The launcher reads it at each start (WoWForeverScreen.withDriverChoice).
+     */
+    var graphicsDriver: GraphicsDriver.Choice
+        get() = GraphicsDriver.sanitize(prefs?.getString(GraphicsDriver.KEY, null))
+        set(v) { if (v != graphicsDriver) { prefs?.edit()?.putString(GraphicsDriver.KEY, v.id)?.apply(); changed() } }
+
+    /** the last game start's driver line (the launcher's watch writes it; the report reads it when no game started in this run) */
+    var graphicsDriverRan: String?
+        get() = prefs?.getString(GraphicsDriver.KEY_RAN, null)
+        set(v) { prefs?.edit()?.apply { if (v == null) remove(GraphicsDriver.KEY_RAN) else putString(GraphicsDriver.KEY_RAN, v) }?.apply() }
 
     /** what the last game start used (the launcher writes it; the report reads it): (mode, time ms, applied ok); null = none yet */
     var windowsIdRan: Triple<String, Long, Boolean>?

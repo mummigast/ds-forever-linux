@@ -142,7 +142,7 @@ class ControllerView(
         val pre = CastStripModel.ctlSettingCells(cbOn) + CastStripModel.showCells(show) + CastStripModel.partyShowCells(pshow)
         // the try prompt's Yes: WoW Defaults > Tap to cast, slot 1, after the open (the room's own open route: B goes back as from any tab)
         val toCb = col != null && castBarWanted && cbTabOn()
-        val after = if (toCb) CastStripModel.ctlTabCells() + (PadMapModel.ROW to PadMapModel.colPos(1)) else emptyList()
+        val after = if (toCb) viewCells(castBarView) + (PadMapModel.ROW to PadMapModel.colPos(1)) else emptyList()
         val cells = if (col != null) pre + PadMapModel.croomCells() + after     // Linux Streaming Edition: by keys (was "spells" to col, a click)
                     else (if (page.needsLayout()) listOf(page.layoutCell()) else emptyList()) + (PadMapModel.ROW to PadMapModel.COL_OPENED)
         // Linux Streaming Edition (2026-11-23, the user: "ALOT of clicks ... switching to the controller tab"): the room's open cell on the
@@ -152,7 +152,7 @@ class ControllerView(
         if (sent && col != null) { cbSent = cbOn; showSent = show; pshowSent = pshow }
         if (sent && col != null) castBarWanted = false                    // once: this open (on the tab when it shows)
         if (sent && col != null) { lastCbsn = null; lastCbon = null; lastCbpn = null }       // p56: the counts start again
-        if (sent && col != null) page.showTabLocal(if (toCb) "castbar" else PadMapModel.TABS[0])      // p17: it opens on WoW Defaults, shown at the tap
+        if (sent && col != null) page.showTabLocal(if (toCb) castBarView else PadMapModel.TABS[0])      // p17: it opens on WoW Defaults, shown at the tap
         Log.i(TAG, "controller room enter: ${cells.last()} ${if (sent) "tapped" else "not sent"}")
         page.setActive(isShown)
         return sent
@@ -170,13 +170,20 @@ class ControllerView(
 
     /** p53: the try prompt's Yes: the next room open lands on the Cast bar tab, slot 1 (once) */
     private var castBarWanted = false
-    fun openOnCastBar() { castBarWanted = true }
+    /** EDIT TABS (the review: the proposal's "Edit slots opens the Controller room's In combat bar" / "Party mode bar"): which bar that
+     *  open lands on - "castbar" (WoW Defaults > Tap to cast: the try prompt's Yes, the Out of combat tab's Edit slots), "cbfight" (In
+     *  combat's bar) or "pbar" (Party mode's, only while Party mode is allowed: else the first) */
+    private var castBarView = "castbar"
+    fun openOnCastBar(view: String = "castbar") {
+        castBarWanted = true
+        castBarView = view.takeIf { it == "cbfight" || (it == "pbar" && GameUi.partyModeOn()) } ?: "castbar"
+    }
     /** the Yes's open is still owed (tests) */
     val castBarOwed: Boolean get() = castBarWanted
     /** p53: the Tap to cast sub-tabs are there (the add-on's bar takes every kind); p55 (D2): the bar Off no longer hides them */
     private fun cbTabOn(): Boolean = CastStripModel.ctlTab(CastStripModel.Live.bar)
     /** the bar is on in Settings (not Off) */
-    private fun barOn(): Boolean = !CastStripModel.barOff(HomeSettings.castBarSide)
+    private fun barOn(): Boolean = HomeSettings.castBarOnAnyTab           // (edit tabs: a bar on any tab of Home is on - the review)
     /** p55 (D4): Show in combat = castBarCombat STAY */
     private fun showOn(): Boolean = CastStripModel.showOf(HomeSettings.castBarCombat)
     /** what the add-on was last told (null = nothing yet): the bar on, Show in combat */
@@ -194,7 +201,7 @@ class ControllerView(
     }
     /** p55 (D2): "Turn on" (a finger on the dimmed page, or the add-on's `cbon` for the controller's A): the bar on, both columns */
     private fun turnOn() {
-        if (CastStripModel.barOff(HomeSettings.castBarSide)) HomeSettings.castBarSide = CastStripModel.turnOnSide
+        if (!HomeSettings.castBarOnAnyTab) HomeSettings.castBarSide = CastStripModel.turnOnSide
     }
     /** p55: the add-on's counts last seen (Show tap-to-cast presses, Turn on presses); null = none yet this open */
     private var lastCbsn: Int? = null
@@ -593,8 +600,10 @@ class ControllerView(
                     HomeSettings.castBarPartyShow = !HomeSettings.castBarPartyShow
                     Log.i(TAG, "switch 'Bar in Party mode' -> ${if (HomeSettings.castBarPartyShow) "on" else "off"}")
                 } else if (t.col != null) {
-                    val sent = onPadCells(listOf("spells" to t.col))
-                    Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: spells ${t.col} ${if (sent) "tapped" else "not sent"}")
+                    // Linux Streaming Edition 2026-11-27: by keys (padtab's page-3 codes 30-35), was "spells" to col (a click that strayed)
+                    val byKeys = t.on?.let { PadMapModel.switchCells(t.key, !it) }
+                    val sent = onPadCells(byKeys ?: listOf("spells" to t.col))
+                    Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: ${if (byKeys != null) "padtab ${byKeys.last().second}" else "spells ${t.col}"} ${if (sent) "tapped" else "not sent"}")
                     if (sent && t.on != null && map?.combat == false) { swWant[t.key] = !t.on to SystemClock.uptimeMillis() + ECHO_MS; invalidate() }
                     // issue #136 (2026-11-11): the toolbar's flip is the player's choice in the app too (kept, re-sent until the game says it)
                     if (t.key == "dpad" && t.on != null) onDpadPick?.invoke(!t.on, sent)

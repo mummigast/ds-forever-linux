@@ -155,6 +155,9 @@ object StartupDiag {
 
     private fun container(ctx: Context): List<String> = listOf(
         "GPU profile: ${LauncherHooks.gpuLine.ifEmpty { "(not picked yet in this run)" }}",
+        // 2026-11-23 (the opt-in test driver): the choice, the driver this run's start REQUESTED and the one the game's processes LOADED
+        line { Settings.init(ctx); GraphicsDriver.reportLine(Settings.graphicsDriver, GraphicsDriver.launched, GraphicsDriver.loaded,
+            Settings.graphicsDriverRan) { stamp(it) } },
         "Launch: ${LauncherHooks.launchState.ifEmpty { "(no launch in this run)" }}",
         "Game screen up: ${LauncherHooks.gameUp()}" + (if (LauncherHooks.gameStartSec > 0) ", since ${stamp(LauncherHooks.gameStartSec * 1000)}" else ""),
         "Last clean exit: ${LauncherHooks.lastCleanExit.ifEmpty { "(none)" }}",
@@ -204,8 +207,9 @@ object StartupDiag {
         // now (what the game left at its exit); states and counts only, never a label
         out += "Game account: " + runCatching {
             val p = choice?.product ?: WowProduct.of(root)
+            // 2026-11-23: Browser login's hand-over (GameAccountHandover: lengths, regions and states only)
             GameAccountDiag.reportLine(GameAccountDiag.last, GameAccountDiag.shape(GameAccountDiag.configWtf(root, p)),
-                GameAccountDiag.logList) { stamp(it) }
+                GameAccountDiag.logList, GameAccountHandover.reportWords()) { stamp(it) }
         }.getOrElse { "? (${it.message})" }
         // #56 G2: what the low-memory keys hold now (numbers only), so a report shows whether the game kept them
         out += "Low-memory keys: " + runCatching {

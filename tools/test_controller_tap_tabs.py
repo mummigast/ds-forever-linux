@@ -171,9 +171,9 @@ def press(L, *keys):
 
 
 # ================================================================ a. versions, no trace in the code
-check('local CBV = "cb16"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb16 (cb14's in-combat layer note kept)")
-check('local CV = "p58"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
-check('local BV = "b76"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b71 (b70's note kept)")
+check('local CBV = "cb17"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb16 (cb14's in-combat layer note kept)")
+check('local CV = "p61"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
+check('local BV = "b85"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b71 (b70's note kept)")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
       and 'EditMacro' not in code and 'PlaceAction' not in code and 'SetCVar' not in code and 'PickupAction' not in code
@@ -194,7 +194,7 @@ W.execute('WowCompanion.castBar.put(3, "item", 118)')                    # slot 
 check(store(W) == {1: ('spell', 403), 3: ('item', 118)} and fstore(W) == {1: ('spell', 331), 2: ('command', 'TARGETNEARESTENEMY')},
       "b. the two stores: castBar and castBarFight (per character)", (store(W), fstore(W)))
 row = W.eval('WowCompanion.pad.rows.castbar')
-check(row is not None and int(row.n) == 25 and int(row.n) <= 40, "b. the castbar row: 25 secure cells (cb15: 8 + the pick + 8 + Party mode's 8), within 40",
+check(row is not None and int(row.n) == 27 and int(row.n) <= 40, "b. the castbar row: 27 secure cells (cb15: 8 + the pick + 8 + Party mode's 8), within 40",
       row and row.n)
 check(cell(W, 0, "type") == "spell" and cell(W, 0, "spell") == 403 and cell(W, 0, "wc-n-spell") == 403 and cell(W, 0, "wc-f-spell") == 331,
       "b. slot 1's cell: its own spell, both sets as attributes", (cell(W, 0, "spell"), cell(W, 0, "wc-f-spell")))
@@ -207,7 +207,7 @@ check(cell(W, 8, "type") is None and cell(W, 8, "wc-n-type") is None, "b. the pi
 check(cell(W, 11, "type") is None, "b. an unset fight slot's cell (11) has no action")
 d = bar(W)
 fe = {x['s']: x for x in d.get('f', [])}
-check(d.get('v') == 'cb16' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
+check(d.get('v') == 'cb17' and d.get('show') == 1 and d.get('fl') == 1 and fe.get(1, {}).get('id') == 331 and fe[1].get('c') == 9
       and fe.get(2, {}).get('k') == 'command' and fe[2].get('c') == 10, "b. the document: `f` with cells 9 / 10, show = 1", d.get('f'))
 check(W.eval('WowCompanion.pad.describe().rows.castbar') is not None, "b. described (the app's TapBridge finds the row)")
 clean(W, "b")
