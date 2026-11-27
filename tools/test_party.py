@@ -1449,7 +1449,7 @@ check(picks(W9) == {"player": None, "party1": None, "party2": None}, "Smart Y of
 check(W9.eval('#SPY') == 0 and W9.eval('#VIOL') == 0, "no spied call, no lockdown breach")
 
 # ================================================================ THE PARTY TAB (PadTabCtl p33 + Book b47's padtab 26-37)
-check('local CV = "p61"' in SRC["padtabctl"] and 'local BV = "b84"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
+check('local CV = "p61"' in SRC["padtabctl"] and 'local BV = "b85"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172,
       "the versions: PadMap m160, PadTabCtl p54, Book b61 (b49 stance-bind #179, b50 toolbar D-pad #18/#20, b51 / m143 / m144 rank up, m160 / p54 / b61 Smart Range gone)")
 W8 = world(pre='BOOK = { 403, 331, 8004, 324, 131, 546 }')
 W8.execute('''
@@ -2005,9 +2005,9 @@ hits = [(p, ln) for (p, ln) in hits if (p, ln) not in CAPTURE_V21_LINES]
 # never pressed; the player's own macros are never touched)
 LX_SOFT_LINES = {
     (r'\bSetCVar\b', 'local function stSet(n, v) return pcall(function() C_CVar.SetCVar(n, v) end) end'),
-    (r'\bCreateMacro\b', 'if type(CreateMacro) ~= "function" or type(GetMacroIndexByName) ~= "function" then return end'),
-    (r'\bCreateMacro\b', 'if n < (MAX_ACCOUNT_MACROS or 120) then pcall(CreateMacro, name, "INV_MISC_QUESTIONMARK", body, nil) end'),
-    (r'\bEditMacro\b', 'if cur ~= body then pcall(EditMacro, i, name, nil, body) end'),
+    # hub80 (the user, 2026-11-27: "I want those macros deleted"): never written now; the two old ones deleted by name, out of a fight
+    (r'\bDeleteMacro\b', 'if type(DeleteMacro) ~= "function" or type(GetMacroIndexByName) ~= "function" then return end'),
+    (r'\bDeleteMacro\b', 'if i > 0 then pcall(DeleteMacro, i) end'),
 }
 hits = [(p, ln) for (p, ln) in hits if (p, ln) not in LX_SOFT_LINES]
 check(not hits, "no trace in the new add-on code: no SetBinding / SaveBindings / macros / CVars / bar writes / Blizzard window code",

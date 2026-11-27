@@ -5546,7 +5546,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // issue #136: answered meanwhile (the Settings row): no default ON tap, no prompt
             if (!prefs.getBoolean("owed_$key", false)) { Log.i(HomeView.TAG, "dpad prompt: dropped (already chosen for $key)"); setupPadOff(); return@show }
             // b139: ON by default the moment the game takes taps again, then the prompt asks to keep it
-            spellsTap(d.colOn)
+            dpadTap(d, true)                                              // Linux Streaming Edition 2026-11-27: by keys
             setupLoadingDone()
             setupView.ask(CompanionSetup.Prompt("Keep the DS WoW toolbar on your D-pad?", b,
                 "No turns it off (your own D-pad). Change it any time in the Controller room (DS tab)."), "Yes", "No",
@@ -5678,8 +5678,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** one toolbar tap (Book b15's dpad-on / dpad-off); a refusal is logged (issue #136: it was silent) */
     private fun dpadTap(d: PadMapModel.Dpad, on: Boolean) {
-        val col = (if (on) d.colOn else d.colOff) ?: run { Log.w(HomeView.TAG, "dpad: no ${if (on) "dpad-on" else "dpad-off"} cell (an older Spells add-on)"); return }
-        TapBridge.tap(this, spellsPad, "spells", col) { why -> Log.w(HomeView.TAG, "dpad: the ${if (on) "on" else "off"} tap did not reach the game ($why); kept, sent again when the game takes it") }
+        if ((if (on) d.colOn else d.colOff) == null) { Log.w(HomeView.TAG, "dpad: no ${if (on) "dpad-on" else "dpad-off"} cell (an older Spells add-on)"); return }
+        // Linux Streaming Edition 2026-11-27: by keys (padtab page-3 code 30 / 31, Book b85), was the spells row's cell (a stream click)
+        if (!padTabTap(PadMapModel.dpadCells(on))) Log.w(HomeView.TAG, "dpad: the ${if (on) "on" else "off"} keys did not reach the game; kept, sent again when the game takes it")
     }
 
     /** the Controller tab's cells (spells' own rows `talents` 11-39 and `talentn` 36 / 37), in order: picks, then at most ONE action */

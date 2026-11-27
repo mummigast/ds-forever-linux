@@ -44,6 +44,16 @@ internal object PlayGate {
     fun gameActiveNow(): Boolean = localGameActive(streamingNow(), LauncherHooks.gameUp(), LauncherHooks.launchState,
         LauncherHooks.launchAtMs, LauncherHooks.gameStartSec, System.currentTimeMillis(), LauncherHooks.playHoldAtMs)
 
+    /**
+     * Linux Streaming Edition (2026-11-27, the user: "Thor is making more fan noise than usual ... are we building indoor maps while
+     * streaming now?"; the Thor's log: the background art step wmominimap ran 20 minutes, 12:25-12:46, through a stream): the BACKGROUND
+     * ART waits while a stream runs too, as the indoor bake does ([streamOnlyBake]): ArtHarvest's pause / wait / open checks read this,
+     * the game on this device or the stream. Off this edition's flag: [gameActiveNow] as upstream.
+     */
+    fun artGameBusyNow(): Boolean = artGameBusy(gameActiveNow(), streamOnlyBake, streamingNow())
+    /** [artGameBusyNow]'s rule, pure (the tests) */
+    fun artGameBusy(localGame: Boolean, streamOnly: Boolean, streaming: Boolean): Boolean = localGame || (streamOnly && streaming)
+
     /** [gameActive] for the game on THIS device: false while [streaming] (the game is on the PC) */
     fun localGameActive(streaming: Boolean, gameUp: Boolean, launchState: String, launchAtMs: Long, gameStartSec: Long, nowMs: Long,
                         holdAtMs: Long = 0L): Boolean =

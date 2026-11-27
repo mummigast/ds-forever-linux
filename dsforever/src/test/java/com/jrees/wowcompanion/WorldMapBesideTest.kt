@@ -221,7 +221,7 @@ class WorldMapBesideTest {
         val pause = harvest.indexOf("} catch (e: PausedForGame) {")
         val handler = harvest.substring(pause, harvest.indexOf("} catch (e: YieldToRequired) {", pause))
         assertTrue(handler.contains("if (openedFiles) MemWatch.relieve(\"art let go: \$step, \$lag\", collectNow = true)"))
-        assertTrue(handler.contains("while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)"))
+        assertTrue(handler.contains("while (PlayGate.artGameBusyNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)"))
         assertTrue(handler.indexOf("MemWatch.relieve(") < handler.indexOf("besideDue(besideLeft)"))
         assertTrue(handler.contains("Log.i(TAG, \"harvest: back to the world map beside the game\"); continue"))
         assertTrue(harvest.contains("private fun besideLeft(ctx: Context): Boolean = DeviceTier.besideModel() &&"))

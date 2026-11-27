@@ -1565,7 +1565,11 @@ class PadTabPage(
         fightPic -> when {
             sl?.kind == PadMapModel.Kind.COMBAT && sl.ov -> sl.combat?.let { Icons.get(it.icon) }
             sl?.fight != null && PadMapModel.isFace(sl) -> Icons.get(sl.fight.icon)
-            else -> null
+            // Linux Streaming Edition (2026-11-27, the user: "the selected button is empty, while on the right ... Perception with the right
+            // icon is bound"): what the button does in a fight without an In combat entry - its normal action - shown, DIMMED by drawButton
+            // (PDIM: "a button without a combat spell keeps its normal one"), so the diamond says what the right page says
+            sl?.kind == PadMapModel.Kind.COMBAT -> sl.otherwise?.let { Icons.get(it.icon) }
+            else -> iconOf(m, sl, p)
         }
         sl?.kind == PadMapModel.Kind.COMBAT -> sl.otherwise?.let { Icons.get(it.icon) }
         else -> iconOf(m, sl, p)

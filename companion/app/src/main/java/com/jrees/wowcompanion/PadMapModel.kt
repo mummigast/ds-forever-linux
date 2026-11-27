@@ -860,12 +860,32 @@ object PadMapModel {
         "toolbar mirror" to P3_MIRROR_OFF..P3_MIRROR_ON, "top combat bar" to P3_TOP_OFF..P3_TOP_ON,
         "fight cast bar" to P3_CAST_OFF..P3_CAST_ON, "top bar swing" to P3_SWING_OFF..P3_SWING_ON,
         "hold chooser" to P3_HOLD..P3_HOLD,
-        "controller room open" to P3_CROOM..P3_CROOM)        // m190 / Book b79 (b80: code 28, off the swing's 26)
+        "controller room open" to P3_CROOM..P3_CROOM,
+        "toolbar switch" to P3_DPAD_OFF..P3_DPAD_ON, "combat controls switch" to P3_CC_OFF..P3_CC_ON,
+        "start attack switch" to P3_SA_OFF..P3_SA_ON)        // m190 / Book b79 (b80: code 28, off the swing's 26)
     /** Linux Streaming Edition (2026-11-23, Book's P3[29]; was 24 until the 1.0.41 merge, where upstream's fight cast bar took 24 / 25):
      *  the Controller room's open by keys (padtab is a key row); the spells row's "croom" cell is a secure row's and went as a click,
      *  which missed now and then ("Open the Controller room first") */
     const val P3_CROOM = 29
     fun croomCells(): List<Pair<String, Int>> = page3(P3_CROOM)
+    /** Linux Streaming Edition (2026-11-27, the user: "turning on and off DS toolbar is not working properly"; the Thor's log: every
+     *  switch tap "spells N ... keys off: a cell without keys", a stream click that strayed mid-screen): the Controller room's switches
+     *  by keys (Book b85's P3[30-35], explicit off / on, so a re-send never flips back): the DS WoW toolbar 30 / 31, Combat controls
+     *  32 / 33, Start attack on cast 34 / 35 (the spells row's dpad-on / cc-on / sa-on cells are a secure row's: clicks only) */
+    const val P3_DPAD_OFF = 30
+    const val P3_DPAD_ON = 31
+    const val P3_CC_OFF = 32
+    const val P3_CC_ON = 33
+    const val P3_SA_OFF = 34
+    const val P3_SA_ON = 35
+    fun dpadCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_DPAD_ON else P3_DPAD_OFF)
+    /** a Controller room switch by its key ("dpad", "cc", "sa") to [on]; null for any other */
+    fun switchCells(key: String, on: Boolean): List<Pair<String, Int>>? = when (key) {
+        "dpad" -> dpadCells(on)
+        "cc" -> page3(if (on) P3_CC_ON else P3_CC_OFF)
+        "sa" -> page3(if (on) P3_SA_ON else P3_SA_OFF)
+        else -> null
+    }
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)
     fun fightCastCells(top: Boolean): List<Pair<String, Int>> = page3(if (top) P3_CAST_ON else P3_CAST_OFF)

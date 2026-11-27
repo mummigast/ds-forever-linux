@@ -5,7 +5,7 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
-On top of linux-v1.0.39.2. Add-on set 462 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
+On top of linux-v1.0.39.2. Add-on set 463 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
 (all unit tests pass); **not played on the Thor yet**. Planned as the next stable release, linux-v1.0.41.1, once tested.
 
 ### New from DS Forever 1.0.40 and 1.0.41 (upstream)
@@ -43,6 +43,13 @@ On top of linux-v1.0.39.2. Add-on set 462 (the PC's WoW gets it on the next conn
 - With a long buff list the pin buttons could end up without a cell; they now get theirs first.
 - The Controller room's open by keys and upstream's new fight cast bar used the same internal code; ours moved (they would have
   triggered each other).
+- **The Controller room's switches** (DS WoW toolbar, Combat controls, Start attack on cast) went to the game as screen clicks
+  that often missed while streaming, so the toolbar seemed not to switch. They now go as keys, set straight to on or off.
+- **The In combat diamond** in the Controller room left a button blank when it had no In combat spell, while the right page
+  showed what it does in a fight. It now shows that normal action, dimmed.
+- **Background art (indoor minimaps, icons) no longer builds while you stream:** it ran for up to 20 minutes during a stream
+  (fan noise). It waits for the stream to end, as the indoor maps already did.
+- The add-on's own **DSF Soft On / DSF Soft Off** account macros (a "?" picture, nothing to cast) are deleted and no longer made.
 
 ### Known issues (beta)
 

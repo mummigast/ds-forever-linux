@@ -600,8 +600,10 @@ class ControllerView(
                     HomeSettings.castBarPartyShow = !HomeSettings.castBarPartyShow
                     Log.i(TAG, "switch 'Bar in Party mode' -> ${if (HomeSettings.castBarPartyShow) "on" else "off"}")
                 } else if (t.col != null) {
-                    val sent = onPadCells(listOf("spells" to t.col))
-                    Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: spells ${t.col} ${if (sent) "tapped" else "not sent"}")
+                    // Linux Streaming Edition 2026-11-27: by keys (padtab's page-3 codes 30-35), was "spells" to col (a click that strayed)
+                    val byKeys = t.on?.let { PadMapModel.switchCells(t.key, !it) }
+                    val sent = onPadCells(byKeys ?: listOf("spells" to t.col))
+                    Log.i(TAG, "switch '${t.label}' -> ${if (t.on == true) "off" else "on"}: ${if (byKeys != null) "padtab ${byKeys.last().second}" else "spells ${t.col}"} ${if (sent) "tapped" else "not sent"}")
                     if (sent && t.on != null && map?.combat == false) { swWant[t.key] = !t.on to SystemClock.uptimeMillis() + ECHO_MS; invalidate() }
                     // issue #136 (2026-11-11): the toolbar's flip is the player's choice in the app too (kept, re-sent until the game says it)
                     if (t.key == "dpad" && t.on != null) onDpadPick?.invoke(!t.on, sent)

@@ -391,7 +391,7 @@ object ArtHarvest {
         if (stopping) throw StoppedForUpdate()
         // the user's pick, 2026-11-16 ([besidePass]): the world map building beside the game on the Thor Max neither pauses for the game
         // nor gives way to a required step it could not run anyway (the game is up); once the game closes both stops are back
-        val active = PlayGate.gameActiveNow()
+        val active = PlayGate.artGameBusyNow()
         val beside = besideNow(active)
         // test build 1489 (#361, the user's approval 2026-11-18: "stop ALL art work hard at Play"): EVERY step, before Play too, and
         // the pause before the required step's yield, so a step stopped with the game up always gets the pause's relief
@@ -409,7 +409,7 @@ object ArtHarvest {
     /** memory relief 2: [checkStop] on the run's own thread only (Job.checkpoint: a step's pool threads never throw it) */
     private fun checkpoint() { if (Thread.currentThread() === worker) checkStop() }
     /** memory relief 2: the run is asked to let go of the game files now (any thread; Job.letGoAsked) */
-    private fun letGoAsked(): Boolean = PlayGate.gameActiveNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
+    private fun letGoAsked(): Boolean = PlayGate.artGameBusyNow().let { active -> letGo(stopping, yieldBg, bgPhase, active, besideNow(active)) }
     /** [checkStop]'s three stops as one answer: the update, a required step due (background only), the game up, launching or held by
      *  Play (every step, test build 1489); [beside] = the world map building beside the game ([besideNow]): neither of the last two.
      *  Pure (the tests) */
@@ -572,10 +572,10 @@ object ArtHarvest {
                             "${PlayGate.BESIDE_CALM_MS / 1000} s after its last load")
                         try {
                             // test build 1489 (#361): a required step asked for in game (a new icon) waits for the close too
-                            while (PlayGate.gameActiveNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)
+                            while (PlayGate.artGameBusyNow() && !stopping && !besideDue(besideLeft)) Thread.sleep(3_000)
                         } finally { parkedForGame = false }
-                        if (!stopping && !yieldBg && PlayGate.gameActiveNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
-                        Log.i(TAG, "harvest: the game is closed, the background art goes on")
+                        if (!stopping && !yieldBg && PlayGate.artGameBusyNow()) { Log.i(TAG, "harvest: back to the world map beside the game"); continue }
+                        Log.i(TAG, "harvest: the game is closed (or the stream ended), the background art goes on")
                         if (stopping) { stopping = false; set(State.Idle); break }
                         yieldBg = false
                         continue
@@ -659,7 +659,7 @@ object ArtHarvest {
         // for in game, the worker's next pass) waits outside them for the game to close; the art before Play never meets this (Play waits)
         // test build 1489 (#361): the launch window and Play's hold too, with before-Play steps due or not (Play ends any old window
         // before its own wait, so that wait is never held)
-        if (!PlayGate.artMayOpen(gameActive = PlayGate.gameActiveNow())) {
+        if (!PlayGate.artMayOpen(gameActive = PlayGate.artGameBusyNow())) {
             // the user's pick, 2026-11-16: on the Thor Max the world map alone builds beside the game ([besidePass]); the rest waits
             val beside = later.firstOrNull { it.id == PlayGate.BESIDE_STEP }
             if (beside != null && besideDue(true)) throw PausedForGame(if (besidePass(ctx, beside)) "${beside.id} (built beside the game)" else null)
