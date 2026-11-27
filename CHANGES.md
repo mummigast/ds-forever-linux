@@ -5,7 +5,7 @@ Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANG
 
 ## Unreleased (beta)
 
-On top of linux-v1.0.39.2. Add-on set 463 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
+On top of linux-v1.0.39.2. Add-on set 464 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
 (all unit tests pass); **not played on the Thor yet**. Planned as the next stable release, linux-v1.0.41.1, once tested.
 
 ### New from DS Forever 1.0.40 and 1.0.41 (upstream)
@@ -49,6 +49,8 @@ On top of linux-v1.0.39.2. Add-on set 463 (the PC's WoW gets it on the next conn
   showed what it does in a fight. It now shows that normal action, dimmed.
 - **Background art (indoor minimaps, icons) no longer builds while you stream:** it ran for up to 20 minutes during a stream
   (fan noise). It waits for the stream to end, as the indoor maps already did.
+- **Smart Y's Sit by the fire** now works at WoW Forever's campfire (its "Violet Flames" buff), not only the classic Cozy Fire.
+- **Bank:** ZL / ZR now jump between the bank and your bags (L / R still work too).
 - The add-on's own **DSF Soft On / DSF Soft Off** account macros (a "?" picture, nothing to cast) are deleted and no longer made.
 
 ### Known issues (beta)

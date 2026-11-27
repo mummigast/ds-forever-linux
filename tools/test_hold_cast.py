@@ -160,7 +160,7 @@ def macrolines(p):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m197"' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm and 'm194 and m195 are feat/hold-cast' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm and 'm192 THE 1528b TEST BUILD MERGE' in pm and 'm192 THE 1529 TEST BUILD MERGE' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m196, above feat/hold-cast\'s m194 / m195 (both m192s, m193, m190 and m189 kept)')
+check('local PV = "m198"' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm and 'm194 and m195 are feat/hold-cast' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm and 'm192 THE 1528b TEST BUILD MERGE' in pm and 'm192 THE 1529 TEST BUILD MERGE' in pm and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m196, above feat/hold-cast\'s m194 / m195 (both m192s, m193, m190 and m189 kept)')
 check('local CV = "p61"' in ptc and 'p61 THE 1528b MERGE OF feat/hold-cast' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'Book b80 page-3 code 28' in ptc and 'p59 HOLD TO CAST' in ptc and 'p58 THE CHOOSER AS A GRID' in ptc, '0. PadTabCtl p61 (p60 kept)')
 check('local BV = "b85"' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk and 'b82 is feat/hold-cast' in bk and 'b81 THE 1528b MERGE OF feat/hold-cast' in bk and 'b80 THE 1528b TEST BUILD MERGE' in bk and 'b80 THE 1529 TEST BUILD MERGE' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk and 'b79 THE 1528 TEST BUILD MERGE' in bk
       and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk
@@ -172,7 +172,7 @@ check('local NB = { V = "nbar20"' in ab and 'nbar20 THE 1528b MERGE OF feat/hold
 L = world()
 check(not clean(L), '1. the world loads clean', clean(L))
 ready = last(L, 'holdprobe')
-check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm197',
+check(ready.get('st') == 'ready' and ready.get('bound') is None and ready.get('v') == 'm198',
       '1. a few seconds after the login: "ready", nothing bound on the Guide\'s names (READ first)', ready)
 H = L.eval('WowCompanion.padMapHold()')
 check(H.w is not None and H.f is not None, '1. the watch is open (its frame polls the controller)')

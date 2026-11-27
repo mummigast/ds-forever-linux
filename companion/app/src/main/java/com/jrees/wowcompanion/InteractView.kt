@@ -4948,7 +4948,8 @@ class InteractView(context: Context) : View(context) {
         val br = RectF(half + 8f, top, inner.right - 4f, bot)
         c.drawText(Tr.t("Your Bags"), br.left + 22f, br.top + 38f, UiKit.bodyPaint(28f, Theme.gold))
         // i190: L / R jump the cursor between the two panes
-        UiKit.hints(c, br.right - 16f, br.top + 28f, UiKit.shoulderGlyph(false) to "Bank", UiKit.shoulderGlyph(true) to "Bags")
+        // Linux Streaming Edition (Interact i191, 2026-11-27, the user's pick): ZL / ZR jump bank <-> bags (L / R still work)
+        UiKit.hints(c, br.right - 16f, br.top + 28f, UiKit.triggerGlyph(false) to "Bank", UiKit.triggerGlyph(true) to "Bags")
         val view = RectF(br.left, br.top + 52f, br.right, br.bottom)
         val bcw = (br.width() - 32f) / 7f
         val list = ArrayList<Pair<String, JSONObject?>>()

@@ -38,7 +38,7 @@ def block(begin, end):
 
 
 # ---------------------------------------------------------------- 0. the tag
-check('local PV = "m197"' in SRC and 'm190 SIT BY THE FIRE' in SRC, "0. PadMap's tag m190 and its note")
+check('local PV = "m198"' in SRC and 'm190 SIT BY THE FIRE' in SRC, "0. PadMap's tag m190 and its note")
 
 # ---------------------------------------------------------------- 1. the snippet
 L = lupa.LuaRuntime(unpack_returned_tuples=True)
@@ -116,6 +116,9 @@ check(au(A('{ n = "Cozy Fire" }'), F.eval('NAMES')) == 7353,
       "2e. the id not readable (a secret): matched by the name the ids themselves give (GetSpellInfo)", "")
 check(au(A('{ n = "Feu douillet" }'), F.eval('NAMES')) is None, "2f. ... and never by any other name", "")
 check(au(A(), F.eval('NAMES')) is None and au(A('{ n = "Cozy Fire" }'), None) is None, "2g. no auras / no names: nothing", "")
+# m198 (fork, 2026-11-27): WoW Forever's campfire aura "Violet Flames" by its name, its own id kept; no readable id = the Basic Campfire's
+check(au(A('{ id = 424242, n = "Violet Flames" }'), F.eval('NAMES')) == 424242 and au(A('{ n = "Violet Flames" }'), None) == 7353
+      and au(A('{ id = 9999, n = "Violet Flame" }'), F.eval('NAMES')) is None, "2g2. Forever's Violet Flames by name (exact)", "")
 
 due = F.eval('function(s) local ok, why = OV.fireDue(s); return ok, why end')
 def S(**k):

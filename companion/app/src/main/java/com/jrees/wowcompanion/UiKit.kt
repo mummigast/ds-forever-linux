@@ -2125,6 +2125,13 @@ object UiKit {
         else -> if (right) "rev_rshoulder" else "rev_lshoulder"
     }
 
+    /** the trigger's GLYPH (ZL / ZR) in the layout the Settings chose, as [shoulderGlyph] */
+    fun triggerGlyph(right: Boolean): String = when (CastSettings.buttonLayout) {
+        CastSettings.ButtonLayout.XBOX -> if (right) "ltr_rtrigger" else "ltr_ltrigger"
+        CastSettings.ButtonLayout.PLAYSTATION -> if (right) "shp_rtrigger" else "shp_ltrigger"
+        else -> if (right) "rev_rtrigger" else "rev_ltrigger"
+    }
+
     // ---------------------------------------------------------------- the controller on a tab (LATER 19)
     //
     // The user, 2026-10-07: tabs "look very ugly with todays boxs"; on the lit tab "I like that a lot, however that highlight is a bit

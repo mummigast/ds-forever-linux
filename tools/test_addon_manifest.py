@@ -51,8 +51,8 @@ def src(rel):
 
 
 check('local HV = "hub80"' in src("WowCompanionHub/Hub.lua"), "d. Hub hub80 (fork 11-27: the DSF Soft macros deleted; hub78 top-castbar inside)")
-check('local PV = "m197"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m196 (the 1530 merge of test 1529, above feat/hold-cast's m194 / m195: both m192s and 1528b's m193 kept; m191 = the 1528 merge of feat/top-castbar's, feat/smarty-campfire's and feat/hold-cast's m190s)")
-check('local IV = "i190"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
+check('local PV = "m198"' in src("WowCompanionSpells/PadMap.lua"), "d. PadMap m196 (the 1530 merge of test 1529, above feat/hold-cast's m194 / m195: both m192s and 1528b's m193 kept; m191 = the 1528 merge of feat/top-castbar's, feat/smarty-campfire's and feat/hold-cast's m190s)")
+check('local IV = "i191"' in src("WowCompanionInteract/Interact.lua"), "d. Interact i173")
 check("-- bags-kit6 " in src("WowCompanion/Bags.lua"), "d. Bags bags-kit6")
 
 print("\n%d failure(s)" % len(FAILS))
