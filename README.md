@@ -25,8 +25,8 @@
 
 ## Latest: 1.0.41.2
 
-The Spellbook and Macros rooms now go as keys (no lost taps on the stream), and macros can be deleted from the list. On top of
-1.0.41.1: DS Forever 1.0.41, hold to cast while streaming, buffs pinned for fights, controller rumble.
+The Spellbook and Macros rooms now go as keys (no lost taps on the stream), and macros can be deleted from the list. Also in
+1.0.41.x: DS Forever 1.0.41, hold to cast while streaming, buffs pinned for fights, controller rumble.
 [All changes](CHANGES.md)
 
 ## What you need
