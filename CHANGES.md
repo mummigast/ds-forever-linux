@@ -3,6 +3,14 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
+## Unreleased (beta)
+
+On top of linux-v1.0.41.1. Add-on set 465 (`/reload` once after the next connect).
+
+- **The Spellbook room by keys:** its spell picks, switches and buttons now go to the game as keys instead of screen clicks that
+  could miss on the stream (Settings > Help > Keyboard link no longer lists "spells").
+- **Delete a macro from the list:** the Macros room's list has **Delete** (Y) beside Edit and Bind; it asks Cancel / Delete first.
+
 ## 2026-11-27: linux-v1.0.41.1, DS Forever 1.0.41, add-on set 464 (tested)
 
 On top of linux-v1.0.39.2. Tested on the Thor 2026-11-27: hold to cast over the stream, our cast bar above the HUD, pinned buffs

@@ -358,5 +358,45 @@ tick(3)
 key(cols[6])
 check(fired() == ['chr:5'], "49: 3 s later the row is no longer picked (KEY_STICKY_TTL 2 s)", '')
 
+# pad39 (2026-11-27, the user: "Start with spellbook spell cells"): THE SECOND FAR BANK. The Spellbook row "spells" (secure, 40 cells:
+# handler cells, and "click" cells for the micro buttons / the close) is DOWN DOWN DOWN + selector 0; its handler cells run its handler,
+# 36-39 too (navigation keys: COLX_SNIP's handler branch); its click cell clicks its target; DOWN DOWN + selector 0 is still ibuy
+L.execute("""
+local pad = WowCompanion.pad
+SPTAPS = {}
+local micro = CreateFrame("Button", "SpellMicroTarget", UIParent); micro:SetScript("OnClick", function() TGT_HITS[#TGT_HITS + 1] = "SpellMicroTarget" end)
+pad.secureRow("spells", 40, function(btn, col)
+    if col == 2 then btn:SetAttribute("type", "click"); btn:SetAttribute("clickbutton", micro) end
+end, function(col) SPTAPS[#SPTAPS + 1] = col end, { onPress = true })
+if pad.buildSecure then pad.buildSecure() end
+pad.bindKeys()
+pad.keysFarRefresh()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('spells') == 'DOWN DOWN DOWN ' + cols[0], "50: spells = DOWN DOWN DOWN + selector 0 (the second far bank)", rows.get('spells'))
+check(KT and dict(KT['sfx'].items()).get('spells') is True, "50b: spells is published in sfx (its 36-39 by keys)", '')
+hits(); fired(); tick(1)
+for k in ('DOWN', 'DOWN', 'DOWN', cols[0], cols[7]):
+    key(k)
+check(L.eval('#SPTAPS') >= 1 and L.eval('SPTAPS[#SPTAPS]') == 7 and hits() == [], "51: a Spellbook handler cell (7) by keys runs its handler, nothing clicked",
+      L.eval('#SPTAPS'))
+tick(1)
+colx37 = KT['cols'][38]
+for k in ('DOWN', 'DOWN', 'DOWN', cols[0], colx37):
+    key(k)
+check(L.eval('SPTAPS[#SPTAPS]') == 37, "52: a handler cell at column 37 (a navigation key) by keys runs its handler", L.eval('SPTAPS[#SPTAPS]'))
+tick(1)
+for k in ('DOWN', 'DOWN', 'DOWN', cols[0], cols[2]):
+    key(k)
+check(hits() == ['SpellMicroTarget'], "53: the Spellbook's click cell by keys clicks its target (the micro button)", '')
+fired(); tick(1)
+for k in ('DOWN', 'DOWN', cols[0], cols[7]):
+    key(k)
+check(fired() == ['ibuy:7'], "54: DOWN DOWN + selector 0 is still the first bank's ibuy", '')
+tick(1)
+key('DOWN'); key(cols[4])
+check(fired() == ['spick:4'], "55: DOWN alone is still spick", '')
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
