@@ -3,10 +3,11 @@
 Newest first. This is the STABLE line (`main`); what the beta has on top: [CHANGES.md on the beta branch](https://github.com/mummigast/ds-forever-linux/blob/beta/CHANGES.md) (see "Stable and beta" in the README). Based on DS Forever 1.0.39 (upstream add-on set 424; this edition's set 458). What differs from DS Forever in general: [FORK.md](FORK.md).
 
 
-## Unreleased (beta)
+## 2026-11-27: linux-v1.0.41.1, DS Forever 1.0.41, add-on set 464 (tested)
 
-On top of linux-v1.0.39.2. Add-on set 464 (the PC's WoW gets it on the next connect: `/reload` once). Built and tested off-device
-(all unit tests pass); **not played on the Thor yet**. Planned as the next stable release, linux-v1.0.41.1, once tested.
+On top of linux-v1.0.39.2. Tested on the Thor 2026-11-27: hold to cast over the stream, our cast bar above the HUD, pinned buffs
+cancelled in a fight, Edit Home tabs, the Controller room and its switches, indoor maps, Keyboard link, bank deposit and withdraw,
+Smart Y by a campfire. Built and tested off-device only: the Group Finder by keys, the rumble, the bank's ZL / ZR.
 
 ### New from DS Forever 1.0.40 and 1.0.41 (upstream)
 
@@ -53,12 +54,14 @@ On top of linux-v1.0.39.2. Add-on set 464 (the PC's WoW gets it on the next conn
 - **Bank:** ZL / ZR now jump between the bank and your bags (L / R still work too).
 - The add-on's own **DSF Soft On / DSF Soft Off** account macros (a "?" picture, nothing to cast) are deleted and no longer made.
 
-### Known issues (beta)
+### Known issues in this release
 
-- **Hold to cast:** if the Steam overlay opens when the Guide check runs, turn off Steam > Settings > Controller > "Guide button
-  focuses Steam". The game may also not see Guide through Proton at all; then the check says so and hold to cast stays off.
-- Still open from stable: a bank deposit from the bottom-screen window may not go through; the Stockades has no
-  dungeon map; battleground controls (X on flags / corpses, Leave Battle) not played yet.
+- **Hold to cast:** holds belong to a tab: one set on Out of combat does nothing in a fight (set it on In combat too). If the Steam
+  overlay opens when the Guide check runs, turn off Steam > Settings > Controller > "Guide button focuses Steam".
+- A few actions still go as clicks: picking or casting a spell from the Spellbook room, the spell radials, party frames.
+- Cancelling a pinned buff takes the pause wheel (Start, page 3); a quicker way is planned.
+- Chat commands typed in the app's chat (`/reload`, ...) aren't sent: use the game's own chat for those.
+- No dungeon map inside the Stockades. In a battleground, X on flags / corpses and Leave Battle are not played yet.
 
 ## 2026-11-24 (afternoon): linux-v1.0.39.2, add-on set 458 (bugfix)
 
