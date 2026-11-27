@@ -398,5 +398,22 @@ tick(1)
 key('DOWN'); key(cols[4])
 check(fired() == ['spick:4'], "55: DOWN alone is still spick", '')
 
+# pad40: the Macros room's row "mac" is the second bank's selector 1; a handler cell by keys runs the room's handler
+L.execute("""
+local pad = WowCompanion.pad
+MACTAPS = {}
+pad.secureRow("mac", 20, function(btn, col) btn:SetAttribute("type", nil) end, function(col) MACTAPS[#MACTAPS + 1] = col end, { onPress = true })
+if pad.buildSecure then pad.buildSecure() end
+pad.bindKeys()
+pad.keysFarRefresh()
+""")
+KT = L.eval('WowCompanion.pad.describe().keys')
+rows = dict(KT['rows'].items()) if KT else {}
+check(rows.get('mac') == 'DOWN DOWN DOWN ' + cols[1], "56: mac = DOWN DOWN DOWN + selector 1", rows.get('mac'))
+tick(1)
+for k in ('DOWN', 'DOWN', 'DOWN', cols[1], cols[4]):
+    key(k)
+check(L.eval('#MACTAPS') >= 1 and L.eval('MACTAPS[#MACTAPS]') == 4, "57: a Macros room cell by keys runs its handler", L.eval('#MACTAPS'))
+
 print("%d passed, %d failed" % (passes, fails))
 sys.exit(1 if fails else 0)
